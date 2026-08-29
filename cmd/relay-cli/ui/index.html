@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>relay-cli</title>
+<style>
+  /* One file, no network. The server sends a CSP with no external origins, so a
+     stray CDN reference fails loudly here rather than quietly on a machine with
+     no internet. */
+  :root {
+    --bg: #fbfbfa; --panel: #ffffff; --border: #e4e2dd; --text: #1f1e1c;
+    --dim: #6f6c66; --faint: #97938c; --accent: #b4552d; --ok: #2f7d4f;
+    --warn: #a8710f; --err: #b3382c; --run: #2f6ba8;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  /* Dark is opt-in, not inherited: bare :root above is light, and only an
+     explicit data-theme="dark" — set by the toggle, restored from
+     localStorage — swaps the palette. A dark-desktop user still opens on
+     light until they say otherwise. */
+  :root[data-theme="dark"] {
+    --bg: #171614; --panel: #1e1d1a; --border: #34322d; --text: #eceae5;
+    --dim: #9d9992; --faint: #6f6c66; --accent: #e0794a; --ok: #63b083;
+    --warn: #d8a13f; --err: #e0736a; --run: #6da3d8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+    padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  h1 { margin: 0; font-size: 15px; letter-spacing: .02em; font-weight: 650; }
+  h1 span { color: var(--accent); }
+  .meta { color: var(--faint); font-size: 12px; font-family: var(--mono); }
+  .spacer { flex: 1; }
+  .conn { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .dot.off { background: var(--err); }
+
+  main { flex: 1; display: flex; min-height: 0; }
+  aside {
+    width: 300px; flex: none; border-right: 1px solid var(--border);
+    overflow-y: auto; background: var(--panel);
+  }
+  .side-head {
+    padding: 10px 14px 6px; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .09em; color: var(--faint);
+  }
+  .card {
+    margin: 0 8px 6px; padding: 9px 11px; border: 1px solid var(--border);
+    border-radius: 7px; cursor: pointer; background: var(--bg);
+  }
+  .card:hover { border-color: var(--dim); }
+  .card.sel { border-color: var(--accent); }
+  /* A worker card is a filter, so it carries a checkbox: the affordance says
+     what a click does before anyone clicks. Dimming the unchecked cards says
+     which way the filter currently points. */
+  .box {
+    width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--faint);
+    flex: none; display: grid; place-items: center;
+    font-size: 9px; line-height: 1; color: var(--panel);
+  }
+  .card.on .box { background: var(--accent); border-color: var(--accent); }
+  .card.on .box::before { content: "\2713"; }
+  .card.off .card-name, .card.off .card-line, .card.off .card-detail { opacity: .45; }
+  .side-note { padding: 0 14px 8px; font-size: 11px; color: var(--faint); line-height: 1.45; }
+  .side-sep { height: 1px; background: var(--border); margin: 8px 8px 10px; }
+  .side-count { font-family: var(--mono); font-size: 11px; color: var(--dim); }
+  .card-top { display: flex; align-items: center; gap: 8px; }
+  .card-name { font-weight: 600; font-size: 13px; }
+  .pill {
+    font-size: 10px; padding: 1px 6px; border-radius: 20px; font-family: var(--mono);
+    border: 1px solid currentColor; white-space: nowrap;
+  }
+  .s-idle { color: var(--dim); } .s-polling { color: var(--run); }
+  .s-running { color: var(--accent); } .s-paused { color: var(--err); }
+  .s-ceiling, .s-cooldown { color: var(--warn); } .s-probe_failing { color: var(--err); }
+  .s-stopped, .s-starting { color: var(--faint); }
+  .card-line {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 11px; color: var(--dim); font-family: var(--mono); margin-top: 4px;
+  }
+  .card-detail { font-size: 11px; color: var(--warn); margin-top: 4px; }
+  .bucket { color: var(--faint); }
+  .bucket b { color: var(--accent); font-weight: 600; }
+
+  section { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .toolbar {
+    display: flex; gap: 6px; align-items: center; padding: 8px 14px;
+    border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap;
+  }
+  .chip {
+    font-size: 11px; padding: 3px 9px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--dim); background: none; font-family: inherit;
+  }
+  .chip.on { border-color: var(--accent); color: var(--accent); }
+  .feed { flex: 1; overflow-y: auto; padding: 8px 0 32px; }
+  .row {
+    display: flex; gap: 10px; padding: 2px 16px; align-items: baseline;
+  }
+  .row:hover { background: color-mix(in srgb, var(--border) 30%, transparent); }
+  .row.group { cursor: pointer; }
+  .t { font-family: var(--mono); font-size: 11px; color: var(--faint); flex: none; width: 62px; }
+  .w {
+    font-family: var(--mono); font-size: 11px; color: var(--dim); flex: none;
+    width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .b { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .b.mono { font-family: var(--mono); font-size: 12px; }
+  .dimtext { color: var(--dim); }
+  .fainttext { color: var(--faint); }
+  .oktext { color: var(--ok); } .warntext { color: var(--warn); } .errtext { color: var(--err); }
+  .runtext { color: var(--run); }
+  .accent { color: var(--accent); }
+  .rule {
+    margin: 10px 16px 6px; padding: 6px 10px; border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent); border-radius: 0 5px 5px 0;
+  }
+  .rule.end { border-left-color: var(--dim); background: color-mix(in srgb, var(--border) 40%, transparent); }
+  pre.block {
+    margin: 3px 0 3px; padding: 7px 10px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 6px; font-family: var(--mono);
+    font-size: 12px; white-space: pre-wrap; overflow-x: auto; max-height: 320px; overflow-y: auto;
+  }
+  details.think > summary {
+    cursor: pointer; color: var(--faint); font-size: 12px; list-style: none;
+  }
+  details.think > summary::before { content: "thinking ▸ "; }
+  details.think[open] > summary::before { content: "thinking ▾ "; }
+  table.cfg { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.cfg th, table.cfg td {
+    text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--border);
+    font-family: var(--mono); white-space: nowrap;
+  }
+  table.cfg th { color: var(--faint); font-weight: 500; text-transform: uppercase; font-size: 10px; letter-spacing: .08em; }
+  .cfgwrap { padding: 10px 16px; overflow-x: auto; }
+  .empty { padding: 40px 16px; text-align: center; color: var(--faint); font-size: 13px; }
+  #theme { min-width: 64px; text-align: center; }
+</style>
+<script>
+  // Before first paint, so a reload in dark mode never flashes light. Storage
+  // can throw in a locked-down browser; the default palette is already correct.
+  try {
+    if (localStorage.getItem("relay-cli-theme") === "dark") {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  } catch (e) {}
+</script>
+</head>
+<body>
+<header>
+  <h1>relay<span>-</span>cli</h1>
+  <span class="meta" id="cfgpath"></span>
+  <span class="spacer"></span>
+  <span class="meta" id="uptime"></span>
+  <button class="chip" id="theme" title="Switch between light and dark"></button>
+  <span class="conn"><span class="dot" id="dot"></span><span id="connlabel">connecting</span></span>
+</header>
+
+<main>
+  <aside>
+    <div class="side-head">View</div>
+    <div class="card" id="allcard"><div class="card-top"><span class="card-name">All workers</span><span class="spacer"></span><span class="side-count" id="allcount"></span></div></div>
+    <div class="card" id="cfgcard"><div class="card-top"><span class="card-name">Configuration</span></div></div>
+    <div class="side-sep"></div>
+    <div class="side-head">Workers</div>
+    <div class="side-note">Every worker is checked to start. Uncheck one to drop its logs from the feed; &ldquo;All workers&rdquo; checks them all back on.</div>
+    <div id="cards"></div>
+  </aside>
+
+  <section>
+    <div class="toolbar" id="toolbar">
+      <button class="chip on" data-f="session">session</button>
+      <button class="chip on" data-f="poll">polls</button>
+      <button class="chip on" data-f="log">log</button>
+      <button class="chip" data-f="thinking">thinking</button>
+      <span class="spacer"></span>
+      <button class="chip on" id="follow">following</button>
+    </div>
+    <div class="feed" id="feed"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+// ── state ────────────────────────────────────────────────────────────────────
+const MAX_EVENTS = 4000;
+let events = [];
+let snap = null;
+// Worker names whose logs are shown. Seeded with the whole fleet on the first
+// snapshot: the dashboard opens showing everything, and a click takes a worker
+// out rather than putting one in.
+const selectedWorkers = new Set();
+let seeded = false;
+// Which collapsed runs of empty polls the reader has opened, keyed by worker
+// and start time so the choice survives the re-render on every new event.
+const openGroups = new Set();
+let showConfig = false;
+let follow = true;
+const filters = { session: true, poll: true, log: true, thinking: false };
+
+const $ = (id) => document.getElementById(id);
+const feed = $("feed");
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+const hhmmss = (iso) => {
+  const d = new Date(iso);
+  return String(d.getHours()).padStart(2, "0") + ":" +
+         String(d.getMinutes()).padStart(2, "0") + ":" +
+         String(d.getSeconds()).padStart(2, "0");
+};
+const esc = (s) => String(s == null ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+};
+// mcp__relay__claim_task reads as relay:claim_task, which is what it is.
+const shortTool = (t) => (t || "").replace(/^mcp__([a-z0-9_-]+)__/i, "$1:");
+const money = (n) => "$" + (n || 0).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+const secs = (ms) => (ms / 1000).toFixed(1) + "s";
+
+// ── worker cards ─────────────────────────────────────────────────────────────
+function renderCards() {
+  const box = $("cards");
+  box.textContent = "";
+  if (!snap) return;
+  for (const w of snap.workers) {
+    const c = w.config;
+    const on = selectedWorkers.has(c.name);
+    // No accent border on a checked card: with every worker checked by default
+    // that would ring the whole sidebar. The box and the dimming carry it.
+    const card = el("div", "card" + (on ? " on" : " off"));
+    card.onclick = () => {
+      if (on) selectedWorkers.delete(c.name); else selectedWorkers.add(c.name);
+      showConfig = false;
+      renderCards(); renderFeed();
+    };
+
+    const top = el("div", "card-top");
+    top.append(el("span", "box"));
+    top.append(el("span", "card-name", c.name));
+    top.append(el("span", "spacer"));
+    top.append(el("span", "pill s-" + w.state, w.state.replace("_", " ")));
+    card.append(top);
+
+    // The three buckets, which are the whole answer to "does this worker have
+    // work?" — shown even when all zero, because an empty poll arriving on time
+    // is how you know the worker is alive.
+    const l1 = el("div", "card-line");
+    const q = w.last_poll;
+    const bucket = el("span", "bucket");
+    if (q) {
+      bucket.innerHTML = "resume " + b(q.resume) + " · attn " + b(q.attention) + " · todo " + b(q.todo);
+    } else if (w.last_poll_error) {
+      bucket.className = "errtext"; bucket.textContent = "probe failing";
+    } else {
+      bucket.textContent = "no poll yet";
+    }
+    l1.append(bucket);
+    l1.append(el("span", "", w.runs_last_hour + "/" + (c.max_runs_per_hour || "∞")));
+    card.append(l1);
+
+    const l2 = el("div", "card-line");
+    l2.append(el("span", "", c.runtime + (c.model ? " · " + c.model : "")));
+    l2.append(el("span", "", w.total_cost_usd ? money(w.total_cost_usd) : ""));
+    card.append(l2);
+
+    const cd = countdown(w);
+    if (cd) card.append(el("div", "card-line", cd));
+    if (w.detail) card.append(el("div", "card-detail", w.detail));
+    box.append(card);
+  }
+  const n = snap.workers.length;
+  const all = selectedWorkers.size === n;
+  $("allcard").className = "card" + (all && !showConfig ? " sel" : "");
+  $("cfgcard").className = "card" + (showConfig ? " sel" : "");
+  $("allcount").textContent = all
+    ? n + " worker" + (n === 1 ? "" : "s")
+    : selectedWorkers.size + " of " + n + " shown";
+}
+const b = (n) => n > 0 ? "<b>" + n + "</b>" : "0";
+
+function countdown(w) {
+  if (w.state === "running") {
+    const r = w.current_run;
+    if (!r) return "";
+    const age = Math.round((Date.now() - new Date(r.started_at)) / 1000);
+    return "running " + age + "s · " + r.tool_calls + " tool calls";
+  }
+  if (!w.next_poll_at) return "";
+  const left = Math.round((new Date(w.next_poll_at) - Date.now()) / 1000);
+  return left > 0 ? "next poll in " + left + "s" : "polling…";
+}
+
+// ── the feed ─────────────────────────────────────────────────────────────────
+function visible(e) {
+  if (!selectedWorkers.has(e.worker)) return false;
+  if (e.kind === "poll") return filters.poll;
+  if (e.kind === "log") return filters.log;
+  if (e.kind === "session") {
+    if (e.session && e.session.type === "thinking") return filters.thinking;
+    return filters.session;
+  }
+  return true; // cycle_start / cycle_end always show: they frame everything else
+}
+
+function renderFeed() {
+  if (showConfig) return renderConfig();
+  feed.textContent = "";
+  if (snap && !selectedWorkers.size) {
+    feed.append(el("div", "empty", "No workers checked. Check one in the sidebar, or click “All workers”."));
+    return;
+  }
+  const shown = events.filter(visible);
+  if (!shown.length) {
+    feed.append(el("div", "empty", "Nothing yet. Workers log their first line as they start; an idle fleet shows a poll every few seconds."));
+    return;
+  }
+  // A run of empty polls collapses to one row per worker, however many workers
+  // it interleaves. Two workers polling every 5s otherwise bury the run that
+  // matters under an hour of "queue empty"; the rows are still one click away.
+  let i = 0;
+  while (i < shown.length) {
+    if (!isEmptyPoll(shown[i])) { feed.append(renderEvent(shown[i])); i++; continue; }
+    let j = i;
+    const groups = new Map();
+    while (j < shown.length && isEmptyPoll(shown[j])) {
+      const g = groups.get(shown[j].worker);
+      if (g) g.push(shown[j]); else groups.set(shown[j].worker, [shown[j]]);
+      j++;
+    }
+    for (const [worker, polls] of groups) feed.append(emptyPollGroup(worker, polls));
+    i = j;
+  }
+  if (follow) feed.scrollTop = feed.scrollHeight;
+}
+
+const isEmptyPoll = (e) => e.kind === "poll" && !e.error && e.poll &&
+  !e.poll.resume && !e.poll.attention && !e.poll.todo;
+
+// Collapsed by default: how many polls, and when the last one landed, is the
+// whole of what a stretch of empty polls has to say — that the worker is alive
+// and the queue is quiet. Click to read the individual lines.
+function emptyPollGroup(worker, polls) {
+  const first = polls[0], last = polls[polls.length - 1];
+  if (polls.length === 1) return renderEvent(last);
+
+  const key = worker + "@" + first.time;
+  const open = openGroups.has(key);
+  const box = el("div");
+  const row = el("div", "row group");
+  row.append(el("span", "t", hhmmss(last.time)));
+  row.append(el("span", "w", worker));
+  row.append(el("span", "b fainttext",
+    (open ? "▾ " : "▸ ") + polls.length + " polls — queue empty · " +
+    hhmmss(first.time) + " → " + hhmmss(last.time)));
+  row.onclick = () => {
+    if (open) openGroups.delete(key); else openGroups.add(key);
+    // Opening a group is a deliberate read, so a reader who has already scrolled
+    // back into history keeps their place. A follower still rides the bottom.
+    const top = feed.scrollTop;
+    renderFeed();
+    if (!follow) feed.scrollTop = top;
+  };
+  box.append(row);
+  if (open) for (const p of polls) box.append(renderEvent(p));
+  return box;
+}
+
+function renderEvent(e) {
+  if (e.kind === "cycle_start") {
+    const d = el("div", "rule");
+    const c = e.cycle || {};
+    const q = c.queue || {};
+    d.innerHTML = "<b>▶ " + esc(e.worker) + " — run started</b> " +
+      "<span class='dimtext'>" + esc(c.runtime) + " · resume " + q.resume + " · attention " +
+      q.attention + " · todo " + q.todo + "</span><br>" +
+      "<span class='fainttext' style='font-family:var(--mono);font-size:11px'>" + esc(c.cwd) + "</span>";
+    return d;
+  }
+  if (e.kind === "cycle_end") {
+    const c = e.cycle || {};
+    const d = el("div", "rule end");
+    const cls = c.outcome === "ok" ? "oktext" : c.outcome === "budget_exhausted" ? "errtext" : "warntext";
+    let head = "<b>■ " + esc(e.worker) + " — run " + esc(c.outcome || "ended") + "</b> " +
+      "<span class='dimtext'>status " + c.status +
+      (c.cost_usd ? " · " + money(c.cost_usd) : "") +
+      (c.num_turns ? " · " + c.num_turns + " turns" : "") +
+      (c.duration_ms ? " · " + secs(c.duration_ms) : "") + "</span>";
+    d.innerHTML = "<span class='" + cls + "'>" + head + "</span>";
+    if (c.explanation) {
+      const p = el("pre", "block"); p.textContent = c.explanation; d.append(p);
+    }
+    return d;
+  }
+
+  const row = el("div", "row");
+  row.append(el("span", "t", hhmmss(e.time)));
+  row.append(el("span", "w", e.worker));
+  const body = el("span", "b");
+  row.append(body);
+
+  if (e.kind === "poll") {
+    if (e.error) {
+      body.className = "b errtext";
+      body.innerHTML = "<b>" + esc(e.text || "probe failed") + "</b> <span class='mono' style='font-size:12px'>" +
+        esc(e.error) + "</span>";
+    } else {
+      const q = e.poll || {};
+      body.className = "b";
+      body.innerHTML = "<span class='accent'>poll</span> <span class='dimtext'>resume " +
+        q.resume + " · attention " + q.attention + " · todo " + q.todo + "</span>" +
+        (q.attention_ids && q.attention_ids.length ?
+          " <span class='fainttext'>[" + esc(q.attention_ids.join(", ")) + "]</span>" : "");
+    }
+    return row;
+  }
+
+  if (e.kind === "log") {
+    body.className = "b " + (e.level === "warn" ? "warntext" : e.level === "error" ? "errtext" : "dimtext");
+    if (e.text && e.text.includes("\n")) {
+      const p = el("pre", "block"); p.textContent = e.text; body.append(p);
+    } else {
+      body.textContent = e.text || "";
+    }
+    return row;
+  }
+
+  if (e.kind === "session") return renderSession(e, row, body);
+  body.textContent = e.text || "";
+  return row;
+}
+
+function renderSession(e, row, body) {
+  const s = e.session || {};
+  switch (s.type) {
+    case "init": {
+      body.className = "b";
+      // Which MCP servers came up. A relay that is needs-auth or failed produces
+      // a run that looks healthy and does nothing, so it is called out here
+      // rather than left in the middle of a status string.
+      const bad = /needs-auth|failed|error/i.test(s.text || "");
+      body.innerHTML = "<span class='accent'>session</span> <span class='dimtext'>" +
+        esc(s.session_id ? s.session_id.slice(0, 8) : "") + " · " + esc(s.model || "") + "</span>" +
+        (s.text ? " <span class='" + (bad ? "errtext" : "fainttext") + "'>mcp: " + esc(s.text) + "</span>" : "");
+      return row;
+    }
+    case "status":
+      body.className = "b fainttext";
+      body.textContent = "· " + (s.text || "");
+      return row;
+    case "assistant": {
+      body.className = "b";
+      const p = el("pre", "block"); p.textContent = s.text || ""; body.append(p);
+      return row;
+    }
+    case "thinking": {
+      const det = el("details", "think");
+      det.append(el("summary", "", (s.text || "").slice(0, 90)));
+      const p = el("pre", "block"); p.textContent = s.text || ""; det.append(p);
+      body.append(det);
+      return row;
+    }
+    case "tool_use":
+      body.className = "b mono";
+      body.innerHTML = "<span class='runtext'>→ " + esc(shortTool(s.tool)) + "</span>" +
+        (s.target ? " <span class='dimtext'>" + esc(s.target) + "</span>" : "");
+      return row;
+    case "tool_result":
+      body.className = "b mono " + (s.is_error ? "errtext" : "fainttext");
+      body.textContent = (s.is_error ? "✗ " : "← ") + oneLine(s.text || "", 220);
+      return row;
+    case "result": {
+      body.className = "b";
+      body.innerHTML = "<span class='oktext'>result</span> <span class='dimtext'>" +
+        money(s.cost_usd) + (s.num_turns ? " · " + s.num_turns + " turns" : "") + "</span>";
+      if (s.text) { const p = el("pre", "block"); p.textContent = s.text; body.append(p); }
+      return row;
+    }
+    default:
+      body.className = "b mono fainttext";
+      body.textContent = s.text || "";
+      return row;
+  }
+}
+
+const oneLine = (s, n) => {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n) + "…" : t;
+};
+
+// ── configuration view ───────────────────────────────────────────────────────
+// Shown as the EFFECTIVE config: every default filled in. "Which defaults am I
+// actually getting?" is the most common question about this file, and reading
+// the file cannot answer it.
+function renderConfig() {
+  feed.textContent = "";
+  if (!snap) return;
+  const wrap = el("div", "cfgwrap");
+  const note = el("div", "meta");
+  note.style.marginBottom = "10px";
+  note.textContent = snap.config_path + "  —  effective values, every default resolved. " +
+    "Credentials are redacted by the server and never sent to this page.";
+  wrap.append(note);
+
+  const cols = [
+    ["name", (c) => c.name], ["runtime", (c) => c.runtime],
+    ["model", (c) => c.model || "(cli default)"],
+    ["repo_dir", (c) => c.repo_dir || "(worker state dir)"],
+    ["poll", (c) => c.poll_frequency_seconds + "s"],
+    ["runs/hour", (c) => c.max_runs_per_hour === 0 ? "∞" : c.max_runs_per_hour],
+    ["budget/run", (c) => c.max_budget_usd === 0 ? "none" : "$" + c.max_budget_usd],
+    ["timeout", (c) => c.run_timeout_seconds + "s"],
+    ["runtime_args", (c) => c.runtime_args || "—"],
+    ["mcp_endpoint", (c) => c.mcp_endpoint],
+  ];
+  const t = el("table", "cfg");
+  const hr = el("tr");
+  for (const [h] of cols) hr.append(el("th", "", h));
+  t.append(hr);
+  for (const w of snap.workers) {
+    const tr = el("tr");
+    for (const [, f] of cols) tr.append(el("td", "", String(f(w.config))));
+    t.append(tr);
+  }
+  wrap.append(t);
+  feed.append(wrap);
+}
+
+// ── theme ────────────────────────────────────────────────────────────────────
+// The head script has already applied the stored choice; this only labels the
+// button and handles the click. The label names where the click goes, not where
+// you are, so it reads as the action it is.
+const THEME_KEY = "relay-cli-theme";
+const themeBtn = $("theme");
+
+function applyTheme(mode) {
+  document.documentElement.setAttribute("data-theme", mode);
+  themeBtn.textContent = mode === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+}
+applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light");
+themeBtn.onclick = () => {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+};
+
+// ── wiring ───────────────────────────────────────────────────────────────────
+$("allcard").onclick = () => {
+  if (snap) for (const w of snap.workers) selectedWorkers.add(w.config.name);
+  showConfig = false;
+  renderCards(); renderFeed();
+};
+$("cfgcard").onclick = () => { showConfig = true; renderCards(); renderFeed(); };
+$("follow").onclick = (ev) => {
+  follow = !follow;
+  ev.target.classList.toggle("on", follow);
+  ev.target.textContent = follow ? "following" : "paused";
+  if (follow) feed.scrollTop = feed.scrollHeight;
+};
+for (const chip of document.querySelectorAll(".chip[data-f]")) {
+  chip.onclick = () => {
+    const k = chip.dataset.f;
+    filters[k] = !filters[k];
+    chip.classList.toggle("on", filters[k]);
+    renderFeed();
+  };
+}
+// Scrolling away from the bottom pauses following, which is what you want the
+// moment you scroll up to read something in a live feed.
+feed.addEventListener("scroll", () => {
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+  if (!atBottom && follow) {
+    follow = false;
+    $("follow").classList.remove("on");
+    $("follow").textContent = "paused";
+  }
+});
+
+function setConn(ok, label) {
+  $("dot").className = "dot" + (ok ? "" : " off");
+  $("connlabel").textContent = label;
+}
+
+async function loadSnapshot(withEvents) {
+  const res = await fetch("/api/snapshot" + (withEvents ? "" : "?events=0"));
+  snap = await res.json();
+  if (!seeded && snap.workers.length) {
+    for (const w of snap.workers) selectedWorkers.add(w.config.name);
+    seeded = true;
+  }
+  $("cfgpath").textContent = snap.config_path;
+  if (withEvents && snap.events) events = snap.events;
+  renderCards();
+  if (withEvents) renderFeed();
+}
+
+function connect() {
+  const src = new EventSource("/api/stream");
+  src.onopen = () => setConn(true, "live");
+  src.onerror = () => setConn(false, "reconnecting");
+  src.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    events.push(e);
+    if (events.length > MAX_EVENTS) events = events.slice(-MAX_EVENTS);
+    // A full re-render per event is fine at this volume and keeps the collapsing
+    // of consecutive empty polls correct without incremental bookkeeping.
+    if (!showConfig) renderFeed();
+  };
+}
+
+(async function start() {
+  await loadSnapshot(true);
+  connect();
+  setInterval(() => loadSnapshot(false).catch(() => setConn(false, "offline")), 2000);
+  setInterval(() => {
+    renderCards();
+    if (snap) {
+      const up = Math.round((Date.now() - new Date(snap.started_at)) / 1000);
+      const h = Math.floor(up / 3600), m = Math.floor(up % 3600 / 60), s = up % 60;
+      $("uptime").textContent = "up " + (h ? h + "h " : "") + (h || m ? m + "m " : "") + s + "s";
+    }
+  }, 1000);
+})();
+</script>
+</body>
+</html>

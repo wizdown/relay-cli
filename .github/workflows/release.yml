@@ -1,0 +1,102 @@
+name: Release
+
+# Tags only. This is the one workflow that runs without being asked for, because
+# a release is already a deliberate act — pushing `v0.2.0` IS the request. It
+# does not run on push or pull request; CI (ci.yml) is manual-dispatch only.
+#
+# To cut a release, see docs/development.md — the short version is: bump the
+# version constant, merge, then push a matching tag.
+on:
+  push:
+    tags:
+      - 'v*'
+  # So a failed publish can be retried without moving the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish (e.g. v0.2.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+
+      # The version constant in cmd/relay-cli/main.go is the single source of truth, and the
+      # binary prints it. A tag that disagrees would publish artifacts whose
+      # names and --version output contradict the release they are attached to,
+      # so it fails here rather than shipping.
+      - name: tag must match the version constant
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          constant="v$(make version)"
+          echo "tag=$tag  constant=$constant"
+          if [ "$tag" != "$constant" ]; then
+            echo
+            echo "error: tag $tag does not match the version constant ($constant)."
+            echo "Bump the version constant and merge that before tagging, or"
+            echo "delete the tag and re-tag once they agree."
+            exit 1
+          fi
+
+      # A release should not be the first time the tests ran on a clean machine.
+      - name: test
+        run: |
+          gofmt -l . | (! grep .) || { echo "run gofmt"; exit 1; }
+          go vet ./...
+          go test -race ./...
+
+      # macOS / Apple Silicon only for now. Cross-compiling darwin/arm64 from a
+      # linux runner is fine — CGO is off — but the binary is unsigned and
+      # unnotarised, so Gatekeeper will quarantine it on first run. The release
+      # notes say how to clear that.
+      - name: build
+        run: make dist
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          notes=$(cat <<'NOTES'
+          **macOS, Apple Silicon** (M1/M2/M3/M4). Other platforms are not
+          published yet — they build from source with `make`.
+
+          `relay-cli` is one static binary with no dependencies:
+
+          ```bash
+          shasum -a 256 -c SHA256SUMS --ignore-missing   # verify before running
+          chmod +x relay-cli-*-macos-arm64
+          xattr -c relay-cli-*-macos-arm64               # unsigned build
+          ./relay-cli-*-macos-arm64                      # prints the manual
+          ```
+
+          Then:
+
+          ```bash
+          ./relay-cli-*-macos-arm64 init     # writes an annotated .worker-config
+          ./relay-cli-*-macos-arm64 check    # validates it; launches nothing
+          ./relay-cli-*-macos-arm64 run      # starts the fleet + dashboard
+          ```
+
+          No coding CLI is bundled — install [Claude Code](https://claude.com/claude-code)
+          separately. Full docs: the [readme](https://github.com/${{ github.repository }}#readme).
+          NOTES
+          )
+          # --verify-tag: never invent a tag that isn't already on the commit.
+          gh release create "$tag" dist/* \
+            --title "relay-cli $tag" \
+            --notes "$notes" \
+            --verify-tag \
+            --prerelease

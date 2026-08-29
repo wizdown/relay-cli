@@ -1,0 +1,134 @@
+{
+  // ─────────────────────────────────────────────────────────────────────────
+  //  .worker-config — the list of workers `relay-cli run` launches.
+  //
+  //  One worker = one relay agent identity × one repo checkout × one CLI.
+  //  There is no mapping from tasks to repos or to CLIs: you delegate a task to
+  //  an AGENT in relay, and that agent's worker already decides where it runs
+  //  and what runs it. Want it done in another checkout? Delegate it to the
+  //  agent whose worker sits there.
+  //
+  //  WHAT IS *NOT* HERE. An agent's identity — what it is for, its house rules,
+  //  what it may decide alone — lives in relay as that agent's instructions_md,
+  //  along with its capabilities and claim limits. Set those in the relay agent
+  //  console (or with update_agent). They reach a running agent; a file here
+  //  would not.
+  //
+  //  Starting from scratch instead? `relay-cli init` creates
+  //  relay-cli-workers/ with a config, a workspace for the worker to run in,
+  //  and a .gitignore over both.
+  //
+  //  // comments are stripped before this file is parsed. Copy to
+  //  .worker-config and edit, then check it with `relay-cli check` — that
+  //  validates every field and tests every credential without launching
+  //  anything. NEVER COMMIT IT: every mcp_endpoint below is a live credential.
+  //  (.worker-config is gitignored; this example is not.)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  "relay_workers": [
+
+    // ── A. The smallest worker that works ────────────────────────────────────
+    // Two fields. Everything else defaults, and the defaults are already
+    // bounded: 12 runs/hour, $5 per run, 15-minute kill, poll every 30s.
+    {
+      "name": "notes-claude",
+      "mcp_endpoint": "http://localhost:8080/relay/mcp/c/wzh_REPLACE_ME"
+    },
+
+    // ── B. A claude worker on a repo, every field spelled out ────────────────
+    {
+      // REQUIRED. Unique. Becomes live-workers/<name>/, so keep it
+      // filesystem-safe (no "/", no spaces). It is how you pause, tail and find
+      // archived logs for this one worker — <repo>-<runtime> reads well.
+      "name": "wizhub-claude",
+
+      // REQUIRED. Unique. The connector_url from issue_agent_credential,
+      // secret included. Shown exactly once when the credential is issued.
+      "mcp_endpoint": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
+
+      // Optional, default "claude". Which CLI drives this worker. "claude" is
+      // the only SUPPORTED runtime today; anything else resolves to
+      // runtimes/<runtime>.sh beside this file. See docs/runtimes.md.
+      "runtime": "claude",
+
+      // Optional, default: the worker's own state dir. The checkout the CLI
+      // runs inside, so the repo's AGENTS.md / CLAUDE.md, skills and tooling
+      // load exactly as they would for you. "~" is expanded. Must exist at
+      // startup. Omit only for workers whose tasks are self-contained
+      // instructions rather than repo work.
+      "repo_dir": "~/code/wizhub",
+
+      // Optional, default: the CLI's own default model. Passed through
+      // verbatim (--model), so use that runtime's spelling: claude takes
+      // opus | sonnet | haiku, or a full id like claude-opus-5 to pin one.
+      // Omitting this is a fine choice — it tracks the CLI's recommendation.
+      "model": "opus",
+
+      // Optional, default 30. Seconds between POLLS. A poll is one short HTTP
+      // request asking relay "any work?" — no CLI, no model, zero tokens — so there is little
+      // reason to go below ~15s, and slowing it down is not how you save money.
+      // MINIMUM 5: below that the config is rejected, because a poll that is
+      // free for you is still a request relay has to answer.
+      // Must be a JSON number: 30, not "30".
+      "poll_frequency_seconds": 30,
+
+      // Optional, default 12. Maximum CLI LAUNCHES per rolling hour — not
+      // polls. This is the only ceiling on how many sessions may start, so it
+      // is the one that actually caps spend. Once reached the worker keeps
+      // ticking but will not launch, and says so each tick. Set 0 for no
+      // ceiling (deliberate, and unbounded).
+      "max_runs_per_hour": 6,
+
+      // Optional, default 5. Hard dollar cap INSIDE ONE run. Not a cap across
+      // runs — max_runs_per_hour is the only ceiling on how many there are, so
+      // the two bound different things and you want both. Set 0 to remove the
+      // cap. A run killed by this is explained in the log and two
+      // in a row pause the worker, because retrying spends it again for nothing.
+      "max_budget_usd": 5,
+
+      // Optional, default 900. Wall-clock kill for ONE session, enforced here
+      // rather than by the CLI. A hung session holds both this worker's lock
+      // and the task's relay lease until it is killed.
+      "run_timeout_seconds": 900
+    },
+
+    // ── C. A second worker on the same repo ────────────────────────────────
+    // Two workers on one checkout is supported and useful — but keep their
+    // concurrent tasks on separate branches, or give each its own clone. What
+    // each is FOR is its relay description and instructions_md, not anything
+    // here.
+    //
+    // This one spells out the fields A left defaulted, so every optional field
+    // appears somewhere in this file.
+    {
+      "name": "wizhub-reviewer",
+      "mcp_endpoint": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME_2",
+      "repo_dir": "~/code/wizhub",
+
+      // Optional, default "claude" — the only supported runtime today. Codex
+      // support is coming soon; until it lands, any other value is refused at
+      // startup rather than failing inside a run. See docs/runtimes.md.
+      "runtime": "claude",
+
+      // Passed through verbatim in the CLI's own spelling, so a wrong value
+      // fails inside the run rather than at startup. Omit it to take the CLI's
+      // default, which tracks its own recommendation.
+      "model": "sonnet",
+
+      "poll_frequency_seconds": 30,
+
+      // A reviewer claims less often and finishes faster than an author, so
+      // both of these are tighter than the defaults. Bounds are per worker
+      // precisely so a fleet does not have to share one budget.
+      "max_runs_per_hour": 6,
+      "max_budget_usd": 3,
+      "run_timeout_seconds": 600,
+
+      // Optional, no default. Raw extra flags, appended to the CLI invocation.
+      // An escape hatch — prefer a field above. Word-split, so an argument
+      // containing a space cannot be expressed. Passing --permission-mode here
+      // means the adapter emits none of its own.
+      "runtime_args": "--permission-mode auto"
+    }
+  ]
+}

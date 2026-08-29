@@ -1,0 +1,45 @@
+# Local build outputs
+/relay-cli
+bin/
+dist/
+build/
+
+# Runtime state, ANYWHERE in the tree: the per-worker directories
+# (generated MCP config carrying the relay connector secret, lock, log, run
+# history, pidfile) and the archived logs kept on shutdown. Both are created
+# beside whatever directory holds the .worker-config in use, and a second
+# checkout or a scratch copy picks another — so these are matched by name at
+# any depth rather than listed per root.
+live-workers/
+logs/
+
+# The worker list, ANYWHERE in the tree. Every mcp_endpoint in it is a live
+# relay credential, shown exactly once when the agent was issued — so this is
+# matched by name with no path, and deliberately not scoped to one directory:
+# a copy made anywhere else is exactly as dangerous, and the moment to catch
+# that is before the commit, not after the revocation.
+#
+# .worker-config.example carries no secrets and IS committed; the pattern below
+# does not match it.
+.worker-config
+
+# Go caches and test artifacts
+*.test
+coverage.out
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Logs
+*.log
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
