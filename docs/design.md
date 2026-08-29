@@ -35,7 +35,7 @@ you add later — inherits the gate for free.
 
 ## How a cycle runs
 
-Each worker ticks every `poll_frequency_seconds`. A tick does this, in order:
+Each worker ticks every `poll_seconds`. A tick does this, in order:
 
 1. **`PAUSED` file** — present? do nothing this tick.
 2. **Lock** — take the worker's `mkdir` mutex. One cycle per worker at a time; a
@@ -80,9 +80,8 @@ It is runtime-neutral and the same text for every CLI. `claude` gets it via
 replacing it.
 
 The binary embeds a copy so a downloaded `relay-cli` works on a machine holding
-nothing but itself, and prefers a `worker-rules.md` sitting beside your
-`.worker-config` when there is one, so editing the rules takes effect without
-rebuilding.
+nothing but itself, and prefers a `worker-rules.md` sitting in `~/.relay/` when
+there is one, so editing the rules takes effect without rebuilding.
 
 **The relay workflow is deliberately not in it.** Relay serves that as its MCP
 server's `instructions` at connect, and each agent's own `instructions_md`
@@ -102,21 +101,22 @@ determines which repo it runs in and which CLI does the work. There's no mapping
 table to keep in sync, and a per-repo credential's queue can only ever contain
 that repo's tasks.
 
-Omit `repo_dir` and the worker runs in its own state directory, which suits tasks
-that are self-contained instructions rather than repo work.
+`repo_dir` is required: it decides which repo's `AGENTS.md` / `CLAUDE.md`, skills
+and tooling the agent inherits, which is what the field is *for*. There is no
+default because there is no safe one — an agent pointed somewhere arbitrary is an
+agent working without any of it.
 
 ## Directory layout
 
 ```text
 relay-cli/                       # the repository
   readme.md
-  .worker-config.example         # copy to .worker-config and fill in
   worker-rules.md                # the runtime contract (relay owns the workflow)
   docs/                          # this documentation
   Makefile
   cmd/relay-cli/                 # the binary: runs the fleet, serves the dashboard
     main.go                      # commands, flags, supervisor, startup checks, archiving
-    config.go                    # .worker-config parse + validation
+    config.go                    # config parse + validation, problems accumulated
     probe.go                     # MCP JSON-RPC over net/http — the token-free gate
     worker.go                    # the poll loop: ceilings, breakers, timeouts
     runtime.go                   # adapter interface + the gated bash-adapter bridge
@@ -127,15 +127,15 @@ relay-cli/                       # the repository
     assets/worker-rules.md       # embedded copy; the on-disk one wins when present
 ```
 
-And beside whatever `.worker-config` is in use — the *poller root*, which is not
-this repository:
+And in `~/.relay/`, which is not this repository and is the only place relay-cli
+keeps anything:
 
 ```text
-<poller root>/
-  .worker-config
+~/.relay/
+  config
   worker-rules.md                # optional: overrides the embedded copy
-  logs/                          # archived on shutdown (gitignored)
-  live-workers/                  # created at start, removed on shutdown (gitignored)
+  logs/                          # archived on shutdown
+  state/                         # created at start, removed on shutdown
     <name>/
       mcp.json                   # generated, holds the connector secret (0600)
       lock/                      # mkdir mutex, present only mid-cycle

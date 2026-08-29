@@ -1,11 +1,14 @@
-// `relay-cli init` — write a starting .worker-config into the current
-// directory.
+// `relay-cli init` — create ~/.relay/ and write a starting config into it.
 //
-// The generated file is the documentation. Someone who downloaded one binary
-// from a release page has no checkout, no readme and no example to copy, so the
-// annotated config plus `relay-cli help` has to be everything they need. That
-// is what the comment support in the parser is for: .worker-config is JSON, JSON
-// has no comments, and stripLineComments exists precisely so this file can
+// The generated file is deliberately SHORT. It used to be the whole field
+// reference, on the theory that someone who downloaded one binary has no
+// checkout and no docs to read — but a template that documents every field is a
+// second copy of the manual that drifts from the first. What a new user needs
+// here is the two blanks to fill in and where to read the rest; that is what
+// this writes.
+//
+// Comment support in the parser is what lets it annotate at all: the config is
+// JSON, JSON has no comments, and stripLineComments exists so the file can
 // explain itself where it is being edited.
 package main
 
@@ -15,263 +18,192 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
-// workspacePlaceholder is replaced with the absolute path of the workspace
-// directory when the template is written. The generated config states where the
-// worker runs rather than relying on a default, because "where did it write
-// that file?" should be answerable by reading the config.
-const workspacePlaceholder = "__WORKSPACE_DIR__"
-
-// initConfigTemplate is one claude worker with every field spelled out.
+// initConfigTemplate is one claude worker with the four required fields, the
+// one required runtime setting, and nothing else.
 //
-// Every field appears here on purpose, even the ones most people never set: for
-// a standalone user this is the field reference, and a field they cannot see is
-// a field they cannot use. A drift test asserts it stays complete.
-//
-// The endpoint is an obvious placeholder. It has to be replaced before this
-// config does anything, and `relay-cli check` says so in plain words rather
-// than failing somewhere further in.
+// Both placeholders are obviously placeholders and both are rejected BY NAME by
+// `relay-cli check`, so the two decisions this file cannot make — which agent,
+// which repo — fail with the reason rather than with a parse error further in.
 const initConfigTemplate = `{
   // ───────────────────────────────────────────────────────────────────────────
-  //  .worker-config — the workers ` + "`relay-cli run`" + ` will launch.
+  //  ~/.relay/config — the workers ` + "`relay-cli run`" + ` will launch.
   //
   //  One worker = one relay agent identity × one repo checkout × one CLI.
-  //  You do not route tasks to repos or to CLIs: you delegate a task to an
-  //  AGENT in relay, and that agent's worker already decides where it runs and
-  //  what runs it.
+  //  What an agent is FOR — its instructions, what it may decide alone — lives
+  //  in relay as that agent's instructions_md, not here: that reaches a session
+  //  already running, which a local file never could.
   //
   //  // comments are stripped before this file is parsed, so annotate freely.
+  //  Full field reference: https://github.com/wizdown/relay-cli/blob/main/docs/configuration.md
   //
-  //  NEVER COMMIT THIS FILE. The mcp_endpoint below is a live credential.
+  //  NEVER COMMIT THIS FILE. The relay_mcp below is a live credential.
   // ───────────────────────────────────────────────────────────────────────────
 
-  "relay_workers": [
+  // How often every worker asks relay "any work?". A poll runs no model and
+  // costs nothing. Optional, default 30, minimum 5.
+  "poll_seconds": 30,
+
+  "workers": [
     {
-      // REQUIRED. Unique. Becomes live-workers/<name>/, so keep it
-      // filesystem-safe: no "/", no spaces. It is how you pause this one
-      // worker and find its logs, so name it after the identity —
-      // <repo>-<runtime> reads well.
+      // Unique, and filesystem-safe: it becomes ~/.relay/state/<name>/, which
+      // is how you pause this one worker and find its logs. <repo>-<runtime>
+      // reads well.
       "name": "my-repo-claude",
 
-      // REQUIRED. Unique. The connector_url relay gave you, secret included.
-      //
+      // REPLACE THIS. The connector_url relay gave you, secret included.
       // Get one from relay: onboard_agent to create the agent, then
-      // issue_agent_credential to get this URL. It is shown EXACTLY ONCE.
-      // Replace this whole line, including the secret at the end.
-      "mcp_endpoint": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
+      // issue_agent_credential. It is shown EXACTLY ONCE.
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
 
-      // Optional, default "claude". Which CLI drives this worker. "claude" is
-      // the only supported runtime today; anything else resolves to
-      // runtimes/<runtime>.sh beside this file.
+      // REPLACE THIS. The checkout this agent works in — its AGENTS.md /
+      // CLAUDE.md, skills and tooling are what the agent gets, so this decides
+      // what the worker can actually do. "~" is expanded and it must exist.
+      //
+      // A headless run is fully autonomous and cannot answer an approval
+      // prompt, so point this at a checkout you are willing to have rewritten,
+      // not at your only copy of anything.
+      "repo_dir": "` + repoDirPlaceholder + `",
+
+      // Which CLI drives this worker. "claude" is the only one supported today.
       "runtime": "claude",
 
-      // The directory this worker's CLI runs in, so that repo's AGENTS.md /
-      // CLAUDE.md, skills and tooling load exactly as they would for you.
-      // "~" is expanded, and the directory must EXIST at startup.
-      //
-      // "relay-cli init" created the one below and pointed this at it, so a
-      // new worker has somewhere to work before you have decided anything.
-      // Change it to a checkout of yours whenever you want real work done — but
-      // a headless run is fully autonomous in here and cannot answer an approval
-      // prompt, so point it at a checkout you are willing to have rewritten,
-      // not at your only copy of anything.
-      //
-      // Give a second worker its OWN directory. Two agents working in one
-      // directory will overwrite each other.
-      "repo_dir": "__WORKSPACE_DIR__",
-
-      // Optional, default: the CLI's own default model. Passed through
-      // verbatim. claude takes opus | sonnet | haiku, or a full id such as
-      // claude-opus-5 to pin an exact version.
-      //
-      // Omitting this is a fine choice — it tracks the CLI's own
-      // recommendation. Otherwise: the largest model for open-ended work or a
-      // wide blast radius, the smallest for mechanical, well-specified work.
-      "model": "sonnet",
-
-      // Optional, default 30. Seconds between POLLS. A poll is one short HTTP
-      // request asking relay "any work?" — no CLI, no model, ZERO TOKENS — so
-      // an idle worker is free however often it ticks. There is little reason
-      // to go below ~15s, and slowing this down is NOT how you save money.
-      // MINIMUM 5: below that the config is rejected. A poll is free for you,
-      // but it is still a request relay has to answer.
-      // Must be a JSON number: 30, not "30".
-      "poll_frequency_seconds": 30,
-
-      // Optional, default 12. Maximum CLI LAUNCHES per rolling hour — not
-      // polls. This is the only ceiling on how many sessions may start, so it
-      // is the one that actually caps what you spend. Start low. Set 0 for no
-      // ceiling, which is deliberate and unbounded.
+      // Optional. Maximum CLI LAUNCHES per rolling hour — not polls. This is
+      // the ceiling that actually caps what you spend. Default 12, 0 for none.
       "max_runs_per_hour": 6,
 
-      // Optional, default 5. Hard dollar cap INSIDE ONE run — not across runs.
-      // claude only. Set 0 to remove it. Two runs killed by this cap in a row
-      // pause the worker, because retrying unchanged just spends it again.
-      "max_budget_usd": 5,
+      // Optional. Wall-clock kill for one session, enforced by relay-cli.
+      // Default 900.
+      "max_seconds_per_run": 900,
 
-      // Optional, default 900. Wall-clock kill for ONE session, enforced by
-      // relay-cli rather than by the CLI. A hung session holds both this
-      // worker's lock and the task's relay lease until it is killed.
-      "run_timeout_seconds": 900,
+      // Settings the RUNTIME understands, in its own vocabulary. The keys here
+      // depend on "runtime" above; anything it does not accept is refused when
+      // the config loads.
+      "runtime_config": {
+        // REQUIRED for claude. opus | sonnet | haiku, or a full id such as
+        // claude-opus-5 to pin an exact version. Required rather than
+        // defaulted because the CLI's own default moves between versions, and
+        // an unattended worker should say what it runs.
+        "model": "sonnet",
 
-      // Optional, no default. Raw extra flags appended to the CLI invocation.
-      // An escape hatch — prefer a field above. Word-split, so an argument
-      // containing a space cannot be expressed.
-      "runtime_args": ""
+        // Optional. Hard dollar cap INSIDE one run. Default 5, 0 removes it.
+        // Two runs killed by this in a row pause the worker, because retrying
+        // unchanged just spends it again.
+        "max_usd_per_run": 5
+      }
     }
 
     // Add more workers by copying the block above. Each needs its OWN name and
     // its OWN credential — never point two workers at one connector URL.
-    //
-    // What an agent is FOR — its instructions, what it may decide alone, and
-    // whether it can split work into subtasks and delegate them — is set on the
-    // agent in relay (update_agent), not here. That is what reaches a session
-    // already running.
   ]
 }
 `
 
-type initOpts struct {
-	configPath string
-}
-
-func initFlags(o *initOpts) *flag.FlagSet {
+func initFlags() *flag.FlagSet {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `
-usage: relay-cli init [--config PATH]
+		fmt.Fprintf(os.Stderr, `
+usage: relay-cli init
 
-  Creates relay-cli-workers/ here: an annotated .worker-config and an
-  agent-workspace/ for the worker to run in.
-  --config takes a directory, or the config file itself.
+  Creates ~/%s/ with a starting config in it. Takes no flags — there is one
+  location and nothing points elsewhere.
   Run "relay-cli help" for the full manual.
-`)
+`, relayDirName)
 	}
-	fs.StringVar(&o.configPath, "config", homeDirName, "where to create it: a directory, or the config file itself")
 	return fs
 }
 
 func initCommand(args []string) {
-	var o initOpts
-	fs := initFlags(&o)
+	fs := initFlags()
 
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay-cli help\" for usage.\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. \"relay-cli init\" takes none — it always writes\n"+
+			"       to ~/%s. Run \"relay-cli help\" for usage.\n", fs.Arg(0), relayDirName)
 		os.Exit(2)
 	}
 
-	if err := initConfig(o.configPath, os.Stdout); err != nil {
+	dir, err := RelayHome()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := initConfig(dir, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-// initTarget decides what --config asked for: a path ending in .worker-config
-// is that file, and anything else is the directory to put one in. Both forms
-// name the same place for the workspace, which goes beside the config.
-func initTarget(path string) (configPath, dir string) {
-	dir = path
-	if filepath.Base(path) == defaultConfigName {
-		dir = filepath.Dir(path)
-	}
-	return filepath.Join(dir, defaultConfigName), dir
-}
-
-// initConfig creates the poller root, the workspace beside it, and the config
-// pointing at that workspace — and refuses to overwrite.
+// initConfig creates the relay directory and writes the starting config — and
+// refuses to overwrite.
 //
-// Refusing matters more here than it usually does: an existing .worker-config
-// holds connector URLs whose secrets relay showed exactly once. Overwriting one
-// does not lose a file you can rewrite, it loses credentials you have to reissue.
-// So there is no --force; writing somewhere else is the escape hatch.
-func initConfig(path string, out io.Writer) error {
-	configPath, dir := initTarget(path)
-	workspace := filepath.Join(dir, workspaceDirName)
+// Refusing matters more here than it usually does: an existing config holds
+// connector URLs whose secrets relay showed exactly once. Overwriting one does
+// not lose a file you can rewrite, it loses credentials you have to reissue. So
+// there is no --force, and no flag that could point this somewhere else by
+// accident either.
+func initConfig(dir string, out io.Writer) error {
+	// ~/.relay existing as a FILE is rare and confusing, and MkdirAll would
+	// report it as a bare "not a directory" from somewhere further in.
+	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
+		return fmt.Errorf("%s exists and is a file, not a directory.\n"+
+			"       relay-cli keeps its config, state and logs in a directory there.\n"+
+			"       Move or remove that file, then run \"relay-cli init\" again.", dir)
+	}
 
+	configPath := filepath.Join(dir, configFileName)
 	if _, err := os.Stat(configPath); err == nil {
-		abs, _ := filepath.Abs(configPath)
 		return fmt.Errorf("%s already exists, and overwriting it would destroy the\n"+
 			"       connector credentials in it — relay shows each secret exactly once.\n"+
-			"       Edit it, or write the template somewhere else:\n"+
-			"         relay-cli init --config %s.new", abs, dir)
+			"       Edit it instead, or move it aside if you want a fresh one.", configPath)
 	}
 
 	// 0700: this directory holds the credentials of every worker in the fleet.
-	// MkdirAll on the workspace creates the poller root above it too.
-	if err := os.MkdirAll(workspace, 0o700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
-	}
-
-	absWorkspace, err := filepath.Abs(workspace)
-	if err != nil {
-		absWorkspace = workspace
 	}
 
 	// 0600: this file is about to hold a credential. Creating it world-readable
 	// and hoping the user tightens it later is the wrong default.
-	body := strings.Replace(initConfigTemplate, workspacePlaceholder, absWorkspace, 1)
-	if err := os.WriteFile(configPath, []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(initConfigTemplate), 0o600); err != nil {
 		return err
-	}
-
-	// This directory is often created inside a repo, and one `git add -A` is
-	// all it takes to publish a live credential. "*" ignores the whole
-	// directory, this file included. An existing one is left alone.
-	gitignore := filepath.Join(dir, ".gitignore")
-	if _, err := os.Stat(gitignore); os.IsNotExist(err) {
-		if err := os.WriteFile(gitignore, []byte("*\n"), 0o600); err != nil {
-			return err
-		}
-	}
-
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		abs = dir
 	}
 
 	fmt.Fprintf(out, `created %s
 
-  .worker-config     ONE claude worker, every field annotated. 0600: it is
-                     about to hold a live credential.
-  %s/   what that worker's CLI runs in — already its repo_dir.
-  .gitignore         so none of this can be committed by accident.
+Two placeholders to replace, and it runs:
 
-// comments are allowed in the config and are stripped before it is parsed, so
-the file explains itself where you are editing it.
+  1. "relay_mcp" — get a credential from relay (https://relay.bytecurio.com/):
+     add the agent (onboard_agent), then issue its credential
+     (issue_agent_credential). Leave its capabilities off; a first worker needs
+     none. The secret is embedded in the URL it returns and is shown EXACTLY
+     ONCE — paste the whole URL over the placeholder.
 
-Next:
+  2. "repo_dir" — the checkout this agent should work in. Its AGENTS.md /
+     CLAUDE.md, skills and tooling are what the agent gets, so this is the
+     choice that decides what the worker can actually do. A headless run is
+     fully autonomous and cannot answer an approval prompt, so point it at a
+     checkout you are willing to have rewritten.
 
-  1. Get a relay credential for this worker.
-     In relay (https://relay.bytecurio.com/): add the agent (onboard_agent),
-     then issue its credential (issue_agent_credential). Leave its capabilities
-     off; a first worker needs none.
-     The secret is embedded in the URL it returns and is shown EXACTLY ONCE.
+Then:
 
-  2. Paste it over the "mcp_endpoint" placeholder.
-     That is the only edit a working worker needs. "repo_dir" already points at
-     the workspace above; change it when you want the worker in a checkout of
-     yours instead — and only one you are willing to have rewritten.
+  relay-cli check    validates the file and tests the credential against relay.
+                     Launches nothing and spends nothing, so this is the cheap
+                     way to find a mistake. It reports every problem at once.
 
-  3. relay-cli check
-     Validates the file and tests the credential against relay. It launches
-     nothing and spends nothing, so this is the cheap way to find a mistake.
+  relay-cli run      starts the workers and opens the dashboard on 127.0.0.1.
 
-  4. relay-cli run
-     Starts the worker and opens the dashboard on 127.0.0.1.
-
-Both find this config on their own from the directory you ran init in.
+Both read %s. state/ and logs/ are created beside it when a fleet runs.
 
 The defaults in the file are already bounded — 6 runs an hour, $5 inside one
 run, a 15-minute kill — so a worker you barely configure is still a safe one.
 
 NEVER COMMIT THIS FILE: the endpoint you are about to paste is a live
 credential.
-`, abs, workspaceDirName)
+`, configPath, displayConfigPath())
 	return nil
 }

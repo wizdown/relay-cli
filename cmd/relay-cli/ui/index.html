@@ -269,7 +269,8 @@ function renderCards() {
     card.append(l1);
 
     const l2 = el("div", "card-line");
-    l2.append(el("span", "", c.runtime + (c.model ? " · " + c.model : "")));
+    const rcModel = (c.runtime_config || {}).model;
+    l2.append(el("span", "", c.runtime + (rcModel ? " · " + rcModel : "")));
     l2.append(el("span", "", w.total_cost_usd ? money(w.total_cost_usd) : ""));
     card.append(l2);
 
@@ -511,16 +512,23 @@ function renderConfig() {
     "Credentials are redacted by the server and never sent to this page.";
   wrap.append(note);
 
+  // runtime_config is per-runtime, so it is rendered as whatever keys the
+  // worker actually resolved rather than as a fixed set of columns — a second
+  // runtime with different settings needs no change here.
+  const rc = (c, k) => (c.runtime_config || {})[k];
+  const rcKeys = [];
+  for (const w of snap.workers)
+    for (const k of Object.keys(w.config.runtime_config || {}))
+      if (!rcKeys.includes(k)) rcKeys.push(k);
+
   const cols = [
     ["name", (c) => c.name], ["runtime", (c) => c.runtime],
-    ["model", (c) => c.model || "(cli default)"],
-    ["repo_dir", (c) => c.repo_dir || "(worker state dir)"],
-    ["poll", (c) => c.poll_frequency_seconds + "s"],
+    ["repo_dir", (c) => c.repo_dir],
+    ["poll", () => snap.poll_seconds + "s"],
     ["runs/hour", (c) => c.max_runs_per_hour === 0 ? "∞" : c.max_runs_per_hour],
-    ["budget/run", (c) => c.max_budget_usd === 0 ? "none" : "$" + c.max_budget_usd],
-    ["timeout", (c) => c.run_timeout_seconds + "s"],
-    ["runtime_args", (c) => c.runtime_args || "—"],
-    ["mcp_endpoint", (c) => c.mcp_endpoint],
+    ["timeout", (c) => c.max_seconds_per_run + "s"],
+    ...rcKeys.map((k) => [k, (c) => rc(c, k) ?? "—"]),
+    ["relay_mcp", (c) => c.relay_mcp],
   ];
   const t = el("table", "cfg");
   const hr = el("tr");

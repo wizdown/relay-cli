@@ -41,6 +41,28 @@ var claudeAdapter = &claudeRuntime{}
 
 func (c *claudeRuntime) Name() string { return "claude" }
 
+// ConfigFields — what a worker may set in "runtime_config" when its runtime is
+// claude.
+//
+// model is REQUIRED, and deliberately so. The CLI has its own default and
+// tracking it would be one less thing to write, but that default is not stable
+// across CLI versions: an unchanged config would quietly change both what a
+// worker costs and how it behaves the next time someone upgraded claude. For an
+// unattended process that spends money on its own, the config has to say what it
+// will actually run.
+func (c *claudeRuntime) ConfigFields() []runtimeField {
+	return []runtimeField{
+		{
+			Key: "model", Kind: fieldString, Required: true,
+			Doc: "which model to run: opus, sonnet or haiku, or a full id like claude-opus-5 to pin one",
+		},
+		{
+			Key: "max_usd_per_run", Kind: fieldNumber, Default: "5",
+			Doc: "hard dollar cap INSIDE one run, enforced by the CLI. 0 removes it",
+		},
+	}
+}
+
 // requiredFlags is what this adapter actually depends on, each with the reason
 // it is not optional. Checked against the installed CLI's own --help, because
 // that tests the real requirement: a version number would only be a proxy for
@@ -102,7 +124,7 @@ func (c *claudeRuntime) probe() {
 
 	missing := missingClaudeFlags(help)
 	if len(missing) > 0 {
-		c.err = fmt.Errorf("the installed claude (%s at %s) does not support what this poller needs.\n"+
+		c.err = fmt.Errorf("the installed claude (%s at %s) does not support what relay-cli needs.\n"+
 			"       Its --help does not offer:\n%s\n"+
 			"       Upgrade Claude Code (https://claude.com/claude-code), then try again.\n"+
 			"       To run anyway, set RELAY_CLI_SKIP_RUNTIME_CHECK=1 — each session will\n"+
@@ -181,31 +203,16 @@ func (c *claudeRuntime) BuildCmd(rc *RunContext) ([]string, error) {
 
 	// `auto` is the only mode a headless run can work in — anything stricter
 	// silently denies whatever was not pre-allowed and the session stalls with no
-	// prompt to answer. So it is not a config field; it is what this harness IS.
-	// The escape hatch is runtime_args, and emitting our flag only when yours is
-	// absent keeps a duplicate --permission-mode out of the argv entirely rather
-	// than leaving which one wins to argument order.
-	extra := splitArgs(rc.ExtraArgs)
-	if !containsArg(extra, "--permission-mode") {
-		argv = append(argv, "--permission-mode", "auto")
+	// prompt to answer. So it is not a config field; it is what this harness IS,
+	// and there is no longer any way to talk it out of it.
+	argv = append(argv, "--permission-mode", "auto")
+	argv = append(argv, "--model", rc.Worker.RCString("model"))
+	// 0 is the operator deliberately removing the cap, and is spelled by omitting
+	// the flag rather than by passing --max-budget-usd 0.
+	if cap := rc.Worker.RCFloat("max_usd_per_run"); cap > 0 {
+		argv = append(argv, "--max-budget-usd", strconv.FormatFloat(cap, 'f', -1, 64))
 	}
-	if rc.Worker.Model != "" {
-		argv = append(argv, "--model", rc.Worker.Model)
-	}
-	if rc.MaxBudget != "" {
-		argv = append(argv, "--max-budget-usd", rc.MaxBudget)
-	}
-	argv = append(argv, extra...)
 	return argv, nil
-}
-
-func containsArg(args []string, flag string) bool {
-	for _, a := range args {
-		if a == flag {
-			return true
-		}
-	}
-	return false
 }
 
 // ── stream parsing ───────────────────────────────────────────────────────────
@@ -470,23 +477,23 @@ func (c *claudeRuntime) ClassifyExit(rc *RunContext, status int, outPath string)
 	}
 	if len(denied) > 0 {
 		explanation = fmt.Sprintf(`the CLI refused these tool calls: %s
-  A relay tool here means this poller's allowlist is behind relay's agent surface
+  A relay tool here means this worker's allowlist is behind relay's agent surface
   (relayAllowedTools in runtime.go). The agent could see the tool and called it;
   its own CLI, not relay, said no.`, strings.Join(denied, ", "))
 	}
 
 	if res.TerminalReason == "budget_exhausted" {
-		cap := rc.MaxBudget
+		cap := rc.Worker.RCString("max_usd_per_run")
 		if cap == "" {
 			cap = "?"
 		}
-		return outcomeBudget, fmt.Sprintf(`RUN KILLED BY ITS SPEND CAP — it stopped mid-task at $%.4f of a $%s max_budget_usd.
+		return outcomeBudget, fmt.Sprintf(`RUN KILLED BY ITS SPEND CAP — it stopped mid-task at $%.4f of a $%s max_usd_per_run.
   Nothing was wrong with the agent or the task: the session was cut off partway.
   It did not finish, and it did not hand the task back, so relay still shows the
   task held until the claim's lease lapses and re-offers it.
   Left alone, the next run starts the same task from its Task Context and walks
-  into the same wall at the same point. Either raise max_budget_usd for this
-  worker in .worker-config, or split the task into smaller ones in relay.`, res.TotalCostUSD, cap)
+  into the same wall at the same point. Either raise max_usd_per_run for this
+  worker in %s, or split the task into smaller ones in relay.`, res.TotalCostUSD, cap, displayConfigPath())
 	}
 
 	return outcome, explanation

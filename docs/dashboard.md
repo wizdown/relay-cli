@@ -10,8 +10,8 @@ the config parser are built in, so it needs neither `jq` nor `curl`.
 ```bash
 relay-cli                 # prints the full manual — commands, flags, config, safeguards
 relay-cli check           # validate the config and test every credential; launches nothing
-relay-cli run             # reads ./.worker-config, opens the dashboard
-relay-cli run --config path/to/.worker-config --port 7717
+relay-cli run             # reads ~/.relay/config, opens the dashboard
+relay-cli run --port 7717 --no-open
 ```
 
 | Command | |
@@ -30,7 +30,6 @@ usable by someone — or something — that has never seen this page.
 
 | Flag (for `run`) | Default | |
 |---|---|---|
-| `--config` | `.worker-config` in the current directory | the worker list; its directory becomes the poller root |
 | `--port` | `7717` | loopback port; falls forward to the next free one rather than refusing to start |
 | `--no-open` | off | don't open a browser (servers, containers, CI) |
 | `--quiet` | off | don't echo worker logs to stdout |
@@ -38,13 +37,15 @@ usable by someone — or something — that has never seen this page.
 
 | Flag (for `check`) | Default | |
 |---|---|---|
-| `--config` | `.worker-config` in the current directory | same as `run` |
 | `--timeout` | `15` | seconds to wait for each credential probe |
 
-`--config` is resolved against the **current directory**, and the config file's
-directory becomes the poller root: `live-workers/` and `logs/` are created next
-to your `.worker-config`, not next to the binary. One downloaded binary can
-therefore serve several checkouts, each with its own fleet.
+`init` takes no flags at all.
+
+**There is no `--config`.** Every command reads `~/.relay/config`, from any
+directory, and `state/` and `logs/` are created beside it. A worker is a relay
+agent identity holding a credential issued to you, and a fleet routinely spans
+several checkouts — so one user-scoped location means "which config is this
+actually running?" is a question nobody has to ask.
 
 `relay-cli help` prints all of this, so the binary explains itself with nothing
 else installed.
@@ -84,7 +85,7 @@ arrives as it happens and the page reads as a narration of the run:
   and does nothing, and that is worth seeing in the first second rather than the
   last.
 - **Configuration** — the *effective* config with every default resolved, which
-  is the one question reading `.worker-config` cannot answer.
+  is the one question reading the config cannot answer.
 
 ## It cannot change anything
 
@@ -96,7 +97,7 @@ happened, and this version is deliberately the second one.
 Pausing works the way it always has:
 
 ```bash
-touch live-workers/<name>/PAUSED
+touch ~/.relay/state/<name>/PAUSED
 ```
 
 The dashboard shows a paused worker as paused, and cannot clear it for you.
@@ -109,7 +110,7 @@ scrubbed on the way out.
 ## Startup and shutdown
 
 ```text
-relay-cli 0.1.0 — 1 worker(s) from /path/to/relay-cli-workers/.worker-config
+relay-cli 0.1.0 — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
   wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
 
@@ -123,11 +124,11 @@ one.
 
 Workers run in the foreground of that one process, so there is nothing to
 `disown` and nothing to find again later. Ctrl-C stops every worker, archives
-each log to `logs/<name>-<timestamp>.log`, and deletes `live-workers/` — which is
+each log to `logs/<name>-<timestamp>.log`, and deletes `state/` — which is
 also what removes the generated MCP configs holding your connector secrets.
 
 Starting always begins fresh: a previous run's logs are archived and
-`live-workers/` is recreated, which is also what clears a `PAUSED` file. That
+`state/` is recreated, which is also what clears a `PAUSED` file. That
 means re-running is how you apply a config change.
 
 ## Building it

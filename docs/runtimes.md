@@ -3,7 +3,7 @@
 A **runtime** is which coding CLI drives a worker. It is a per-worker field:
 
 ```json
-{ "name": "wizhub-claude", "mcp_endpoint": "…", "runtime": "claude" }
+{ "name": "wizhub-claude", "relay_mcp": "…", "runtime": "claude", "runtime_config": { "model": "sonnet" } }
 ```
 
 ## Adapters ship; CLIs do not
@@ -83,11 +83,13 @@ acting when nobody is present to approve, unlike `acceptEdits`, which only cover
 file edits — and every relay tool is additionally named in `--allowedTools`, so
 relay access never rides on the model's judgement about an unfamiliar tool.
 
-Pass `--permission-mode` yourself via `runtime_args` and the adapter emits none
-of its own.
+There is deliberately no way to override that: `runtime_args` was removed
+precisely because raw argv could silently replace the flags a headless run
+depends on.
 
-It supports `max_budget_usd`, and reads its result envelope to report a budget
-kill or a permission denial in plain words rather than as a bare exit code.
+It takes `runtime_config.model` (required) and `runtime_config.max_usd_per_run`,
+and reads its result envelope to report a budget kill or a permission denial in
+plain words rather than as a bare exit code.
 
 ## The extension point, and where it stands
 
@@ -133,13 +135,11 @@ this is the summary:
 
 | Variable | From |
 | --- | --- |
-| `RELAY_CONNECTOR_URL` | the worker's `mcp_endpoint` |
+| `RELAY_CONNECTOR_URL` | the worker's `relay_mcp` |
 | `INSTANCE_NAME` | the worker's `name` |
 | `REPO_DIR` | `repo_dir` — relay-cli has already `cd`'d there |
-| `WORKER_DIR` | `live-workers/<name>/` |
-| `WORKER_MODEL` | `model` |
-| `MAX_BUDGET_USD` | `max_budget_usd` (`0` disables) |
-| `RUNTIME_ARGS` | `runtime_args` |
+| `WORKER_DIR` | `~/.relay/state/<name>/` |
+| `RUNTIME_<KEY>` | one per key the adapter declared in `ConfigFields()`, e.g. `RUNTIME_MODEL` |
 | `WORKER_PROMPT` | the built prompt |
 | `WORKER_RULES` / `WORKER_RULES_FILE` | the harness contract, as text and as a path |
 | `RELAY_ALLOWED_TOOLS` | relay's whole agent tool surface, space-separated |
@@ -155,7 +155,7 @@ is denied by the CLI, silently, after relay has already offered it to the agent.
 The CLIs differ in shape, not just spelling. `claude` takes an MCP config file
 plus a system-prompt flag; codex takes TOML config overrides, has no
 system-prompt flag, and may need an `mcp-remote` stdio bridge depending on the
-build. A flag table in `.worker-config` can't express that; fifteen lines of
+build. A flag table in the config can't express that; fifteen lines of
 shell can.
 
 Runtime-specific behaviour belongs in the adapter. If you find yourself adding an

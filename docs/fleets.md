@@ -29,7 +29,7 @@ on every attempt.
 Relay agents can split work into subtasks, route them to each other, and review
 what those subtasks hand back. So an **orchestrator agent and a set of worker
 agents are just agents holding different capabilities**. There is no separate
-fleet mode, no orchestrator binary, and nothing in `.worker-config` that says
+fleet mode, no orchestrator binary, and nothing in the config that says
 which is which.
 
 Two terms that are easy to run together, because one of them is also this
@@ -50,8 +50,8 @@ The smallest fleet is an **orchestrator + worker agent pair**:
 Delegate the top-level task to the orchestrator agent. It splits the work,
 routes the subtasks to the worker agents, and reviews what they hand back.
 
-Each still gets its own worker entry in `.worker-config`, its own relay
-credential, and its own `live-workers/<name>/` — they are ordinary workers. What
+Each still gets its own worker entry in the config, its own relay
+credential, and its own `~/.relay/state/<name>/` — they are ordinary workers. What
 makes one an orchestrator is entirely on the relay side.
 
 ## A worked fleet: orchestrator + worker agent
@@ -103,24 +103,33 @@ Neither says how to claim work or how to hand it back. Relay sends the workflow,
 and the harness adds its own rules to every session — instructions that repeat
 either one are a second copy to keep in sync.
 
-### In .worker-config
+### In ~/.relay/config
 
-```json
+```jsonc
 {
-  "relay_workers": [
+  "workers": [
     {
-      "name": "orchestrator-claude",
-      "mcp_endpoint": "https://relay.example.com/relay/mcp/c/wzh_…",
-      "repo_dir": "/path/to/relay-cli-workers/orchestrator-workspace"
+      "name":      "orchestrator-claude",
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_…",
+      "repo_dir":  "~/code/app",
+      "runtime":   "claude",
+      "runtime_config": { "model": "opus" }
     },
     {
-      "name": "app-claude",
-      "mcp_endpoint": "https://relay.example.com/relay/mcp/c/wzh_…",
-      "repo_dir": "~/code/app"
+      "name":      "app-claude",
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_…",
+      "repo_dir":  "~/code/app",
+      "runtime":   "claude",
+      "runtime_config": { "model": "sonnet" }
     }
   ]
 }
 ```
+
+An orchestrator splits, routes and reviews rather than writing much itself, so a
+bigger model there and a cheaper one on the workers is the usual shape. Two
+workers on one checkout is supported — keep their concurrent tasks on separate
+branches, or give each its own clone.
 
 Two things to get right. Each worker needs its **own credential** — never point
 two at one connector URL. And each needs its **own `repo_dir`**: the

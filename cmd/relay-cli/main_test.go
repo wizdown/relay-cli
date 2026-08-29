@@ -31,15 +31,23 @@ func TestHelpDocumentsEveryCommand(t *testing.T) {
 // numbers are what someone decides their spend ceiling against, so a silent
 // drift between the manual and the code is worse than no manual.
 func TestHelpQuotesTheRealDefaults(t *testing.T) {
-	for _, want := range []string{
+	want := []string{
 		fmt.Sprintf("default %g", defaultPollSeconds),
 		fmt.Sprintf("default %d", defaultMaxRunsPerHour),
-		fmt.Sprintf("default %g", defaultMaxBudgetUSD),
-		fmt.Sprintf("default %d", defaultRunTimeoutSecs),
-		`default "` + defaultRuntime + `"`,
-	} {
-		if !strings.Contains(helpText, want) {
-			t.Errorf("helpText does not state %q — the manual has drifted from the code", want)
+		fmt.Sprintf("default %d", defaultMaxSecondsPerRun),
+	}
+	// Runtime defaults are declared by the adapter, so the manual is checked
+	// against what the runtime actually says rather than a second copy here.
+	for _, rt := range supportedRuntimes() {
+		for _, f := range rt.ConfigFields() {
+			if f.Default != "" {
+				want = append(want, "default "+f.Default)
+			}
+		}
+	}
+	for _, w := range want {
+		if !strings.Contains(helpText, w) {
+			t.Errorf("helpText does not state %q — the manual has drifted from the code", w)
 		}
 	}
 }
@@ -61,7 +69,7 @@ func TestCheckFlagDefaults(t *testing.T) {
 	if err := fs.Parse(nil); err != nil {
 		t.Fatal(err)
 	}
-	if o.configPath != defaultConfigName || o.timeout != defaultCheckTimeoutSecs {
+	if o.timeout != defaultCheckTimeoutSecs {
 		t.Errorf("bare `check` should take every default, got %+v", o)
 	}
 	if !strings.Contains(helpText, fmt.Sprint(defaultCheckTimeoutSecs)) {
@@ -69,13 +77,19 @@ func TestCheckFlagDefaults(t *testing.T) {
 	}
 }
 
-func TestHelpDocumentsEveryInitFlag(t *testing.T) {
-	var o initOpts
-	initFlags(&o).VisitAll(func(f *flag.Flag) {
+// init deliberately has no flags: there is one location and nothing points
+// elsewhere. If one is ever added, the rule above applies to it too.
+func TestInitTakesNoFlags(t *testing.T) {
+	n := 0
+	initFlags().VisitAll(func(f *flag.Flag) {
+		n++
 		if !strings.Contains(helpText, "--"+f.Name) {
 			t.Errorf("init flag --%s is not mentioned in helpText", f.Name)
 		}
 	})
+	if n > 0 {
+		t.Errorf("init grew %d flag(s); the manual says it takes none", n)
+	}
 }
 
 // The binary has to stand on its own: someone who downloaded it from a release
@@ -100,14 +114,26 @@ func TestHelpCarriesTheWholeGettingStartedPath(t *testing.T) {
 func TestRunFlagDefaultsMatchTheDocumentedOnes(t *testing.T) {
 	var o runOpts
 	runFlags(&o)
-	if o.configPath != defaultConfigName {
-		t.Errorf("--config default = %q, want %q", o.configPath, defaultConfigName)
-	}
 	if o.port != defaultPort {
 		t.Errorf("--port default = %d, want %d", o.port, defaultPort)
 	}
-	if !strings.Contains(helpText, defaultConfigName) || !strings.Contains(helpText, fmt.Sprint(defaultPort)) {
-		t.Error("helpText should name the config default and the port default")
+	if !strings.Contains(helpText, fmt.Sprint(defaultPort)) {
+		t.Error("helpText should name the port default")
+	}
+}
+
+// There is one config location and no flag to move it, so the manual has to
+// say where it is — it is the only way a user finds the file to edit.
+func TestHelpNamesTheOneConfigLocation(t *testing.T) {
+	for _, want := range []string{displayConfigPath(), "~/" + relayDirName + "/"} {
+		if !strings.Contains(helpText, want) {
+			t.Errorf("the manual never mentions %q, so nothing tells a user where "+
+				"their config actually lives", want)
+		}
+	}
+	if strings.Contains(helpText, "--config ") {
+		t.Error("the manual still advertises --config; there is one location and " +
+			"no flag that points elsewhere")
 	}
 }
 
@@ -130,7 +156,7 @@ func TestRunParsesWithNoFlags(t *testing.T) {
 	if err := fs.Parse(nil); err != nil {
 		t.Fatal(err)
 	}
-	if o.configPath != defaultConfigName || o.noOpen || o.quiet || o.noArchive {
+	if o.noOpen || o.quiet || o.noArchive {
 		t.Errorf("bare `run` should take every default, got %+v", o)
 	}
 }

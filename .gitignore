@@ -4,23 +4,20 @@ bin/
 dist/
 build/
 
-# Runtime state, ANYWHERE in the tree: the per-worker directories
-# (generated MCP config carrying the relay connector secret, lock, log, run
-# history, pidfile) and the archived logs kept on shutdown. Both are created
-# beside whatever directory holds the .worker-config in use, and a second
-# checkout or a scratch copy picks another — so these are matched by name at
-# any depth rather than listed per root.
+# Runtime state and archived logs. These now live in ~/.relay/ and so are never
+# inside a checkout — but a scratch copy someone made while debugging is exactly
+# what a name-matched rule is for, and live-workers/ catches state left by a
+# pre-0.3 layout that is still on disk.
+state/
 live-workers/
 logs/
 
-# The worker list, ANYWHERE in the tree. Every mcp_endpoint in it is a live
-# relay credential, shown exactly once when the agent was issued — so this is
-# matched by name with no path, and deliberately not scoped to one directory:
-# a copy made anywhere else is exactly as dangerous, and the moment to catch
-# that is before the commit, not after the revocation.
-#
-# .worker-config.example carries no secrets and IS committed; the pattern below
-# does not match it.
+# A relay-cli config, ANYWHERE in the tree. The real one is ~/.relay/config and
+# is outside every repo — this catches a copy made in a checkout to test with.
+# Every relay_mcp in it is a live credential, shown exactly once when the agent
+# was issued, so the moment to catch it is before the commit, not after the
+# revocation. .worker-config is the pre-0.3 name, kept for the same reason.
+.relay/
 .worker-config
 
 # Go caches and test artifacts

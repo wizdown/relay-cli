@@ -45,7 +45,7 @@ hook reaches you with a `git pull` rather than needing a reinstall.
 
 It runs, cheapest first:
 
-1. **Credentials** — refuses a staged `.worker-config`, or any connector-shaped
+1. **Credentials** — refuses a staged relay-cli config, or any connector-shaped
    secret in added lines. First because it is the only check here guarding a
    mistake you cannot take back: a secret pushed to a public repo is leaked the
    moment it lands, and rewriting history does not un-leak it.
@@ -96,7 +96,7 @@ on `master` rather than bumping again. Read it in
 `cmd/relay-cli/main.go`:
 
 ```go
-version = "0.2.0"
+version = "0.3.0"
 channel = "beta"
 ```
 
@@ -125,8 +125,8 @@ read — fix that before tagging, or the release publishes artifacts named
 
 ```bash
 git checkout master && git pull
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 Pushing the tag is what starts the release — it is the only workflow here that
@@ -146,7 +146,7 @@ Releases are marked **pre-release** while the project is `0.x`.
 without moving the tag:
 
 ```bash
-gh workflow run release.yml -f tag=v0.2.0
+gh workflow run release.yml -f tag=v0.3.0
 ```
 
 Only move or delete a tag that never published. A tag someone may already have
@@ -167,7 +167,7 @@ A PR summary should cover:
 - **Anything deleted, and why it was safe** — name what replaced it. If a file
   was unreachable or superseded, say how you established that.
 - **Behaviour changes for existing users**, especially anything that makes an
-  existing `.worker-config`, adapter or checkout stop working. Say what error
+  existing config, adapter or checkout stop working. Say what error
   they will see and what they should do.
 - **Verification you actually ran.** Not "tests pass" — which tests, on what,
   and anything you checked by hand. Say plainly if something is unverified.

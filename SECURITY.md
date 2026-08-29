@@ -26,13 +26,15 @@ Anything holding one can act as that agent. Concretely, that means:
 
 | File | Contains | Protection |
 | --- | --- | --- |
-| `.worker-config` | every worker's endpoint | gitignored by name, at any depth |
-| `live-workers/<name>/mcp.json` | one endpoint, generated at launch | written `0600`, deleted on shutdown |
-| `logs/`, `live-workers/` | session output | gitignored by name, at any depth |
+| `~/.relay/config` | every worker's endpoint | written `0600`, in a `0700` directory, outside every checkout |
+| `~/.relay/state/<name>/mcp.json` | one endpoint, generated at launch | written `0600`, deleted on shutdown |
+| `~/.relay/logs/`, `~/.relay/state/` | session output | outside every checkout |
 
-`.worker-config` is matched by the `.gitignore` at any path, not just under
-a subdirectory — a copy made anywhere else is exactly as dangerous, and the moment
-to catch it is before the commit rather than after the revocation.
+The config lives in `~/.relay/`, so it is never inside a repository and cannot be
+committed by accident. A copy made in a checkout to test with is exactly as
+dangerous, so `.relay/` and `.worker-config` are both matched by the `.gitignore`
+at any path and refused by the pre-commit hook — the moment to catch that is
+before the commit rather than after the revocation.
 
 **If a credential leaks, revoke it in relay and issue a new one.** Rotation is the
 fix; the whole URL changes.

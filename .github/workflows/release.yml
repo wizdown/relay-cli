@@ -85,7 +85,7 @@ jobs:
           Then:
 
           ```bash
-          ./relay-cli-*-macos-arm64 init     # writes an annotated .worker-config
+          ./relay-cli-*-macos-arm64 init     # writes ~/.relay/config
           ./relay-cli-*-macos-arm64 check    # validates it; launches nothing
           ./relay-cli-*-macos-arm64 run      # starts the fleet + dashboard
           ```

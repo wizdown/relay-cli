@@ -8,13 +8,13 @@ import (
 	"testing"
 )
 
-// The stripper's one real hazard: an mcp_endpoint is a URL, and "http://host"
+// The stripper's one real hazard: relay_mcp is a URL, and "http://host"
 // contains the comment marker. Truncating there would turn a credential into
 // "http:" and fail much later, somewhere far less obvious.
 func TestStripLineCommentsKeepsURLs(t *testing.T) {
 	in := `{
   // a comment
-  "mcp_endpoint": "http://localhost:8080/relay/mcp/c/wzh_abc", // trailing
+  "relay_mcp": "http://localhost:8080/relay/mcp/c/wzh_abc", // trailing
   "escaped": "a \" // not a comment",
   "runtime": "claude"
 }`
@@ -35,11 +35,41 @@ func TestStripLineCommentsKeepsURLs(t *testing.T) {
 func write(t *testing.T, body string) string {
 	t.Helper()
 	dir := t.TempDir()
-	p := filepath.Join(dir, ".worker-config")
+	p := filepath.Join(dir, configFileName)
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func loadErr(p string) error { _, err := LoadConfig(p); return err }
+
+// repoHere gives a real directory for repo_dir, which is required and must
+// exist. Tests that are about some OTHER field should not have to think about
+// it.
+func repoHere(t *testing.T) string {
+	t.Helper()
+	return t.TempDir()
+}
+
+// worker builds one valid worker entry, with the given lines merged in. Every
+// test below is about one deviation from valid, and spelling out four required
+// fields each time would bury which deviation is being tested.
+func worker(t *testing.T, extra string) string {
+	t.Helper()
+	return fmt.Sprintf(`{
+	  "name": "w",
+	  "relay_mcp": "https://x/c/wzh_aaaaaaaa",
+	  "repo_dir": %q,
+	  "runtime": "claude",
+	  "runtime_config": {"model": "sonnet"}
+	  %s
+	}`, repoHere(t), extra)
+}
+
+func configOf(t *testing.T, workers ...string) string {
+	t.Helper()
+	return `{"workers":[` + strings.Join(workers, ",") + `]}`
 }
 
 // noRuntimeCheck stubs out the "is this CLI installed?" half of validation for
@@ -50,135 +80,203 @@ func write(t *testing.T, body string) string {
 func noRuntimeCheck(t *testing.T) {
 	t.Helper()
 	prev := checkRuntime
-	checkRuntime = func(name, runtime, pollerRoot string) error { return nil }
+	checkRuntime = func(name, runtime, relayDir string) error { return nil }
 	t.Cleanup(func() { checkRuntime = prev })
 }
 
-func TestDefaultsMatchTheBashPoller(t *testing.T) {
+func TestDefaults(t *testing.T) {
 	noRuntimeCheck(t)
-	p := write(t, `{"relay_workers":[{"name":"w1","mcp_endpoint":"https://r.example/relay/mcp/c/wzh_secret_value"}]}`)
-	cfg, err := LoadConfig(p)
+	cfg, err := LoadConfig(write(t, configOf(t, worker(t, ""))))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.PollSeconds != 30 {
+		t.Errorf("poll_seconds = %v, want 30", cfg.PollSeconds)
+	}
 	w := cfg.Workers[0]
-	if w.Runtime != "claude" || w.PollSeconds != 30 || w.MaxRunsPerHour != 12 ||
-		w.MaxBudgetUSD != 5 || w.RunTimeoutSecs != 900 {
-		t.Errorf("defaults drifted: %+v", w)
+	if w.MaxRunsPerHour != 12 || w.MaxSecondsPerRun != 900 {
+		t.Errorf("relay-cli defaults drifted: %+v", w)
 	}
-	if w.RepoDir != "" {
-		t.Errorf("repo_dir should default to empty (worker state dir), got %q", w.RepoDir)
-	}
-}
-
-// "30" as a string is the classic version of this mistake, and reached the bash
-// loop as a broken sleep.
-func TestRejectsStringPollFrequency(t *testing.T) {
-	p := write(t, `{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","poll_frequency_seconds":"30"}]}`)
-	_, err := LoadConfig(p)
-	if err == nil || !strings.Contains(err.Error(), "positive JSON number") {
-		t.Fatalf("want a poll_frequency_seconds error, got %v", err)
+	// The optional runtime setting resolves to the runtime's own default, so
+	// nothing downstream has to know a default exists.
+	if got := w.RCFloat("max_usd_per_run"); got != 5 {
+		t.Errorf("max_usd_per_run = %v, want 5", got)
 	}
 }
 
-func TestRejectsNonPositivePollFrequency(t *testing.T) {
-	p := write(t, `{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","poll_frequency_seconds":0}]}`)
-	if _, err := LoadConfig(p); err == nil {
-		t.Fatal("want an error for poll_frequency_seconds: 0")
+// "30" as a string is the classic version of this mistake, and would reach the
+// loop as a broken interval.
+func TestRejectsStringPollSeconds(t *testing.T) {
+	p := write(t, `{"poll_seconds":"30","workers":[`+worker(t, "")+`]}`)
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "must be a JSON number") {
+		t.Fatalf("want a poll_seconds type error, got %v", err)
 	}
 }
 
 // The floor exists to protect relay, not the worker, so it is enforced rather
 // than advised: a config below it does not start at all. A misplaced decimal
 // point is the realistic way someone arranges a flood by accident.
-func TestRejectsPollFrequencyBelowTheMinimum(t *testing.T) {
+func TestRejectsPollSecondsBelowTheMinimum(t *testing.T) {
 	noRuntimeCheck(t)
-	p := write(t, `{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","poll_frequency_seconds":0.5}]}`)
-	_, err := LoadConfig(p)
+	p := write(t, `{"poll_seconds":0.5,"workers":[`+worker(t, "")+`]}`)
+	err := loadErr(p)
 	if err == nil {
-		t.Fatal("want an error for a poll_frequency_seconds below the minimum")
+		t.Fatal("want an error for a poll_seconds below the minimum")
 	}
-	// The message has to name the floor and the worker: "invalid config" would
-	// leave someone guessing which worker and which number.
-	for _, want := range []string{"minimum", `"w"`} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error does not mention %q:\n%v", want, err)
-		}
+	if !strings.Contains(err.Error(), "minimum") {
+		t.Errorf("error does not name the floor:\n%v", err)
 	}
 }
 
 // The floor itself is a legal value. Rejecting it too would make the documented
 // minimum a number nobody can actually set.
-func TestAcceptsPollFrequencyAtTheMinimum(t *testing.T) {
+func TestAcceptsPollSecondsAtTheMinimum(t *testing.T) {
 	noRuntimeCheck(t)
-	p := write(t, fmt.Sprintf(`{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","poll_frequency_seconds":%g}]}`, minPollSeconds))
+	p := write(t, fmt.Sprintf(`{"poll_seconds":%g,"workers":[`+worker(t, "")+`]}`, minPollSeconds))
 	cfg, err := LoadConfig(p)
 	if err != nil {
 		t.Fatalf("%gs is the floor and must be accepted: %v", minPollSeconds, err)
 	}
-	if got := cfg.Workers[0].PollSeconds; got != minPollSeconds {
-		t.Errorf("PollSeconds = %v, want %v", got, minPollSeconds)
+	if cfg.PollSeconds != minPollSeconds {
+		t.Errorf("PollSeconds = %v, want %v", cfg.PollSeconds, minPollSeconds)
 	}
 }
 
 // A config still carrying system_prompt_file would otherwise launch an agent
-// with no standing instructions at all and look fine doing it.
+// with no standing instructions at all and look fine doing it. The renamed keys
+// matter for the same reason: an ignored "model" is a worker running something
+// nobody chose.
 func TestRejectsRemovedKeysByName(t *testing.T) {
 	for key, hint := range map[string]string{
 		"system_prompt_file":       "instructions_md",
 		"min_run_interval_seconds": "60s relaunch cooldown",
 		"permission_mode":          "fully autonomous",
+		"runtime_args":             "runtime_config",
+		"mcp_endpoint":             "relay_mcp",
+		"model":                    "runtime_config",
+		"max_budget_usd":           "max_usd_per_run",
+		"run_timeout_seconds":      "max_seconds_per_run",
+		"poll_frequency_seconds":   "poll_seconds",
 	} {
-		p := write(t, `{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","`+key+`":"v"}]}`)
-		err := LoadConfig1(p)
+		p := write(t, configOf(t, worker(t, `, "`+key+`": "v"`)))
+		err := loadErr(p)
 		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), hint) {
 			t.Errorf("%s: want a rejection naming the key and its replacement, got %v", key, err)
 		}
 	}
 }
 
-func LoadConfig1(p string) error { _, err := LoadConfig(p); return err }
-
+// Four fields are required because each is a decision relay-cli cannot make for
+// anyone. The error has to name every one that is missing, not the first.
 func TestRejectsMissingRequiredFields(t *testing.T) {
-	for _, body := range []string{
-		`{"relay_workers":[{"mcp_endpoint":"https://x/c/wzh_aaaaaaaa"}]}`,
-		`{"relay_workers":[{"name":"w"}]}`,
-	} {
-		if err := LoadConfig1(write(t, body)); err == nil {
-			t.Errorf("want an error for %s", body)
+	err := loadErr(write(t, `{"workers":[{}]}`))
+	if err == nil {
+		t.Fatal("want an error for a worker with no fields at all")
+	}
+	for _, want := range []string{"name", "relay_mcp", "repo_dir", "runtime"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not name the missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// Reporting one problem per run turns a half-written config into a dozen
+// edit-rerun rounds. This is the property that stops that, so it is asserted
+// directly rather than left to follow from the code's shape.
+func TestReportsEveryProblemAtOnce(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, `{"workers":[
+	  {"relay_mcp":"https://x/c/wzh_a","repo_dir":"/nope/not/here","runtime":"claude","runtime_config":{"model":"sonnet"}},
+	  {"name":"b","repo_dir":"/nope/not/here","runtime":"claude","runtime_config":{}}
+	]}`)
+	err := loadErr(p)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	// Worker one is missing a name and has a bad repo; worker two is missing a
+	// credential, has a bad repo, and is missing the model its runtime requires.
+	for _, want := range []string{`worker #1`, `worker "b"`, "name", "relay_mcp", "not a directory", "model"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the combined report is missing %q:\n%v", want, err)
 		}
 	}
 }
 
 func TestRejectsDuplicates(t *testing.T) {
-	dupName := `{"relay_workers":[
-	  {"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa"},
-	  {"name":"w","mcp_endpoint":"https://x/c/wzh_bbbbbbbb"}]}`
-	if err := LoadConfig1(write(t, dupName)); err == nil || !strings.Contains(err.Error(), "duplicate worker name") {
+	noRuntimeCheck(t)
+	repo := repoHere(t)
+	entry := func(name, secret string) string {
+		return fmt.Sprintf(`{"name":%q,"relay_mcp":"https://x/c/%s","repo_dir":%q,"runtime":"claude","runtime_config":{"model":"sonnet"}}`,
+			name, secret, repo)
+	}
+
+	err := loadErr(write(t, configOf(t, entry("w", "wzh_a"), entry("w", "wzh_b"))))
+	if err == nil || !strings.Contains(err.Error(), "duplicate name") {
 		t.Errorf("want a duplicate-name error, got %v", err)
 	}
-	dupEndpoint := `{"relay_workers":[
-	  {"name":"a","mcp_endpoint":"https://x/c/wzh_aaaaaaaa"},
-	  {"name":"b","mcp_endpoint":"https://x/c/wzh_aaaaaaaa"}]}`
-	if err := LoadConfig1(write(t, dupEndpoint)); err == nil || !strings.Contains(err.Error(), "duplicate mcp_endpoint") {
-		t.Errorf("want a duplicate-endpoint error, got %v", err)
+
+	// One credential per agent is relay's boundary; two workers sharing one
+	// claim against each other as the same agent.
+	err = loadErr(write(t, configOf(t, entry("a", "wzh_same"), entry("b", "wzh_same"))))
+	if err == nil || !strings.Contains(err.Error(), "duplicate relay_mcp") {
+		t.Errorf("want a duplicate-credential error, got %v", err)
 	}
 }
 
-// A name becomes live-workers/<name>/. The bash poller only asked this in a
-// comment, and a worker called "a/b" silently wrote its state elsewhere.
+// A name becomes state/<name>/. The bash poller only asked this in a comment,
+// and a worker called "a/b" silently wrote its state elsewhere.
 func TestRejectsUnsafeName(t *testing.T) {
-	p := write(t, `{"relay_workers":[{"name":"a/b","mcp_endpoint":"https://x/c/wzh_aaaaaaaa"}]}`)
-	if err := LoadConfig1(p); err == nil || !strings.Contains(err.Error(), "filesystem-safe") {
+	noRuntimeCheck(t)
+	p := write(t, configOf(t, strings.Replace(worker(t, ""), `"name": "w"`, `"name": "a/b"`, 1)))
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "filesystem-safe") {
 		t.Fatalf("want a name-safety error, got %v", err)
 	}
 }
 
 func TestRejectsMissingRepoDir(t *testing.T) {
 	noRuntimeCheck(t)
-	p := write(t, `{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","repo_dir":"/nope/definitely/not/here"}]}`)
-	if err := LoadConfig1(p); err == nil || !strings.Contains(err.Error(), "not a directory") {
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"/nope/definitely/not/here","runtime":"claude","runtime_config":{"model":"sonnet"}}]}`)
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "not a directory") {
 		t.Fatalf("want a repo_dir error, got %v", err)
+	}
+}
+
+// The placeholder is a step the user has not done yet, not a typo, and
+// "/path/to/your/repo is not a directory" reads like the latter.
+func TestRejectsRepoDirPlaceholderByName(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"`+repoDirPlaceholder+`","runtime":"claude","runtime_config":{"model":"sonnet"}}]}`)
+	err := loadErr(p)
+	if err == nil || !strings.Contains(err.Error(), "placeholder") {
+		t.Fatalf("want a placeholder error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "rewritten") {
+		t.Errorf("the message should warn what pointing this somewhere costs:\n%v", err)
+	}
+}
+
+// Both placeholders are rejected in the SAME pass, so a fresh config reports
+// both at once. Reporting one, then the other on the next run, is exactly the
+// grind the accumulating validator exists to avoid.
+func TestRejectsBothInitPlaceholdersTogether(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://relay.example.com/c/wzh_`+
+		endpointPlaceholder+`","repo_dir":"`+repoDirPlaceholder+`","runtime":"claude",`+
+		`"runtime_config":{"model":"sonnet"}}]}`)
+	err := loadErr(p)
+	if err == nil {
+		t.Fatal("want an error for a config with both placeholders")
+	}
+	for _, want := range []string{"relay_mcp", "repo_dir", "2 fix"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the report is missing %q:\n%v", want, err)
+		}
+	}
+	// The endpoint placeholder has to be caught here rather than by a probe:
+	// spending a DNS timeout to report that relay.example.com does not resolve
+	// tells the user nothing about what they actually have to do.
+	if !strings.Contains(err.Error(), "issue_agent_credential") {
+		t.Errorf("the error should say how to get a real credential:\n%v", err)
 	}
 }
 
@@ -186,8 +284,8 @@ func TestRejectsMissingRepoDir(t *testing.T) {
 // error names the worker as well as the runtime — a fleet config has several,
 // and "unknown runtime" alone does not say which one to fix.
 func TestRejectsUnknownRuntime(t *testing.T) {
-	p := write(t, `{"relay_workers":[{"name":"w","mcp_endpoint":"https://x/c/wzh_aaaaaaaa","runtime":"nope"}]}`)
-	err := LoadConfig1(p)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"`+repoHere(t)+`","runtime":"nope"}]}`)
+	err := loadErr(p)
 	if err == nil {
 		t.Fatal("want an unknown-runtime error")
 	}
@@ -198,91 +296,121 @@ func TestRejectsUnknownRuntime(t *testing.T) {
 	}
 }
 
-// The shipped example must survive its own validator, comments and all. Only
-// its repo_dir paths are fictional, so they are dropped first.
-func TestShippedExampleValidates(t *testing.T) {
+// ── runtime_config ───────────────────────────────────────────────────────────
+
+// model is required for claude on purpose: the CLI's own default moves between
+// versions, so an unchanged config would quietly change what a worker costs.
+func TestRejectsMissingRequiredRuntimeField(t *testing.T) {
 	noRuntimeCheck(t)
-	src, err := os.ReadFile("../../.worker-config.example")
-	if err != nil {
-		t.Skip("example not present")
-	}
-	body := strings.ReplaceAll(string(src), `"repo_dir": "~/code/wizhub",`, "")
-	if err := LoadConfig1(write(t, body)); err != nil {
-		t.Fatalf("the shipped .worker-config.example does not validate: %v", err)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"`+repoHere(t)+`","runtime":"claude"}]}`)
+	err := loadErr(p)
+	if err == nil || !strings.Contains(err.Error(), "model") {
+		t.Fatalf("want a missing-model error, got %v", err)
 	}
 }
 
-// A directory means "the config in there". Someone who ran init knows the
-// directory it made; making them remember the filename inside it is friction
-// for nothing.
-func TestConfigPathAcceptsADirectory(t *testing.T) {
+// This block is the one place a setting is spelled in a CLI's own vocabulary,
+// so an unknown key is either a typo or a setting meant for another runtime.
+// Ignoring it silently means a fleet runs for a week without the cap someone
+// thought they set.
+func TestRejectsUnknownRuntimeConfigKey(t *testing.T) {
 	noRuntimeCheck(t)
-	dir := filepath.Join(t.TempDir(), homeDirName)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"`+repoHere(t)+`","runtime":"claude",
+	  "runtime_config":{"model":"sonnet","max_budget_usd":5}}]}`)
+	err := loadErr(p)
+	if err == nil || !strings.Contains(err.Error(), "max_budget_usd") {
+		t.Fatalf("want an unknown-key error, got %v", err)
+	}
+	// Naming what it DOES take turns a rejection into a correction.
+	if !strings.Contains(err.Error(), "max_usd_per_run") {
+		t.Errorf("the error should list the keys the runtime accepts:\n%v", err)
+	}
+}
+
+func TestRejectsWrongTypedRuntimeConfigValue(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"`+repoHere(t)+`","runtime":"claude",
+	  "runtime_config":{"model":"sonnet","max_usd_per_run":"5"}}]}`)
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "max_usd_per_run") {
+		t.Fatalf("want a type error for a string spend cap, got %v", err)
+	}
+}
+
+// 0 is the operator deliberately removing the cap, which is not the same as
+// leaving it unset — so it has to survive validation.
+func TestAcceptsZeroSpendCap(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"`+repoHere(t)+`","runtime":"claude",
+	  "runtime_config":{"model":"sonnet","max_usd_per_run":0}}]}`)
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatalf("0 removes the cap deliberately and must be accepted: %v", err)
+	}
+	if got := cfg.Workers[0].RCFloat("max_usd_per_run"); got != 0 {
+		t.Errorf("max_usd_per_run = %v, want 0", got)
+	}
+}
+
+// ── discovery ────────────────────────────────────────────────────────────────
+
+// What `init` writes has to survive the validator that `check` runs, comments
+// and all — otherwise the first thing a new user does fails. Only the two
+// placeholders are fictional, so they are filled in first, exactly as the
+// printed instructions tell someone to.
+func TestInitTemplateValidates(t *testing.T) {
+	noRuntimeCheck(t)
+	dir := filepath.Join(t.TempDir(), relayDirName)
 	var out strings.Builder
 	if err := initConfig(dir, &out); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, err := LoadConfig(dir)
+	body, err := os.ReadFile(filepath.Join(dir, configFileName))
 	if err != nil {
-		t.Fatalf("--config <directory> should find the config inside it: %v", err)
-	}
-	if want := filepath.Join(dir, defaultConfigName); cfg.Path != want {
-		t.Errorf("loaded %q, want %q", cfg.Path, want)
-	}
-}
-
-// init, check and run are meant to be run from one directory with no flags, so
-// the lookup has to reach what init created without being told.
-func TestFindsTheConfigInitCreated(t *testing.T) {
-	noRuntimeCheck(t)
-	dir := t.TempDir()
-	chdir(t, dir)
-
-	var out strings.Builder
-	if err := initConfig(homeDirName, &out); err != nil {
 		t.Fatal(err)
 	}
+	filled := strings.ReplaceAll(string(body), repoDirPlaceholder, repoHere(t))
+	filled = strings.ReplaceAll(filled, "wzh_REPLACE_ME", "wzh_realsecret")
 
-	cfg, err := LoadConfig(defaultConfigName)
-	if err != nil {
-		t.Fatalf("a bare check/run should find relay-cli-workers/.worker-config: %v", err)
-	}
-	if !strings.HasSuffix(cfg.Path, filepath.Join(homeDirName, defaultConfigName)) {
-		t.Errorf("loaded %q, want the config under %s/", cfg.Path, homeDirName)
+	if err := loadErr(write(t, filled)); err != nil {
+		t.Fatalf("the config `relay-cli init` writes does not validate: %v", err)
 	}
 }
 
-// "not found" has to say where it looked, or the reader cannot tell a missing
-// file from a file in the wrong place.
-func TestMissingConfigNamesEveryPlaceItLooked(t *testing.T) {
-	chdir(t, t.TempDir())
-
-	_, err := LoadConfig(defaultConfigName)
+// "not found" has to point at the one command that fixes it.
+func TestMissingConfigPointsAtInit(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), configFileName)
+	err := loadErr(missing)
 	if err == nil {
-		t.Fatal("want an error when there is no config anywhere")
+		t.Fatal("want an error when there is no config")
 	}
-	for _, want := range []string{defaultConfigName, homeDirName, "relay-cli init"} {
+	for _, want := range []string{missing, "relay-cli init"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not mention %q:\n%v", want, err)
 		}
 	}
 }
 
-// chdir moves into dir for one test. The config lookup is relative to the
-// working directory by design, so proving it needs one.
-func chdir(t *testing.T, dir string) {
-	t.Helper()
-	prev, err := os.Getwd()
+// There is exactly one location, and the rest of the tool derives its state and
+// log directories from it. A change here relocates everyone's fleet, so it is
+// pinned rather than assumed.
+func TestRelayHomeIsUnderTheUsersHome(t *testing.T) {
+	dir, err := RelayHome()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chdir(dir); err != nil {
+	home, err := os.UserHomeDir()
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := os.Chdir(prev); err != nil {
-			t.Fatal(err)
-		}
-	})
+	if want := filepath.Join(home, ".relay"); dir != want {
+		t.Errorf("RelayHome() = %q, want %q", dir, want)
+	}
+	path, err := DefaultConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(dir, "config"); path != want {
+		t.Errorf("DefaultConfigPath() = %q, want %q", path, want)
+	}
 }

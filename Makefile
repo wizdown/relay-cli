@@ -94,10 +94,10 @@ dist: clean
 	@echo "built $(BINARY) $(VERSION) for: $(PLATFORMS)"
 	@echo "checksums: $(DIST)/SHA256SUMS"
 
-# Run against a .worker-config in the repo root, which is where a checkout's
-# own config lives.
+# Run against ~/.relay/config — the one place relay-cli reads. `make build`
+# first so this is always the binary you just changed, not one on PATH.
 run: build
-	./$(BINARY) run --config .worker-config
+	./$(BINARY) run
 
 clean:
 	rm -rf $(DIST) $(BINARY)

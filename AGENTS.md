@@ -36,11 +36,11 @@ env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 | File | Owns |
 |---|---|
 | `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, and `helpText` — the full manual |
-| `init.go` | `relay-cli init` and the annotated config template it writes |
-| `config.go` | `.worker-config` parse, defaults, and every validation done before launch |
+| `init.go` | `relay-cli init` and the short starting config it writes |
+| `config.go` | config parse, defaults, and every validation done before launch — problems are accumulated and reported together |
 | `probe.go` | MCP JSON-RPC over `net/http` — the token-free gate, no model anywhere |
 | `worker.go` | the poll loop: ceilings, the three circuit breakers, locking, timeouts |
-| `runtime.go` | the `Runtime` interface and the bash-adapter bridge |
+| `runtime.go` | the `Runtime` interface, `runtimeField` (what each runtime accepts in `runtime_config`), and the bash-adapter bridge |
 | `runtime_claude.go` | the native claude adapter: argv, `stream-json` parsing, exit classification |
 | `events.go` | the event bus → `worker.log`, `events.ndjson`, SSE |
 | `server.go` | `/api/snapshot`, `/api/stream`, and the embedded page. **Read-only by design** |
@@ -50,14 +50,13 @@ Outside the binary:
 
 | Path | |
 |---|---|
-| `.worker-config.example` | the annotated reference users copy |
 | `worker-rules.md` | the harness contract given to every CLI — the editable copy; `cmd/relay-cli/assets/` holds the one compiled in |
 | `docs/` | user documentation, and the contributor detail behind this file |
 
 ## Running it
 
 ```bash
-relay-cli init     # creates relay-cli-workers/ here (never overwrites a config)
+relay-cli init     # creates ~/.relay/config (never overwrites an existing one)
 relay-cli check    # validate config + test every credential — launches nothing, spends nothing
 relay-cli run      # start the fleet, open the dashboard on 127.0.0.1:7717
 ```
@@ -65,24 +64,30 @@ relay-cli run      # start the fleet, open the dashboard on 127.0.0.1:7717
 A bare `relay-cli` prints the whole manual — starting is asked for by name
 because it launches autonomous sessions that spend money.
 
-`run` finds `.worker-config` in the current directory, then
-`relay-cli-workers/.worker-config` below it; `--config` takes either a file or
-the directory holding one. **Always `check` first.** Ctrl-C stops everything and
-archives logs.
+Every command reads `~/.relay/config`. **One location, and no flag moves it** —
+`state/` and `logs/` sit beside it. Don't add a path flag back without a reason
+that survives "which config is this actually running?". **Always `check` first.**
+Ctrl-C stops everything and archives logs.
 
-## Making a `.worker-config`
+## Making a config
 
 ```bash
-relay-cli init     # or, in a checkout: cp .worker-config.example .worker-config
+relay-cli init
 ```
 
-`init` creates `relay-cli-workers/` — the config, an `agent-workspace/` for
-the generated worker to run in, and a `.gitignore` over both. Two fields are
-required — a `name` and an `mcp_endpoint` — and every other default is already
-bounded (12 runs/hour, $5 per run, a 15-minute kill, a 30-second poll with a
-fixed 5-second floor).
+Four fields per worker are required — `name`, `relay_mcp`, `repo_dir`,
+`runtime` — because each is a decision relay-cli cannot make for anyone, plus
+whatever the named runtime requires inside `runtime_config` (`model`, for
+claude). Everything else is already bounded (12 runs/hour, $5 per run, a
+15-minute kill, a 30-second fleet poll with a fixed 5-second floor).
 
-**Never commit it.** Every `mcp_endpoint` is a live relay credential with the
+The split is the thing to preserve: fields **outside** `runtime_config` are
+enforced by relay-cli and mean the same for every runtime; fields **inside** are
+one CLI's own vocabulary, declared by that adapter's `ConfigFields()`. A new
+runtime setting is added there and nowhere else — the parser, the bash-adapter
+environment and the docs test all read that one table.
+
+**Never commit a config.** Every `relay_mcp` is a live relay credential with the
 secret embedded in the URL. It is gitignored by name at any depth, and the
 pre-commit hook refuses it. If you need one in a test or a doc, use
 `relay.example.com` and `wzh_REPLACE_ME`. That rule is about example *connector
@@ -97,7 +102,7 @@ You cannot create a credential from here — it comes from relay
 
 | | |
 |---|---|
-| `claude` | **The only supported runtime.** Adapter compiled in. `model`: `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5`. Omitting `model` is a fine default — it tracks the CLI's own recommendation. Supports `max_budget_usd`. |
+| `claude` | **The only supported runtime.** Adapter compiled in. `runtime_config.model` is REQUIRED — `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`. |
 | `codex` | **Coming soon, not offered.** Refused at config load. Don't document it as usable, and don't add a `codex` branch anywhere outside `ResolveRuntime`. |
 
 No CLI is bundled. The adapter ships; the CLI is installed separately and found
@@ -113,9 +118,9 @@ adding a `runtimes/` directory back; nothing else should need to change.
 
 `make hooks` once per clone, and the hook does most of this for you.
 
-1. **No credentials.** No `.worker-config`, no real `wzh_` secret.
+1. **No credentials.** No config file, no real `wzh_` secret.
 2. `make check` passes.
-3. If you changed a `.worker-config` field → [the config loop](docs/changing-the-config.md).
+3. If you changed a config field → [the config loop](docs/changing-the-config.md).
 4. If you added a flag or command, `helpText` documents it — a test enforces it.
 5. Docs updated in the same commit, not a follow-up.
 6. **The version constant is bumped** — [Version on every PR](#version-on-every-pr).
@@ -174,7 +179,7 @@ See [docs/development.md](docs/development.md).
 | | |
 |---|---|
 | [docs/development.md](docs/development.md) | build, test, hooks, releases, PR format |
-| [docs/changing-the-config.md](docs/changing-the-config.md) | the self-update loop for `.worker-config` |
+| [docs/changing-the-config.md](docs/changing-the-config.md) | the self-update loop for the config |
 | [docs/design.md](docs/design.md) | why the probe exists, what relay owns |
 | [docs/runtimes.md](docs/runtimes.md) | which runtimes are offered, and the adapter contract |
 | [docs/configuration.md](docs/configuration.md) | every config field |

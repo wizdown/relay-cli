@@ -112,12 +112,12 @@ func writeRun(t *testing.T, lines ...string) string {
 
 func TestClassifyBudgetExhausted(t *testing.T) {
 	out := writeRun(t, lineInit, `{"type":"result","terminal_reason":"budget_exhausted","total_cost_usd":5.0012,"permission_denials":[]}`)
-	rc := &RunContext{Worker: &Worker{}, MaxBudget: "5"}
+	rc := &RunContext{Worker: &Worker{RuntimeConfig: map[string]string{"max_usd_per_run": "5"}}}
 	outcome, expl := (&claudeRuntime{}).ClassifyExit(rc, 1, out)
 	if outcome != outcomeBudget {
 		t.Fatalf("outcome = %q, want %q — the loop breaks its retry treadmill on this", outcome, outcomeBudget)
 	}
-	for _, want := range []string{"KILLED BY ITS SPEND CAP", "$5.0012", "max_budget_usd"} {
+	for _, want := range []string{"KILLED BY ITS SPEND CAP", "$5.0012", "max_usd_per_run"} {
 		if !strings.Contains(expl, want) {
 			t.Errorf("explanation missing %q:\n%s", want, expl)
 		}
@@ -151,9 +151,10 @@ func TestClassifyPlainExits(t *testing.T) {
 func TestBuildCmdStreamsAndBounds(t *testing.T) {
 	dir := t.TempDir()
 	rc := &RunContext{
-		Worker:    &Worker{Name: "w", Endpoint: "https://r.example/relay/mcp/c/wzh_secretvalue", Model: "opus"},
+		Worker: &Worker{Name: "w", Endpoint: "https://r.example/relay/mcp/c/wzh_secretvalue",
+			RuntimeConfig: map[string]string{"model": "opus", "max_usd_per_run": "5"}},
 		WorkerDir: dir, RepoDir: dir, Prompt: "p", Rules: "r",
-		MaxBudget: "5", AllowTools: relayAllowedTools,
+		AllowTools: relayAllowedTools,
 	}
 	argv, err := (&claudeRuntime{}).BuildCmd(rc)
 	if err != nil {
@@ -189,23 +190,44 @@ func TestBuildCmdStreamsAndBounds(t *testing.T) {
 	}
 }
 
-// Emitting our flag only when yours is absent keeps a duplicate
-// --permission-mode out of the argv entirely, rather than leaving which one wins
-// to argument order.
-func TestBuildCmdDefersToRuntimeArgsPermissionMode(t *testing.T) {
+// `auto` is what this harness IS, not a setting. Anything stricter silently
+// denies whatever was not pre-allowed and the session stalls with no prompt to
+// answer — so with runtime_args gone there is deliberately no way to talk the
+// adapter out of it.
+func TestBuildCmdAlwaysRunsFullyAutonomous(t *testing.T) {
 	dir := t.TempDir()
 	rc := &RunContext{
-		Worker: &Worker{Name: "w"}, WorkerDir: dir, RepoDir: dir,
-		ExtraArgs: "--permission-mode plan",
+		Worker:    &Worker{Name: "w", RuntimeConfig: map[string]string{"model": "sonnet"}},
+		WorkerDir: dir, RepoDir: dir,
 	}
 	argv, err := (&claudeRuntime{}).BuildCmd(rc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(strings.Join(argv, " "), "--permission-mode"); n != 1 {
+	joined := strings.Join(argv, " ")
+	if n := strings.Count(joined, "--permission-mode"); n != 1 {
 		t.Fatalf("--permission-mode appears %d times: %v", n, argv)
 	}
-	if !strings.Contains(strings.Join(argv, " "), "--permission-mode plan") {
-		t.Error("the operator's own flag should be the one that survives")
+	if !strings.Contains(joined, "--permission-mode auto") {
+		t.Errorf("a headless run has to be fully autonomous:\n%s", joined)
+	}
+}
+
+// 0 is the operator deliberately removing the cap, and is spelled by omitting
+// the flag rather than by passing --max-budget-usd 0, which the CLI would read
+// as a cap of nothing and kill every run instantly.
+func TestBuildCmdOmitsAZeroSpendCap(t *testing.T) {
+	dir := t.TempDir()
+	rc := &RunContext{
+		Worker: &Worker{Name: "w",
+			RuntimeConfig: map[string]string{"model": "sonnet", "max_usd_per_run": "0"}},
+		WorkerDir: dir, RepoDir: dir,
+	}
+	argv, err := (&claudeRuntime{}).BuildCmd(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(argv, " "), "--max-budget-usd") {
+		t.Errorf("a 0 cap must omit the flag entirely: %v", argv)
 	}
 }

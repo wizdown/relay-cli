@@ -9,45 +9,43 @@ import (
 	"testing"
 )
 
-// The self-update loop for .worker-config, made executable.
+// The self-update loop for the config reference, made executable.
 //
-// A worker field lives in four places: this package (the struct, its default and
-// its validation), .worker-config.example, docs/configuration.md, and the
-// manual in helpText. A checklist asking someone to remember all four is a
-// checklist that gets skipped — so these tests reflect over the struct and fail
-// the build when a field, a default or a removed key is undocumented.
+// A field used to live in four places — the struct here, the shipped example,
+// docs/configuration.md and the manual in helpText — and a checklist asking
+// someone to remember all four is a checklist that gets skipped. The example is
+// gone and the init template is deliberately a starter rather than a reference,
+// so two surfaces are left: the docs, which must be complete, and the manual,
+// which must at least name relay-cli's own fields.
 //
 // If one of these fails, the fix is to update the document it names. Do not
 // relax the test: it is the only thing standing between "we added a field" and
 // "nobody can find out it exists".
 
-const (
-	exampleConfigPath = "../../.worker-config.example"
-	configDocsPath    = "../../docs/configuration.md"
-)
+const configDocsPath = "../../docs/configuration.md"
 
 func mustRead(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("cannot read %s: %v\n"+
-			"This test guards the documentation of every .worker-config field. "+
+			"This test guards the documentation of every config field. "+
 			"If the file moved, update the path constant in docs_test.go rather "+
 			"than deleting the check.", path, err)
 	}
 	return string(b)
 }
 
-// workerFields is every field a .worker-config entry may set, taken from the
-// struct rather than from a list someone has to maintain alongside it.
+// workerFields is every key a worker entry may set, taken from the struct
+// rather than from a list someone has to maintain alongside it.
 func workerFields() []string {
 	var out []string
 	rt := reflect.TypeOf(Worker{})
 	for i := 0; i < rt.NumField(); i++ {
 		tag := rt.Field(i).Tag.Get("json")
 		name, _, _ := strings.Cut(tag, ",")
-		// "-" is Endpoint, which is deliberately never serialized: it carries the
-		// secret. It is documented as mcp_endpoint, which the redacted field
+		// "-" is Endpoint, which is deliberately never serialized: it carries
+		// the secret. It is documented as relay_mcp, which the redacted field
 		// already contributes.
 		if name == "" || name == "-" {
 			continue
@@ -57,28 +55,48 @@ func workerFields() []string {
 	return out
 }
 
-func TestEveryConfigFieldIsDocumented(t *testing.T) {
-	example := mustRead(t, exampleConfigPath)
+func TestEveryWorkerFieldIsDocumented(t *testing.T) {
 	docs := mustRead(t, configDocsPath)
 
-	surfaces := []struct {
-		what string
-		body string
-		fix  string
-	}{
-		{".worker-config.example", example, "annotate the field where a reader will be editing it"},
-		{"docs/configuration.md", docs, "add a row to the required or optional field table"},
-		{"the manual (helpText in main.go)", helpText, "add it to the THE CONFIG FILE block"},
-		// The template `relay-cli init` writes is the only reference a user
-		// with just the binary ever sees, so an undocumented field there is
-		// invisible to exactly the people who cannot look it up.
-		{"the init template (init.go)", initConfigTemplate, "add the field, annotated, to initConfigTemplate"},
+	for _, field := range workerFields() {
+		if !strings.Contains(docs, "`"+field+"`") {
+			t.Errorf("worker field %q has no row in docs/configuration.md — "+
+				"add it to the worker field table", field)
+		}
+		if !strings.Contains(helpText, field) {
+			t.Errorf("worker field %q is not in the manual (helpText in main.go) — "+
+				"add it to the THE CONFIG FILE block", field)
+		}
 	}
 
-	for _, field := range workerFields() {
-		for _, s := range surfaces {
-			if !strings.Contains(s.body, field) {
-				t.Errorf("worker field %q is not documented in %s — %s", field, s.what, s.fix)
+	// poll_seconds is fleet-wide rather than per-worker, so the struct walk
+	// above never reaches it — and a setting nobody can find is the one thing
+	// this file exists to prevent.
+	if !strings.Contains(docs, "`poll_seconds`") {
+		t.Error("poll_seconds has no row in docs/configuration.md")
+	}
+}
+
+// Every runtime declares what it accepts. The docs have to carry a table per
+// runtime, or "which keys go in runtime_config?" is answerable only by reading
+// Go — which is exactly the question the block was introduced to make askable.
+func TestEveryRuntimeConfigFieldIsDocumented(t *testing.T) {
+	docs := mustRead(t, configDocsPath)
+
+	for _, rt := range supportedRuntimes() {
+		if !strings.Contains(docs, rt.Name()) {
+			t.Errorf("runtime %q has no section in docs/configuration.md", rt.Name())
+		}
+		for _, f := range rt.ConfigFields() {
+			if !strings.Contains(docs, "`"+f.Key+"`") {
+				t.Errorf("runtime %q accepts runtime_config.%s, but no row in "+
+					"docs/configuration.md mentions it", rt.Name(), f.Key)
+			}
+			// The Doc line is what a missing required field tells the user, so
+			// an empty one turns a helpful error into a bare key name.
+			if strings.TrimSpace(f.Doc) == "" {
+				t.Errorf("runtime %q declares %q with no Doc — that text is what "+
+					"the config error prints", rt.Name(), f.Key)
 			}
 		}
 	}
@@ -86,40 +104,51 @@ func TestEveryConfigFieldIsDocumented(t *testing.T) {
 
 // A default is what someone sets their spend ceiling against, so the number in
 // the docs disagreeing with the number in the code is worse than no docs.
-// helpText is covered by TestHelpQuotesTheRealDefaults; this is the field table.
 func TestConfigDocsQuoteTheRealDefaults(t *testing.T) {
 	docs := mustRead(t, configDocsPath)
 
-	for _, tc := range []struct{ field, want string }{
-		{"runtime", "claude"},
-		{"poll_frequency_seconds", fmt.Sprintf("%g", defaultPollSeconds)},
-		{"max_runs_per_hour", fmt.Sprint(defaultMaxRunsPerHour)},
-		{"max_budget_usd", fmt.Sprintf("%g", defaultMaxBudgetUSD)},
-		{"run_timeout_seconds", fmt.Sprint(defaultRunTimeoutSecs)},
-	} {
-		got, ok := docsTableDefault(docs, tc.field)
+	want := map[string]string{
+		"poll_seconds":        fmt.Sprintf("%g", defaultPollSeconds),
+		"max_runs_per_hour":   fmt.Sprint(defaultMaxRunsPerHour),
+		"max_seconds_per_run": fmt.Sprint(defaultMaxSecondsPerRun),
+	}
+	// Runtime defaults are declared, not hardcoded here, so a runtime that
+	// changes one cannot leave the docs behind.
+	for _, rt := range supportedRuntimes() {
+		for _, f := range rt.ConfigFields() {
+			if f.Default != "" {
+				want[f.Key] = f.Default
+			}
+		}
+	}
+
+	for field, def := range want {
+		got, ok := docsTableDefault(docs, field)
 		if !ok {
-			t.Errorf("no optional-field row for %q in docs/configuration.md.\n"+
-				"Rows are matched as: | `field` | `default` | …", tc.field)
+			t.Errorf("no field row for %q in docs/configuration.md.\n"+
+				"Rows are matched as: | `field` | … | `default` |", field)
 			continue
 		}
-		if got != tc.want {
+		if got != def {
 			t.Errorf("docs/configuration.md says %q defaults to %q, the code says %q",
-				tc.field, got, tc.want)
+				field, got, def)
 		}
 	}
 }
 
-// docsTableDefault reads the second column of the markdown row for a field:
+// docsTableDefault reads the LAST backticked cell of the markdown row for a
+// field, which is where the reference table keeps the default:
 //
-//	| `poll_frequency_seconds` | `30` | Seconds the worker sleeps … |
+//	| `max_runs_per_hour` | no | Maximum CLI launches per rolling hour | `12` |
 func docsTableDefault(docs, field string) (string, bool) {
-	re := regexp.MustCompile("(?m)^\\|\\s*`" + regexp.QuoteMeta(field) + "`\\s*\\|\\s*`?([^`|]*)`?\\s*\\|")
-	m := re.FindStringSubmatch(docs)
-	if m == nil {
+	re := regexp.MustCompile("(?m)^\\|\\s*`" + regexp.QuoteMeta(field) + "`\\s*\\|.*$")
+	row := re.FindString(docs)
+	if row == "" {
 		return "", false
 	}
-	return strings.TrimSpace(m[1]), true
+	cells := strings.Split(strings.Trim(row, "|"), "|")
+	last := strings.TrimSpace(cells[len(cells)-1])
+	return strings.Trim(last, "`"), true
 }
 
 // A removed key is rejected by name with its replacement, which is the whole
@@ -140,26 +169,25 @@ func TestEveryRemovedKeyIsDocumented(t *testing.T) {
 	}
 }
 
-// The example is the file people copy. A field that exists but is not shown in a
-// working worker is a field found only by reading Go.
-func TestExampleShowsEveryOptionalField(t *testing.T) {
-	example := mustRead(t, exampleConfigPath)
-	// Inside the JSON, not merely mentioned in a comment.
-	for _, field := range workerFields() {
-		if !strings.Contains(example, `"`+field+`"`) {
-			t.Errorf("worker field %q never appears as a JSON key in "+
-				".worker-config.example — show it on one of the example workers", field)
-		}
-	}
-}
+// The docs are the reference now that no annotated example ships, so the
+// complete example in them has to be a config that actually loads.
+func TestConfigDocsExampleValidates(t *testing.T) {
+	noRuntimeCheck(t)
+	docs := mustRead(t, configDocsPath)
 
-// Same rule for the generated config, and it matters more: this one is written
-// onto the machine of someone who has no checkout to read.
-func TestInitTemplateSetsEveryField(t *testing.T) {
-	for _, field := range workerFields() {
-		if !strings.Contains(initConfigTemplate, `"`+field+`"`) {
-			t.Errorf("worker field %q is never set in the config `relay-cli init` "+
-				"writes — a field a standalone user cannot see is a field they cannot use", field)
-		}
+	block := regexp.MustCompile("(?s)```jsonc\n(.*?)```").FindStringSubmatch(docs)
+	if block == nil {
+		t.Fatal("docs/configuration.md has no ```jsonc example block — the reference " +
+			"should show one complete, working config")
+	}
+	// The example shows both placeholders, because that is what a reader copies
+	// and replaces. Fill them in exactly as the reader would, then hold the
+	// result to the validator.
+	body := strings.ReplaceAll(block[1], repoDirPlaceholder, t.TempDir())
+	body = strings.ReplaceAll(body, "~/code/wizhub", t.TempDir())
+	body = strings.ReplaceAll(body, endpointPlaceholder, "filledin")
+
+	if _, err := LoadConfig(write(t, body)); err != nil {
+		t.Fatalf("the example in docs/configuration.md does not validate: %v", err)
 	}
 }

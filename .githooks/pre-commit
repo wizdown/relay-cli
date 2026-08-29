@@ -26,10 +26,11 @@ staged=$(git diff --cached --name-only --diff-filter=ACM)
 # ── 1. credentials ───────────────────────────────────────────────────────────
 step "checking for credentials"
 
-# .worker-config is gitignored, but `git add -f` bypasses that and this is the
-# last place to catch it.
-if echo "$staged" | grep -qE '(^|/)\.worker-config$'; then
-	note "REFUSING: .worker-config is staged. Every mcp_endpoint in it is a live"
+# The live config lives in ~/.relay/config and so is never in a checkout — but a
+# copy someone dropped in a repo to test with is exactly the accident worth
+# catching, and `git add -f` bypasses any .gitignore.
+if echo "$staged" | grep -qE '(^|/)(\.relay/config|\.worker-config)$'; then
+	note "REFUSING: a relay-cli config is staged. Every relay_mcp in it is a live"
 	note "credential. Unstage it: git restore --staged <path>"
 	fail=1
 fi
@@ -71,8 +72,8 @@ fi
 # Without -race: this runs on every commit, and the point is a fast answer. CI
 # runs the race detector.
 #
-# The tests include the documentation-drift checks, which is why adding a
-# .worker-config field without documenting it fails here rather than shipping.
+# The tests include the documentation-drift checks, which is why adding a config
+# field without documenting it fails here rather than shipping.
 if echo "$staged" | grep -qE '\.go$|^go\.mod$'; then
 	step "go test ./..."
 	if out=$(go test ./... 2>&1); then
@@ -83,8 +84,8 @@ if echo "$staged" | grep -qE '\.go$|^go\.mod$'; then
 	fi
 fi
 
-# A doc or example edit can break the drift tests without touching Go at all.
-if echo "$staged" | grep -qE '^(\.worker-config\.example|docs/|readme\.md)'; then
+# A docs edit can break the drift tests without touching Go at all.
+if echo "$staged" | grep -qE '^(docs/|readme\.md)'; then
 	if ! echo "$staged" | grep -qE '\.go$'; then
 		step "go test ./... (docs changed)"
 		if out=$(go test ./... 2>&1); then

@@ -34,7 +34,7 @@ const defaultProtocolVersion = "2025-11-25"
 // for an orchestrator: a task this agent is HOLDING whose subtasks moved or
 // asked it something. It exists precisely because such a parent is in neither of
 // the other two — its lease is live, so it is not `resume`, and it is
-// In-Progress, so it is not `todo`. A poller that reads only resume+todo never
+// In-Progress, so it is not `todo`. A worker that reads only resume+todo never
 // wakes a supervisor until its lease lapses, which is the whole fan-out loop
 // stalled behind a timeout.
 type QueueState struct {

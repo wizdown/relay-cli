@@ -59,8 +59,9 @@ func TestGatedFlagsMatchTheFlagsActuallyUsed(t *testing.T) {
 	dir := t.TempDir()
 	// Model and budget set, so every conditional flag is emitted too.
 	rc := &RunContext{
-		Worker:    &Worker{Name: "w", Endpoint: "https://r.example/c/wzh_aaaaaaaaaa", Model: "opus"},
-		WorkerDir: dir, RepoDir: dir, MaxBudget: "5", AllowTools: relayAllowedTools,
+		Worker: &Worker{Name: "w", Endpoint: "https://r.example/c/wzh_aaaaaaaaaa",
+			RuntimeConfig: map[string]string{"model": "opus", "max_usd_per_run": "5"}},
+		WorkerDir: dir, RepoDir: dir, AllowTools: relayAllowedTools,
 	}
 	argv, err := (&claudeRuntime{}).BuildCmd(rc)
 	if err != nil {

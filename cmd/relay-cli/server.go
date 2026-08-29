@@ -29,13 +29,15 @@ var uiFS embed.FS
 // draw the page from nothing, which is what a fresh load and a reconnect both
 // need.
 type Snapshot struct {
-	Version    string         `json:"version"`
-	StartedAt  time.Time      `json:"started_at"`
-	Now        time.Time      `json:"now"`
-	ConfigPath string         `json:"config_path"`
-	PollerRoot string         `json:"poller_root"`
-	Workers    []WorkerStatus `json:"workers"`
-	Events     []Event        `json:"events,omitempty"`
+	Version    string    `json:"version"`
+	StartedAt  time.Time `json:"started_at"`
+	Now        time.Time `json:"now"`
+	ConfigPath string    `json:"config_path"`
+	RelayDir   string    `json:"relay_dir"`
+	// Fleet-wide, so it belongs here rather than repeated on every worker.
+	PollSeconds float64        `json:"poll_seconds"`
+	Workers     []WorkerStatus `json:"workers"`
+	Events      []Event        `json:"events,omitempty"`
 }
 
 type Server struct {
@@ -71,14 +73,15 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	snap := Snapshot{
-		Version:    version,
-		StartedAt:  s.sup.startedAt,
-		Now:        time.Now().UTC(),
-		ConfigPath: s.sup.cfg.Path,
-		PollerRoot: s.sup.cfg.PollerRoot,
-		Workers:    s.sup.Statuses(),
+		Version:     version,
+		StartedAt:   s.sup.startedAt,
+		Now:         time.Now().UTC(),
+		ConfigPath:  s.sup.cfg.Path,
+		RelayDir:    s.sup.cfg.RelayDir,
+		PollSeconds: s.sup.cfg.PollSeconds,
+		Workers:     s.sup.Statuses(),
 	}
-	// The card poller asks for state alone; a full load asks for the history too.
+	// The dashboard's card refresh asks for state alone; a full load asks for the history too.
 	if r.URL.Query().Get("events") != "0" {
 		snap.Events = s.sup.bus.History()
 	}

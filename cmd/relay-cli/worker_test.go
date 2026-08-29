@@ -17,8 +17,9 @@ type fakeRuntime struct {
 	outcome string
 }
 
-func (f *fakeRuntime) Name() string { return "fake" }
-func (f *fakeRuntime) Check() error { return nil }
+func (f *fakeRuntime) Name() string                 { return "fake" }
+func (f *fakeRuntime) Check() error                 { return nil }
+func (f *fakeRuntime) ConfigFields() []runtimeField { return nil }
 func (f *fakeRuntime) BuildCmd(rc *RunContext) ([]string, error) {
 	return []string{"/bin/sh", "-c", f.script}, nil
 }
@@ -38,10 +39,13 @@ func newTestRunner(t *testing.T, rt Runtime, w *Worker) (*WorkerRunner, *Bus) {
 	if w.Name == "" {
 		w.Name = "tw"
 	}
-	if w.RunTimeoutSecs == 0 {
-		w.RunTimeoutSecs = 30
+	if w.MaxSecondsPerRun == 0 {
+		w.MaxSecondsPerRun = 30
 	}
-	cfg := &Config{PollerRoot: root, Workers: []*Worker{w}}
+	if w.RepoDir == "" {
+		w.RepoDir = root
+	}
+	cfg := &Config{RelayDir: root, PollSeconds: defaultPollSeconds, Workers: []*Worker{w}}
 	bus := NewBus(false)
 	r := NewWorkerRunner(cfg, w, rt, bus, "rules", "")
 	os.MkdirAll(r.Dir(), 0o755)
@@ -111,7 +115,7 @@ func TestZeroCeilingMeansNoCeiling(t *testing.T) {
 // Two spend-cap kills in a row is a wall, not information: every run restarts
 // the same task and stops at the same point.
 func TestBudgetKillsPauseTheWorker(t *testing.T) {
-	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{MaxBudgetUSD: 5})
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{RuntimeConfig: map[string]string{"max_usd_per_run": "5"}})
 	r.noteBudgetKill()
 	if _, err := os.Stat(r.pausedFile()); err == nil {
 		t.Fatal("one budget kill is information, not a wall")
@@ -199,7 +203,7 @@ func TestExecNonZeroExitIsReported(t *testing.T) {
 func TestExecTimeoutKillsTheWholeProcessGroup(t *testing.T) {
 	marker := t.TempDir() + "/child-alive"
 	script := fmt.Sprintf(`( sleep 30; touch %s ) & sleep 30`, marker)
-	r, _ := newTestRunner(t, &fakeRuntime{script: script}, &Worker{RunTimeoutSecs: 1})
+	r, _ := newTestRunner(t, &fakeRuntime{script: script}, &Worker{MaxSecondsPerRun: 1})
 	rc := r.runContext()
 	argv, _ := r.rt.BuildCmd(rc)
 

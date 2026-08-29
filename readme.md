@@ -8,7 +8,7 @@ what relay assigned to its agent, does it in a real directory on your machine,
 and hands the result back — with a live dashboard showing every session as it
 happens.
 
-Every `poll_frequency_seconds` a worker asks relay, over plain HTTP and **with no
+Every `poll_seconds` a worker asks relay, over plain HTTP and **with no
 model running**, whether it has a task. Only if it does does it launch one
 headless CLI session, which claims and works exactly one task and then goes idle
 again. An idle worker costs one HTTP handshake and zero tokens, so what you spend
@@ -118,39 +118,39 @@ handed that repo's tasks.
 relay-cli init
 ```
 
-That creates everything a fleet needs, in the directory you ran it in:
+That writes `~/.relay/config` — one location, from any directory, which is where
+`check` and `run` read it from too. `state/` and `logs/` appear beside it when a
+fleet runs.
 
-```text
-relay-cli-workers/
-  .worker-config     the worker list — annotated, 0600, holds live credentials
-  agent-workspace/   the directory this worker's CLI runs in
-  .gitignore         so none of it can be committed by accident
-```
+It has two placeholders, and replacing them is the whole setup:
 
-Paste your `connector_url` over the `mcp_endpoint` placeholder. **That is the
-only edit a working worker needs** — `repo_dir` already points at
-`agent-workspace/`:
-
-```json
+```jsonc
 {
-  "relay_workers": [
+  "workers": [
     {
-      "name": "hello-claude",
-      "mcp_endpoint": "https://relay.example.com/relay/mcp/c/wzh_…",
-      "repo_dir": "/path/to/relay-cli-workers/agent-workspace"
+      "name":      "hello-claude",
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_…",  // ← paste yours
+      "repo_dir":  "~/code/scratch",                               // ← choose one
+      "runtime":   "claude",
+      "runtime_config": { "model": "sonnet" }
     }
   ]
 }
 ```
 
-Point `repo_dir` at a checkout of your own when you want real work done. A
-headless run is fully autonomous in there and can never answer an approval
-prompt, so choose a checkout you are willing to have rewritten — not your only
-copy of anything.
+`relay_mcp` is the `connector_url` from step 2, secret included.
 
-Every other field defaults, and every default is bounded — 12 runs/hour, $5 per
+`repo_dir` is the checkout this agent works in — its `AGENTS.md` / `CLAUDE.md`,
+skills and tooling are what the agent gets, so this is the choice that decides
+what the worker can actually do. A headless run is fully autonomous in there and
+can never answer an approval prompt, so pick a checkout you are willing to have
+rewritten — not your only copy of anything. An empty scratch directory is a fine
+place to start.
+
+Everything else defaults, and every default is bounded — 12 runs/hour, $5 per
 run, a 15-minute kill, a poll every 30s.
-[Configuration reference](docs/configuration.md) has the rest.
+[Configuration reference](docs/configuration.md) has the rest, including the
+per-runtime `runtime_config` tables.
 
 ### 4. Check it, then start it
 
@@ -163,7 +163,7 @@ nothing and spends nothing, so it is the cheap way to find a typo or a revoked
 credential:
 
 ```text
-relay-cli 0.2.0 (beta) — checking 1 worker(s) from /path/to/relay-cli-workers/.worker-config
+relay-cli 0.3.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   hello-claude             ok    queue: resume 0 · attention 0 · todo 0
@@ -179,9 +179,9 @@ relay-cli run
 ```
 
 `run` starts every worker and opens a dashboard at `http://127.0.0.1:7717/`.
-Ctrl-C stops the workers, archives their logs to `logs/`, and tears down
-`live-workers/`. Both commands find the config on their own from the directory
-you ran `init` in.
+Ctrl-C stops the workers, archives their logs to `~/.relay/logs/`, and tears down
+`~/.relay/state/`. Both commands read the same config from anywhere — there is
+one location and no flag that moves it.
 
 ### 5. Your first task
 
@@ -197,7 +197,7 @@ Within one poll interval, the terminal shows the whole cycle:
 
 ```text
 14:22:08  hello-claude   poll  resume 0 · attention 0 · todo 1
-14:22:08  hello-claude   ▶ run started   claude · …/relay-cli-workers/agent-workspace
+14:22:08  hello-claude   ▶ run started   claude · ~/code/scratch
 14:22:10  hello-claude   session 9f31c8a2 · claude-opus-5   mcp: relay: connected
 14:22:11  hello-claude   → relay:get_available_tasks
 14:22:13  hello-claude   → relay:claim_task   task_id=42
@@ -207,8 +207,8 @@ Within one poll interval, the terminal shows the whole cycle:
 14:23:02  hello-claude   ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
 ```
 
-The page is in `relay-cli-workers/agent-workspace/`, and the task is waiting in
-relay for your review. That is the whole system end to end: relay held the work,
+The page is in the `repo_dir` you chose, and the task is waiting in relay for
+your review. That is the whole system end to end: relay held the work,
 the worker noticed it without spending anything to look, one session did it, and
 the result came back to you.
 
@@ -223,8 +223,8 @@ anything:
 | Guard | Default | What it bounds |
 |---|---|---|
 | `max_runs_per_hour` | `12` | How many CLI sessions may *start*. The only ceiling on how many, so it is the one that actually caps spend. |
-| `max_budget_usd` | `5` | Spend inside one run. |
-| `run_timeout_seconds` | `900` | Wall-clock for one run. |
+| `max_usd_per_run` | `5` | Spend inside one run. claude only. |
+| `max_seconds_per_run` | `900` | Wall-clock for one run — the only guard that catches a hang. |
 | relaunch cooldown | 60s, fixed | Two launches can't go back-to-back. |
 | poll floor | 5s, fixed | How often a worker may ask relay. A config below it is rejected, not clamped — this one guards relay, not your bill. |
 
@@ -236,8 +236,8 @@ explains its own fix in the log.
 **Know the kill switch before you need it:**
 
 ```bash
-touch relay-cli-workers/live-workers/hello-claude/PAUSED   # stop it next tick
-rm relay-cli-workers/live-workers/hello-claude/PAUSED      # resume it
+touch ~/.relay/state/hello-claude/PAUSED   # stop it next tick
+rm ~/.relay/state/hello-claude/PAUSED      # resume it
 ```
 
 Ctrl-C in the `relay-cli run` terminal stops everything.
@@ -261,7 +261,7 @@ use it.
 
 | | |
 | --- | --- |
-| [Configuration](docs/configuration.md) | Every `.worker-config` field, where things live on disk, the safeguards in full, and the mistakes that don't announce themselves |
+| [Configuration](docs/configuration.md) | Every config field and every `runtime_config` key per runtime, where things live on disk, the safeguards in full, and the mistakes that don't announce themselves |
 | [Agents and fleets](docs/fleets.md) | What lives on the relay agent rather than here; a worked orchestrator + worker agent fleet |
 | [The dashboard](docs/dashboard.md) | `relay-cli` commands and flags, what the page shows, and why it is read-only |
 | [Runtimes](docs/runtimes.md) | Which CLIs are supported, and where codex support stands |
@@ -273,7 +273,6 @@ use it.
 ```text
 cmd/relay-cli/        # the binary: one Go package, plus the embedded dashboard
 docs/                 # user and contributor documentation
-.worker-config.example  # the annotated reference users copy
 worker-rules.md       # the harness contract given to every CLI
 ```
 
@@ -298,7 +297,7 @@ building on.
 ## Security
 
 Every relay connector URL is a live credential with the secret embedded. Never
-commit a `.worker-config`. See [SECURITY.md](SECURITY.md) for the full handling
+commit a relay-cli config. See [SECURITY.md](SECURITY.md) for the full handling
 rules and how to report a vulnerability.
 
 ## Versioning

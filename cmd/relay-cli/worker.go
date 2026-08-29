@@ -1,4 +1,4 @@
-// The single-worker loop: every poll_frequency_seconds, ask relay — over plain
+// The single-worker loop: every poll_seconds, ask relay — over plain
 // HTTP, with no model running — whether this worker has a task. Only if it does,
 // launch one headless CLI session that claims and works exactly one task, then
 // go idle.
@@ -104,7 +104,7 @@ type WorkerRunner struct {
 }
 
 func NewWorkerRunner(cfg *Config, w *Worker, rt Runtime, bus *Bus, rules, rulesFile string) *WorkerRunner {
-	dir := filepath.Join(cfg.PollerRoot, "live-workers", w.Name)
+	dir := filepath.Join(cfg.RelayDir, stateDirName, w.Name)
 	return &WorkerRunner{
 		cfg: cfg, w: w, rt: rt, bus: bus,
 		dir: dir, prober: NewProber(w.Endpoint), rules: rules, rulesFile: rulesFile,
@@ -188,9 +188,9 @@ func (r *WorkerRunner) Run(ctx context.Context) {
 	os.WriteFile(r.runsFile(), nil, 0o644)
 
 	r.log("starting: runtime=%s, poll every %gs, timeout %ds, repo %s",
-		r.w.Runtime, r.w.PollSeconds, r.w.RunTimeoutSecs, r.repoDir())
+		r.w.Runtime, r.cfg.PollSeconds, r.w.MaxSecondsPerRun, r.w.RepoDir)
 
-	interval := time.Duration(r.w.PollSeconds * float64(time.Second))
+	interval := time.Duration(r.cfg.PollSeconds * float64(time.Second))
 	for {
 		r.tick(ctx)
 		if ctx.Err() != nil {
@@ -225,9 +225,9 @@ func (r *WorkerRunner) tick(ctx context.Context) {
 	r.status.Paused = false
 	r.mu.Unlock()
 
-	// The lock directory is how the bash poller stopped a slow cycle from
+	// The lock directory is how the retired bash poller stopped a slow cycle from
 	// overlapping the next tick. One goroutine per worker already guarantees that
-	// here — this is kept for the case it also covered: a second poller process,
+	// here — this is kept for the case it also covered: a second relay-cli process,
 	// or a leftover bash worker, running the same worker at the same time.
 	if err := os.Mkdir(r.lockDir(), 0o755); err != nil {
 		r.log("previous cycle still running, skipping this tick")
@@ -347,31 +347,18 @@ func (r *WorkerRunner) recordRun() {
 	fmt.Fprintf(fh, "%d\n", time.Now().Unix())
 }
 
-// repoDir — a worker with no repo runs in its own state dir (self-contained
-// tasks only). With one, the CLI starts inside the checkout, so the repo's
-// AGENTS.md / CLAUDE.md, skills and tooling load exactly as they would for a
-// human there.
-func (r *WorkerRunner) repoDir() string {
-	if r.w.RepoDir != "" {
-		return r.w.RepoDir
-	}
-	return r.dir
-}
-
+// runContext — the CLI starts inside repo_dir, so that repo's AGENTS.md /
+// CLAUDE.md, skills and tooling load exactly as they would for a human there.
+// That is what the field is FOR, which is why it is required: an agent pointed
+// somewhere arbitrary is an agent working without any of it.
 func (r *WorkerRunner) runContext() *RunContext {
-	budget := ""
-	if r.w.MaxBudgetUSD > 0 {
-		budget = strconv.FormatFloat(r.w.MaxBudgetUSD, 'f', -1, 64)
-	}
 	return &RunContext{
 		Worker:     r.w,
 		WorkerDir:  r.dir,
-		RepoDir:    r.repoDir(),
+		RepoDir:    r.w.RepoDir,
 		Prompt:     workerPrompt,
 		Rules:      r.rules,
 		RulesFile:  r.rulesFile,
-		MaxBudget:  budget,
-		ExtraArgs:  r.w.RuntimeArgs,
 		AllowTools: relayAllowedTools,
 	}
 }
@@ -414,7 +401,7 @@ func (r *WorkerRunner) runCycle(ctx context.Context, queue QueueState) {
 	case 0:
 		r.log("cycle complete")
 	case 124:
-		r.log("cycle timed out after %ds — relay's lease will re-offer the task", r.w.RunTimeoutSecs)
+		r.log("cycle timed out after %ds — relay's lease will re-offer the task", r.w.MaxSecondsPerRun)
 	default:
 		r.log("cycle exited with status %d", status)
 	}
@@ -460,7 +447,7 @@ func (r *WorkerRunner) runCycle(ctx context.Context, queue QueueState) {
 // The timeout is enforced here rather than by the CLI: a hung session holds both
 // this worker's lock and the task's relay lease until it is killed.
 func (r *WorkerRunner) exec(ctx context.Context, rc *RunContext, argv []string, runID string, summary *RunSummary) (int, bool) {
-	runCtx, cancel := context.WithTimeout(ctx, time.Duration(r.w.RunTimeoutSecs)*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, time.Duration(r.w.MaxSecondsPerRun)*time.Second)
 	defer cancel()
 
 	cmd := exec.Command(argv[0], argv[1:]...)
@@ -629,11 +616,11 @@ func (r *WorkerRunner) noteBudgetKill() {
 	n := readCounter(r.budgetKillFile()) + 1
 	writeCounter(r.budgetKillFile(), n)
 	if maxBudgetKills > 0 && n >= maxBudgetKills {
-		r.selfPause(fmt.Sprintf(`%d consecutive runs were killed by the $%g max_budget_usd cap.
+		r.selfPause(fmt.Sprintf(`%d consecutive runs were killed by the $%g max_usd_per_run cap.
   This worker will not make progress by trying again — every run restarts the
   same task and stops at the same point, spending the cap each time. Raise
-  max_budget_usd for this worker in .worker-config and relaunch, or split the
-  task in relay so a run can finish inside the cap.`, n, r.w.MaxBudgetUSD))
+  runtime_config.max_usd_per_run for this worker in %s and relaunch, or split
+  the task in relay so a run can finish inside the cap.`, n, r.w.RCFloat("max_usd_per_run"), displayConfigPath()))
 	}
 }
 

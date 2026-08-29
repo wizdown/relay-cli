@@ -1,6 +1,6 @@
 // Secret scrubbing.
 //
-// Every mcp_endpoint in .worker-config is a live credential — the connector URL
+// Every relay_mcp in the config is a live credential — the connector URL
 // from issue_agent_credential, secret included, shown exactly once. relay-cli
 // serves a web page and writes log files, so it has two new ways to leak one
 // that the bash poller did not have, and both are covered here rather than at
@@ -44,7 +44,7 @@ func RedactURL(u string) string {
 	}
 	// An endpoint that is not in the /c/<secret> shape is still a credential;
 	// treat the whole thing as one rather than guessing which part is safe.
-	return "<redacted mcp_endpoint>"
+	return "<redacted relay_mcp>"
 }
 
 // InstallSecrets teaches Scrub every credential in this config. Called once,

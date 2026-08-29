@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -64,21 +65,50 @@ type RunContext struct {
 	Prompt     string
 	Rules      string
 	RulesFile  string
-	MaxBudget  string // per-run spend cap, or "" when removed or unsupported
-	ExtraArgs  string
 	AllowTools string
 }
+
+// runtimeField declares one key a runtime accepts inside a worker's
+// "runtime_config".
+//
+// This table is the single source of truth for three things that used to drift
+// apart: what the config parser accepts, what a bash adapter is handed, and what
+// the documentation claims. A runtime that grows a setting declares it here and
+// all three follow.
+type runtimeField struct {
+	Key      string
+	Kind     fieldKind
+	Required bool
+	// Default applies when the key is absent and not required. Empty means the
+	// setting simply goes unset, which is not the same as zero.
+	Default string
+	// Doc is one line, used in the error a missing required field produces and
+	// in the generated reference table.
+	Doc string
+}
+
+type fieldKind int
+
+const (
+	fieldString fieldKind = iota
+	fieldNumber
+)
 
 // Runtime is one CLI, wrapped.
 type Runtime interface {
 	Name() string
+	// ConfigFields declares every key this runtime accepts in a worker's
+	// "runtime_config", with which are required and what the optional ones
+	// default to. The config parser validates against it and the docs are
+	// written from it.
+	ConfigFields() []runtimeField
 	// Check answers: is this CLI usable on this machine? A non-nil error carries
 	// a one-line fix hint, and is reported at launch rather than 120 times an
 	// hour in a background log.
 	Check() error
 	// BuildCmd returns the exact argv to run. It must not exec, background, cd or
 	// apply a timeout: the loop runs the argv with RepoDir as cwd under the
-	// worker's run_timeout_seconds.
+	// worker's max_seconds_per_run.
 	BuildCmd(rc *RunContext) ([]string, error)
 	// ParseLine turns one line of the CLI's output into session events. An
 	// adapter that cannot parse its CLI returns a single "raw" event, which is
@@ -115,6 +145,11 @@ type versioned interface {
 // support — the other is restoring runtimes/ with an adapter in it.
 const bashAdaptersEnabled = false
 
+// supportedRuntimes is every runtime a config may name today. The reference
+// tables in docs/configuration.md and the test that guards them are both
+// written from this, so a new adapter is documented by existing.
+func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter} }
+
 // ResolveRuntime maps a worker's "runtime" field to an adapter.
 //
 // To be clear about what "built in" means here, since the word invites the wrong
@@ -122,7 +157,7 @@ const bashAdaptersEnabled = false
 // to build an argv for a CLI and read what it prints. No CLI is bundled. claude
 // is installed separately and found on PATH, and its adapter is asked to prove
 // that at startup.
-func ResolveRuntime(name, pollerRoot string) (Runtime, error) {
+func ResolveRuntime(name, relayDir string) (Runtime, error) {
 	if name == "claude" {
 		return claudeAdapter, nil
 	}
@@ -133,13 +168,12 @@ func ResolveRuntime(name, pollerRoot string) (Runtime, error) {
 		// not offered yet.
 		if name == "codex" {
 			return nil, fmt.Errorf("claude is the only supported runtime today, and codex support is coming soon.\n" +
-				"       Set \"runtime\": \"claude\" — it is also the default, so the field can be dropped.")
+				"       Set \"runtime\": \"claude\".")
 		}
 		return nil, fmt.Errorf("relay-cli supports one runtime: claude.\n"+
-			"       %q is not offered. Set \"runtime\": \"claude\" — it is also the\n"+
-			"       default, so the field can be dropped.", name)
+			"       %q is not offered. Set \"runtime\": \"claude\".", name)
 	}
-	script := filepath.Join(pollerRoot, "runtimes", name+".sh")
+	script := filepath.Join(relayDir, "runtimes", name+".sh")
 	if _, err := os.Stat(script); err != nil {
 		return nil, fmt.Errorf("relay-cli has no adapter for it: %s does not exist.\n"+
 			"       adapters compiled in: claude\n"+
@@ -163,6 +197,12 @@ type bashRuntime struct {
 }
 
 func (b *bashRuntime) Name() string { return b.name }
+
+// ConfigFields — a bash adapter declares nothing yet, so any runtime_config key
+// on a worker using one is refused rather than passed through unchecked. Giving
+// a script a way to declare its own fields is the other half of shipping bash
+// adapters, alongside bashAdaptersEnabled.
+func (b *bashRuntime) ConfigFields() []runtimeField { return nil }
 
 func (b *bashRuntime) Check() error {
 	out, err := exec.Command("bash", "-c", `. "$1"; runtime_check`, "_", b.script).CombinedOutput()
@@ -239,18 +279,21 @@ func (b *bashRuntime) ClassifyExit(rc *RunContext, status int, outPath string) (
 //	runtime_build_cmd   populate RUNTIME_CMD with the exact argv. Do NOT exec,
 //	                    background, cd or apply a timeout — the loop runs
 //	                    RUNTIME_CMD with REPO_DIR as cwd under the worker's
-//	                    run_timeout_seconds, so a run and its kill switch behave
+//	                    max_seconds_per_run, so a run and its kill switch behave
 //	                    the same whichever runtime produced it.
 //	runtime_classify_exit  OPTIONAL. Say what an exit MEANT: the loop knows a
 //	                    run exited 1, only the adapter knows whether that was a
 //	                    spend cap, a bad model name, or ordinary failure.
 //
-// The variables below are everything an adapter is given. MAX_BUDGET_USD is
-// empty when the operator removed the cap or the runtime has none; a headless
-// run can never answer an approval prompt, so whatever the CLI spells as
-// "fully autonomous" must be set unconditionally by the adapter.
+// The variables below are everything an adapter is given. On top of them, every
+// key the adapter declared in ConfigFields arrives as RUNTIME_<KEY> — so a
+// runtime's own settings are typed, validated and documented before they reach
+// the script, which raw argv passthrough never was.
+//
+// A headless run can never answer an approval prompt, so whatever the CLI spells
+// as "fully autonomous" must be set unconditionally by the adapter.
 func bashAdapterEnv(rc *RunContext) []string {
-	return []string{
+	env := []string{
 		"RELAY_CONNECTOR_URL=" + rc.Worker.Endpoint,
 		"WORKER_PROMPT=" + rc.Prompt,
 		"WORKER_RULES=" + rc.Rules,
@@ -259,10 +302,16 @@ func bashAdapterEnv(rc *RunContext) []string {
 		"INSTANCE_NAME=" + rc.Worker.Name,
 		"WORKER_DIR=" + rc.WorkerDir,
 		"REPO_DIR=" + rc.RepoDir,
-		"WORKER_MODEL=" + rc.Worker.Model,
-		"MAX_BUDGET_USD=" + rc.MaxBudget,
-		"RUNTIME_ARGS=" + rc.ExtraArgs,
 	}
+	keys := make([]string, 0, len(rc.Worker.RuntimeConfig))
+	for k := range rc.Worker.RuntimeConfig {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		env = append(env, "RUNTIME_"+strings.ToUpper(k)+"="+rc.Worker.RuntimeConfig[k])
+	}
+	return env
 }
 
 func defaultOutcome(status int) string {
@@ -273,11 +322,4 @@ func defaultOutcome(status int) string {
 		return outcomeTimeout
 	}
 	return outcomeError
-}
-
-// splitArgs word-splits raw extra flags the way the shell did. An escape hatch,
-// with the same limitation the bash poller documented: an argument containing a
-// space cannot be expressed.
-func splitArgs(s string) []string {
-	return strings.Fields(s)
 }

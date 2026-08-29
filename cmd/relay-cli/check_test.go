@@ -12,20 +12,22 @@ import (
 	"time"
 )
 
-// writeConfigFor builds a .worker-config pointing at the given endpoints, one
-// worker each, and stubs the runtime check: `check` is about reaching relay,
-// not about whether a coding CLI happens to be installed on this machine.
+// writeConfigFor builds a config pointing at the given endpoints, one worker
+// each, and stubs the runtime check: `check` is about reaching relay, not about
+// whether a coding CLI happens to be installed on this machine.
 func writeConfigFor(t *testing.T, endpoints ...string) string {
 	t.Helper()
 	noRuntimeCheck(t)
+	repo := t.TempDir()
 	var workers []string
 	for i, ep := range endpoints {
 		b, _ := json.Marshal(ep)
-		workers = append(workers, `{"name":"w`+string(rune('1'+i))+`","mcp_endpoint":`+string(b)+`}`)
+		workers = append(workers, `{"name":"w`+string(rune('1'+i))+`","relay_mcp":`+string(b)+
+			`,"repo_dir":"`+repo+`","runtime":"claude","runtime_config":{"model":"sonnet"}}`)
 	}
 	dir := t.TempDir()
-	p := filepath.Join(dir, ".worker-config")
-	body := `{"relay_workers":[` + strings.Join(workers, ",") + `]}`
+	p := filepath.Join(dir, configFileName)
+	body := `{"workers":[` + strings.Join(workers, ",") + `]}`
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -137,8 +139,9 @@ func TestCheckDistinguishesUnreachableFromUnauthorized(t *testing.T) {
 // also the way to validate a config, and the parse error is the useful answer.
 func TestCheckSurfacesConfigErrors(t *testing.T) {
 	dir := t.TempDir()
-	p := filepath.Join(dir, ".worker-config")
-	os.WriteFile(p, []byte(`{"relay_workers":[{"name":"a/b","mcp_endpoint":"https://x/c/wzh_aaaaaaaa"}]}`), 0o600)
+	p := filepath.Join(dir, configFileName)
+	os.WriteFile(p, []byte(`{"workers":[{"name":"a/b","relay_mcp":"https://x/c/wzh_aaaaaaaa",`+
+		`"repo_dir":"`+t.TempDir()+`","runtime":"claude","runtime_config":{"model":"sonnet"}}]}`), 0o600)
 
 	var out bytes.Buffer
 	err := check(p, time.Second, &out)
