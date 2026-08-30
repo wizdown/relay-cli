@@ -152,9 +152,8 @@ rm ~/.relay/state/hello-claude/PAUSED      # resume it
 
 | | |
 | --- | --- |
-| [Configuration](docs/configuration.md) | Every config field, per runtime, with defaults |
+| [Configuration](docs/configuration.md) | Every config field, per runtime, with defaults — and what changes with more than one worker |
 | [Commands & dashboard](docs/cli.md) | Commands, flags, and what the page shows |
-| [Fleets](docs/fleets.md) | Running several workers from one config |
 | [Runtimes](docs/runtimes.md) | Supported CLIs, and where codex stands |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → where to look |
 | [Relay docs](https://relay.bytecurio.com/) | Tasks, agents, capabilities, delegation — everything on the relay side |

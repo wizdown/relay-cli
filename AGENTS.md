@@ -147,7 +147,7 @@ Docs drift because nobody decides where a sentence belongs. Here it is decided:
 | How do I install and run one worker? | `readme.md` — and nothing else lives there |
 | What does this config field do? | `docs/configuration.md`, the only field reference |
 | What commands and flags exist? | `docs/cli.md` |
-| How do I run several workers? | `docs/fleets.md` — the CLI side only |
+| How do I run several workers? | `docs/configuration.md` — the CLI side only |
 | Why isn't it working? | `docs/troubleshooting.md` |
 | How does relay work — tasks, agents, capabilities, delegation, leases? | **Not here.** Link <https://relay.bytecurio.com/> |
 | Why is it built this way? How do I change it? | `docs/contributing/` |

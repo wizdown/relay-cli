@@ -44,6 +44,58 @@ Fields **outside** `runtime_config` are enforced by relay-cli. Fields **inside**
 are the named CLI's vocabulary, translated by its adapter — a key that runtime
 does not accept is rejected when the config loads.
 
+## More than one worker
+
+A fleet is just more than one entry in `workers`. There is no fleet mode, no
+orchestrator binary, and nothing here that says which worker is which.
+
+```jsonc
+{
+  "poll_seconds": 30,
+  "workers": [
+    {
+      "name":      "orchestrator-claude",
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
+      "repo_dir":  "~/relay/orchestrator",
+      "runtime":   "claude",
+      "runtime_config": { "model": "opus" }
+    },
+    {
+      "name":      "app-claude",
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME_2",
+      "repo_dir":  "~/code/app",
+      "runtime":   "claude",
+      "runtime_config": { "model": "sonnet" }
+    }
+  ]
+}
+```
+
+Because a worker is one agent × one directory × one CLI, **the agent you
+delegate a task to is the routing decision**: it determines which checkout the
+work happens in and which CLI does it. There is no mapping table to keep in
+sync.
+
+What an agent is *for* — its instructions, whether it can split work into
+subtasks and route them, how many tasks it may hold at once — lives on the relay
+agent rather than here, because instructions delivered over MCP reach a session
+that is **already running** and stay correct when relay changes. So an
+orchestrator and a worker are two relay agents holding different capabilities,
+and locally they are two ordinary workers. Set that side up in the
+[relay docs](https://relay.bytecurio.com/).
+
+Four things that only matter once there is more than one:
+
+- **Never point two workers at one `relay_mcp`.** Rejected at startup: two
+  workers sharing a credential claim against each other as the same agent.
+- **Two workers on one repo share a working tree.** Supported, but keep their
+  concurrent tasks on separate branches, or give each its own clone.
+- **An orchestrator that writes nothing still needs a `repo_dir`.** An empty
+  directory of its own is enough; sharing one with a worker means overwriting
+  each other.
+- **Ceilings are per worker, and a fleet does not share one budget.** A reviewer
+  that finishes fast wants tighter numbers than an author.
+
 ## Polls and runs
 
 Every ceiling here counts **runs**. Nothing counts, limits or bills for polls.
@@ -122,6 +174,24 @@ resume:
 rm ~/.relay/state/<name>/PAUSED
 ```
 
+### When a worker keeps relaunching against the same task
+
+Relay can hand a worker a task that needs *its* attention — a subtask asked it
+something, or finished. If the agent cannot resolve that (its capability was
+revoked, or the parent was re-delegated), the task keeps coming back and each
+eligible tick burns a run rediscovering something it cannot fix.
+
+The attention-stall breaker catches that shape — the same task ids across
+consecutive *completed* runs — and pauses, naming them:
+
+```text
+2026-02-04T11:02:31Z [orchestrator-claude] PAUSED — task(s) 42 have needed this agent's
+  attention for 3 consecutive completed runs, and nothing changed.
+```
+
+Resolve it in relay, then remove that worker's `PAUSED` file. Only completed
+runs count, so a merely slow agent never trips it.
+
 ## Gotchas
 
 - **Unknown keys at worker level are silently ignored**, so `max_runs_per_hr`
@@ -134,10 +204,6 @@ rm ~/.relay/state/<name>/PAUSED
   any `PAUSED` file and every breaker counter.
 - **Ceilings are checked before the probe.** A tick goes `PAUSED` → lock →
   ceilings → probe → launch, so a throttled worker is cheaper than an idle one.
-- **Two workers on one repo share a working tree.** Supported, but keep their
-  concurrent tasks on separate branches or give each its own clone.
-- **Never point two workers at one `relay_mcp`.** Rejected at startup: two
-  workers sharing a credential claim against each other as the same agent.
 
 ## What is validated before anything launches
 

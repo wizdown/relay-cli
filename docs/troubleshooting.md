@@ -20,11 +20,11 @@ every poll including the empty ones, which is how you tell "idle" from "wedged".
 | A config change had no effect | `state/` is rebuilt on start — restart `relay run` to apply it. |
 | Worker starts and stops instantly | `worker.log` — usually the repo's own hooks, or a denied tool. |
 | An agent says a tool isn't available | If relay refused it (`capability_disabled`), grant the capability on the agent in relay. If the *CLI* refused it, the log names it under "the CLI refused these tool calls". |
-| `PAUSED — task(s) N have needed this agent's attention` | The attention-stall breaker. See [When a worker keeps relaunching against the same task](fleets.md#when-a-worker-keeps-relaunching-against-the-same-task). |
+| `PAUSED — task(s) N have needed this agent's attention` | The attention-stall breaker. See [When a worker keeps relaunching against the same task](configuration.md#when-a-worker-keeps-relaunching-against-the-same-task). |
 | `PAUSED — N consecutive runs were killed by the $X cap` | Raise `runtime_config.max_usd_per_run`, or split the task in relay so a run finishes inside the cap. |
 | `cycle timed out` repeatedly | Raise `max_seconds_per_run`, or the task is too big for one session — split it. |
 | Task ping-pongs between cycles, or a parent never wakes | Claim and lease behaviour is relay's — see the [relay docs](https://relay.bytecurio.com/). |
-| `runtime "claude" is unusable` | The CLI is missing from `PATH`, or too old for the flags the adapter needs. The error names which. See [Runtimes](runtimes.md#what-is-checked-before-anything-launches). |
+| `runtime "claude" is unusable` | The CLI is missing from `PATH`, or too old for the flags the adapter needs. The error names which. See [Runtimes](runtimes.md#the-startup-check). |
 | `worker … is already running as a bash poller` | Another process holds this worker's lock. The message names the pid; `kill` it, then start again. |
 | Dashboard port already in use | It falls forward to the next free port and prints the real URL. `--port` pins one. |
 
