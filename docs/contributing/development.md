@@ -166,8 +166,10 @@ number means one tree, forever.
 documentation tests are checking the release rather than the commit before it. If
 either fails, the constant is put back and nothing is committed.
 
-The documentation tests are part of that: a release cannot go out over a config
-field the reference does not document.
+This is also what "the docs are up to date" means here: `docs_pages_test.go`
+fails if a link is broken, if `docs/cli.md` has fallen behind the commands and
+flags the binary actually has, or if a page quotes a version that does not exist.
+A release cannot go out over any of those.
 
 **4. It asks.** The tag, the commit, the artifacts and the diff, then `[y/N]`.
 There is no unattended path: run without a terminal and it refuses.

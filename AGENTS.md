@@ -36,9 +36,12 @@ gates on it being present. To verify you haven't broken it:
 env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 ```
 
-Some tests read the docs — `docs_test.go` reflects over the `Worker` struct and
+Some tests read the docs. `docs_test.go` reflects over the `Worker` struct and
 each runtime's `ConfigFields()` and fails when a field, default or removed key is
-undocumented. So a docs-only change still runs the suite.
+undocumented; `docs_pages_test.go` walks every markdown file in the repo and
+fails on a broken link, a command or flag missing from `docs/cli.md`, or sample
+output quoting a version that does not exist. So a docs-only change still runs
+the suite — and the pre-commit hook knows it.
 
 ## Codemap
 
@@ -57,6 +60,7 @@ undocumented. So a docs-only change still runs the suite.
 | `server.go` | `/api/snapshot`, `/api/stream`, and the embedded page. **Read-only by design** |
 | `redact.go` | `Scrub` / `RedactURL`. Everything user-facing goes through these |
 | `docs_test.go` | the drift tests that keep the config reference honest |
+| `docs_pages_test.go` | the same idea one level up: links resolve, `docs/cli.md` names every command and flag, sample output quotes a version that exists |
 
 Outside the binary:
 
@@ -208,13 +212,20 @@ Some of that is enforced and the rest is not, so know which is which:
   default or a removed key is missing from `docs/configuration.md`, and when the
   `jsonc` example there no longer validates.
 - `TestHelpQuotesTheRealDefaults` and the flag/command tests hold `helpText` to
-  the code.
+  the code, and `docs_pages_test.go` holds `docs/cli.md` to the same command and
+  flag lists — a flag now has to be documented in both places or the build fails.
+- `docs_pages_test.go` also fails when a **link** between two markdown files
+  points at a file or a heading anchor that does not exist, and when **sample
+  output** quotes a version the code has never been: every page must show the
+  same number, and never one ahead of the version constant.
 - The pre-commit hook runs the suite when **docs** change, not only Go — because
   those tests read the docs.
-- **Nothing checks prose.** Every sentence outside those tables — the readme, the
-  quickstart, `docs/cli.md`, the troubleshooting rows — is only as current as the
-  last person who read it. Re-read the pages your change touches; do not assume
-  a green `make check` means the docs are right.
+- **Nothing checks what a sentence means.** Links resolve, names match, versions
+  exist — and a page can still describe behaviour that changed last week. The
+  readme's prose, the troubleshooting rows and every explanation are only as
+  current as the last person who read them. Re-read the pages your change
+  touches; a green `make check` means the docs are consistent, not that they are
+  right.
 
 Two more rules that keep this cheap:
 

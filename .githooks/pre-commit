@@ -84,8 +84,10 @@ if echo "$staged" | grep -qE '\.go$|^go\.mod$'; then
 	fi
 fi
 
-# A docs edit can break the drift tests without touching Go at all.
-if echo "$staged" | grep -qE '^(docs/|readme\.md)'; then
+# A docs edit can break the drift tests without touching Go at all — and that
+# now includes AGENTS.md and anything under docs/contributing/, because the link
+# check walks every markdown file in the repo.
+if echo "$staged" | grep -qE '\.md$'; then
 	if ! echo "$staged" | grep -qE '\.go$'; then
 		step "go test ./... (docs changed)"
 		if out=$(go test ./... 2>&1); then
