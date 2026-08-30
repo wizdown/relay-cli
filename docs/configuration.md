@@ -96,6 +96,20 @@ Four things that only matter once there is more than one:
 - **Ceilings are per worker, and a fleet does not share one budget.** A reviewer
   that finishes fast wants tighter numbers than an author.
 
+## Removing a worker
+
+Delete its entry from the config and its state directory, then **revoke its
+credential in relay** — deleting the config does not invalidate a credential
+relay has already issued.
+
+```bash
+rm -rf ~/.relay/state/<name>
+```
+
+To remove everything: revoke every credential in the config, then `rm -rf
+~/.relay/` and `rm $(command -v relay)`. Archived logs can contain anything the
+agents read, so delete them deliberately rather than by habit.
+
 ## Polls and runs
 
 Every ceiling here counts **runs**. Nothing counts, limits or bills for polls.
