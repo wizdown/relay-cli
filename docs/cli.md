@@ -18,13 +18,35 @@ relay version         # print the version
 | Command | |
 |---|---|
 | `init` | write a starting config. Takes no flags. |
-| `check` | validate the config and probe every credential, launching nothing and spending nothing |
+| `check` | validate the config, probe every credential and report what each `repo_dir` holds, launching nothing and spending nothing |
 | `run` | start every worker in the config and open the dashboard |
 | `version` | print the version |
 | `help` | the full manual — also what a bare invocation prints |
 
 Starting is asked for by name rather than being the default, because it launches
 autonomous sessions that spend money.
+
+## What `check` answers
+
+```text
+relay 0.1.0 (beta) — checking 2 worker(s) from /Users/you/.relay/config
+  runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
+
+  wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
+    repo /Users/you/code/wizhub   CLAUDE.md · 2 skills · 1 subagent · 1 hook
+  orchestrator-claude      ok    queue: resume 0 · attention 0 · todo 0
+    repo /Users/you/relay/orchestrator   nothing to load — the agent arrives with its task and its tools
+```
+
+Two questions, one pass. The queue line proves the credential works and relay is
+reachable. The `repo` line proves the other half: that the `CLAUDE.md`, skills
+and subagents someone wrote are where the CLI will look for them — a file one
+directory up, or a skill in a folder that isn't `<name>/SKILL.md`, produces a
+worker that starts, spends and knows none of it.
+
+"Nothing to load" is a valid answer, not a warning: an empty directory is a
+working setup. [The working directory](working-directory.md) is what you can add
+to one.
 
 ## Flags
 

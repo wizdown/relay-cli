@@ -18,8 +18,14 @@ import (
 // whether a coding CLI happens to be installed on this machine.
 func writeConfigFor(t *testing.T, endpoints ...string) string {
 	t.Helper()
+	return writeConfigForRepo(t, t.TempDir(), endpoints...)
+}
+
+// writeConfigForRepo is the same, for a test that needs to put something in the
+// working directory and then read what check says about it.
+func writeConfigForRepo(t *testing.T, repo string, endpoints ...string) string {
+	t.Helper()
 	noRuntimeCheck(t)
-	repo := t.TempDir()
 	var workers []string
 	for i, ep := range endpoints {
 		b, _ := json.Marshal(ep)
@@ -200,5 +206,53 @@ func TestCommandsWithNoConfigPointAtInit(t *testing.T) {
 		if !strings.Contains(err.Error(), "relay init") {
 			t.Errorf("%s: the error does not name the command that fixes it:\n%v", name, err)
 		}
+	}
+}
+
+// The probe proves relay is reachable; this line proves the other half of a
+// worker's setup. A CLAUDE.md written one directory up, or a skill in a folder
+// the CLI does not read, produces a worker that starts, spends and knows none of
+// it — and nothing else in this tool would ever say so.
+func TestCheckReportsWhatTheWorkingDirectoryHolds(t *testing.T) {
+	relay := mcpStub(t, threeBuckets, true)
+	defer relay.Close()
+
+	repo := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(repo, ".claude", "skills", "release-check"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		"CLAUDE.md": "# rules\n",
+		filepath.Join(".claude", "skills", "release-check", "SKILL.md"): "---\nname: release-check\n---\n",
+	} {
+		if err := os.WriteFile(filepath.Join(repo, path), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var out bytes.Buffer
+	if err := check(writeConfigForRepo(t, repo, relay.URL+"/c/wzh_aaaaaaaa"), 5*time.Second, &out); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{repo, "CLAUDE.md", "1 skill"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("check output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// An empty working directory is a valid setup — check has to describe it, not
+// fail it. Anything else pushes people into writing files they do not need.
+func TestCheckAcceptsAnEmptyWorkingDirectory(t *testing.T) {
+	relay := mcpStub(t, threeBuckets, true)
+	defer relay.Close()
+
+	var out bytes.Buffer
+	if err := check(writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa"), 5*time.Second, &out); err != nil {
+		t.Fatalf("an empty repo_dir is fine, got %v", err)
+	}
+	if !strings.Contains(out.String(), "nothing to load") {
+		t.Errorf("check should say the directory is empty:\n%s", out.String())
 	}
 }

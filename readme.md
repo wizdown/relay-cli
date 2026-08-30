@@ -103,11 +103,16 @@ Validates the config and tests every credential. It launches nothing and spends
 nothing, so it is the cheap way to find a typo or a revoked credential:
 
 ```text
-relay 0.0.1 (beta) — checking 1 worker(s) from /Users/you/.relay/config
+relay 0.1.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   hello-claude             ok    queue: resume 0 · attention 0 · todo 0
+    repo /Users/you/code/scratch   nothing to load — the agent arrives with its task and its tools
 ```
+
+The second line is what that directory gives the agent. "Nothing to load" is a
+valid answer — see [The working directory](docs/working-directory.md) for what
+you can add to it, and what each thing buys you.
 
 ```bash
 relay run

@@ -190,6 +190,21 @@ the worker, and so are the permission rules in `~/.claude/settings.json`.
 If you want a worker to behave the same way on someone else's machine, keep what
 it depends on in the working directory.
 
+## Checking what landed
+
+Nothing here fails loudly. A `CLAUDE.md` written one directory up, or a skill in
+a folder that isn't `<name>/SKILL.md`, produces a worker that starts, runs, costs
+money and knows none of it. `relay check` says what each worker would actually
+find, before anything launches:
+
+```text
+  wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
+    repo /Users/you/code/wizhub   CLAUDE.md · 2 skills · 1 subagent · 1 hook
+```
+
+It counts only what the CLI itself loads, so if you wrote a file and it is not
+in that line, the agent will not see it either.
+
 ## The whole ladder
 
 | You want the agent to… | Add |

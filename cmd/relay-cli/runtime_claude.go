@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,6 +161,132 @@ func claudeVersion() string {
 		return ""
 	}
 	return strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+}
+
+// InspectWorkdir reports what a session started in dir would load from it, for
+// the one line `relay check` prints under each worker.
+//
+// It exists because the working directory is the half of a worker's setup
+// nothing else can confirm. A config typo is caught when the config loads and a
+// dead credential is caught by the probe, but a CLAUDE.md that was written one
+// directory up, or a skill whose file is named skill.md, produces a worker that
+// starts, runs, costs money and quietly knows none of it. This turns "did what I
+// wrote land?" into something the tool answers before the first run.
+//
+// Nothing here is a requirement: an empty directory is a valid setup, so the
+// empty case reports what the agent still arrives with rather than a warning.
+// Every read is a stat or a small file, and none of it is fatal — this is a
+// description, never a validation.
+func (c *claudeRuntime) InspectWorkdir(dir string) string {
+	var parts []string
+
+	if hasFileNamed(dir, "CLAUDE.md") {
+		parts = append(parts, "CLAUDE.md")
+	}
+	if n := countSkills(filepath.Join(dir, ".claude", "skills")); n > 0 {
+		parts = append(parts, plural(n, "skill", "skills"))
+	}
+	if n := countSubagents(filepath.Join(dir, ".claude", "agents")); n > 0 {
+		parts = append(parts, plural(n, "subagent", "subagents"))
+	}
+	if s := describeSettings(filepath.Join(dir, ".claude", "settings.json")); s != "" {
+		parts = append(parts, s)
+	}
+
+	if len(parts) == 0 {
+		return "nothing to load — the agent arrives with its task and its tools"
+	}
+	return strings.Join(parts, " · ")
+}
+
+// countSkills counts <dir>/<name>/SKILL.md, which is the only shape the CLI
+// loads. A directory holding a "skill.md" or a bare README is not a skill, and
+// counting it would be the reassurance this line exists to avoid giving.
+func countSkills(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if hasFileNamed(filepath.Join(dir, e.Name()), "SKILL.md") {
+			n++
+		}
+	}
+	return n
+}
+
+// hasFileNamed matches the name exactly, which os.Stat does not: macOS and
+// Windows are case-insensitive, so a Stat for SKILL.md happily finds skill.md —
+// a file the CLI itself will not load. Reporting it would mean this line
+// disagrees with the run on the one machine most operators are using.
+func hasFileNamed(dir, name string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() == name && !e.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
+func countSubagents(dir string) int {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			n++
+		}
+	}
+	return n
+}
+
+// describeSettings reports the part of a settings file that changes a run.
+//
+// Hooks are called out by count because they execute, unattended, on every
+// session — the one thing in that file worth seeing before a fleet starts. A
+// file that does not parse is named as such rather than skipped: the CLI ignores
+// an invalid settings file silently in headless mode, so a typo there is
+// otherwise invisible.
+func describeSettings(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var s struct {
+		Hooks map[string][]struct {
+			Hooks []json.RawMessage `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if json.Unmarshal(raw, &s) != nil {
+		return "settings.json (does not parse — the CLI ignores it silently)"
+	}
+	n := 0
+	for _, matchers := range s.Hooks {
+		for _, m := range matchers {
+			n += len(m.Hooks)
+		}
+	}
+	if n > 0 {
+		return plural(n, "hook", "hooks")
+	}
+	return "settings.json"
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
 }
 
 func (c *claudeRuntime) BuildCmd(rc *RunContext) ([]string, error) {

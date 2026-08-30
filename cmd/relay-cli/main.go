@@ -34,7 +34,7 @@ const (
 	// surface is still evolving, so a release may still change configuration or
 	// the worker contract. A 1.0 would be a claim that it will not, which is not
 	// a claim this can make yet — see the versioning note in the root readme.
-	version = "0.0.2"
+	version = "0.1.0"
 	channel = "beta"
 
 	// Everything relay-cli owns lives in ONE place:
@@ -141,8 +141,10 @@ GETTING STARTED
        autonomous and cannot answer an approval prompt.
 
     3. relay check
-       Validates the config and tests every credential. Launches nothing and
-       spends nothing, so it is the cheap way to find a mistake.
+       Validates the config, tests every credential, and prints what each
+       worker's repo_dir would give its agent — the CLAUDE.md, skills and
+       subagents the CLI will actually find there. Launches nothing and spends
+       nothing, so it is the cheap way to find a mistake.
 
     4. relay run
        Starts the workers and opens the dashboard on 127.0.0.1.
@@ -151,7 +153,8 @@ GETTING STARTED
 
 COMMANDS
   init         create ~/.relay/ with a starting config
-  check        validate the config and test every credential, launching nothing
+  check        validate the config, test every credential and report what each
+               repo_dir holds, launching nothing
   run          start every worker in the config and open the dashboard
   version      print the version
   help         show this message
@@ -459,10 +462,12 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 				unauthorized = true
 			}
 			fmt.Fprintf(out, "  %-24s FAIL  %s\n", r.worker.Name, msg)
+			writeWorkdirLine(out, r.worker, cfg.RelayDir)
 			continue
 		}
 		fmt.Fprintf(out, "  %-24s ok    queue: resume %d · attention %d · todo %d\n",
 			r.worker.Name, r.queue.Resume, r.queue.Attention, r.queue.Todo)
+		writeWorkdirLine(out, r.worker, cfg.RelayDir)
 	}
 	fmt.Fprintln(out)
 
@@ -486,6 +491,30 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 	fmt.Fprintf(out, "all %d worker(s) ready. A queue of 0 means the credential works and there is\n"+
 		"simply no work waiting. Nothing was launched and nothing was spent.\n", len(cfg.Workers))
 	return nil
+}
+
+// writeWorkdirLine prints what this worker's repo_dir would give the agent.
+//
+// The credential probe above proves relay is reachable; this proves the other
+// half — that the CLAUDE.md, skills and subagents someone wrote are where the
+// CLI will actually look for them. Both questions are why `check` exists, and
+// answering only the first is how a worker starts, spends and knows nothing.
+//
+// A runtime that cannot describe a directory prints nothing rather than a
+// placeholder, and nothing here can fail the check: an empty directory is a
+// valid setup.
+func writeWorkdirLine(out io.Writer, w *Worker, relayDir string) {
+	rt, err := ResolveRuntime(w.Runtime, relayDir)
+	if err != nil {
+		return
+	}
+	insp, ok := rt.(workdirInspector)
+	if !ok {
+		return
+	}
+	if summary := insp.InspectWorkdir(w.RepoDir); summary != "" {
+		fmt.Fprintf(out, "    repo %s   %s\n", w.RepoDir, summary)
+	}
 }
 
 // runOpts is the run command's flags, split out from runCommand so a test can

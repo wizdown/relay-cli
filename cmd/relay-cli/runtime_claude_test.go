@@ -231,3 +231,77 @@ func TestBuildCmdOmitsAZeroSpendCap(t *testing.T) {
 		t.Errorf("a 0 cap must omit the flag entirely: %v", argv)
 	}
 }
+
+// ── the working-directory summary `relay check` prints ───────────────────────
+
+// A skill is <name>/SKILL.md and nothing else. Counting a directory that merely
+// looks like one would be exactly the false reassurance this line exists to
+// avoid: the operator reads "2 skills", and the run loads one.
+func TestInspectWorkdirCountsOnlyWhatTheCLILoads(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("CLAUDE.md", "# rules\n")
+	write(".claude/skills/release-check/SKILL.md", "---\nname: release-check\n---\n")
+	write(".claude/skills/notes/skill.md", "lowercase, so not a skill\n")
+	write(".claude/agents/reviewer.md", "---\nname: reviewer\n---\n")
+	write(".claude/settings.json", `{"hooks":{"PostToolUse":[{"matcher":"Edit","hooks":[{"type":"command","command":"gofmt -w ."}]}]}}`)
+
+	got := (&claudeRuntime{}).InspectWorkdir(dir)
+	for _, want := range []string{"CLAUDE.md", "1 skill", "1 subagent", "1 hook"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("summary is missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "2 skills") {
+		t.Errorf("skill.md is not a skill the CLI loads:\n%s", got)
+	}
+}
+
+// An empty directory is a valid setup, so the empty case describes what the
+// agent still arrives with. Reporting it as a problem would push people into
+// writing a CLAUDE.md they do not need.
+func TestInspectWorkdirTreatsAnEmptyDirectoryAsFine(t *testing.T) {
+	got := (&claudeRuntime{}).InspectWorkdir(t.TempDir())
+	if !strings.Contains(got, "nothing to load") {
+		t.Errorf("an empty working directory should say so plainly, got %q", got)
+	}
+}
+
+// The CLI ignores a settings file that does not parse, silently, in headless
+// mode — so a typo there is invisible unless something says it out loud.
+func TestInspectWorkdirNamesASettingsFileThatDoesNotParse(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".claude", "settings.json"), []byte(`{"hooks":`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := (&claudeRuntime{}).InspectWorkdir(dir); !strings.Contains(got, "does not parse") {
+		t.Errorf("an invalid settings file has to be named, got %q", got)
+	}
+}
+
+// A headless run denies whatever no rule matches. With relay's surface alone a
+// worker can read its task and hand it back, and cannot edit one file — a
+// failure that is silent until the run's permission_denials, after it is paid
+// for. This is the guard on that.
+func TestWorkerAllowlistCarriesTheToolsTheWorkNeeds(t *testing.T) {
+	for _, tool := range []string{"Read", "Edit", "Write", "Bash", "Skill"} {
+		if !strings.Contains(workerAllowedTools, tool) {
+			t.Errorf("%s is missing: a worker without it is silently denied mid-run", tool)
+		}
+	}
+	if !strings.Contains(workerAllowedTools, "mcp__relay__claim_task") {
+		t.Error("relay's own surface must still be pre-allowed")
+	}
+}

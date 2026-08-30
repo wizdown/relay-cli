@@ -77,6 +77,17 @@ const coreAllowedTools = "Read Glob Grep Edit Write NotebookEdit Bash BashOutput
 // tools that make it a coding session rather than a bookkeeping one.
 const workerAllowedTools = relayAllowedTools + " " + coreAllowedTools
 
+// workdirInspector is implemented by a runtime that can say what a session
+// started in a directory would pick up from it. Optional on purpose: what lives
+// in a working directory is one CLI's own layout, so only that CLI's adapter can
+// read it, and a runtime with nothing to report simply does not implement this.
+//
+// It is read-only by contract — `relay check` calls it, and check launches
+// nothing and spends nothing.
+type workdirInspector interface {
+	InspectWorkdir(dir string) string
+}
+
 // RunContext is what an adapter is given to build one invocation. It mirrors the
 // environment a bash adapter is given, field for field — the contract
 // runtimes/_template.sh documents.
