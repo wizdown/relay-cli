@@ -79,7 +79,7 @@ It is runtime-neutral and the same text for every CLI. `claude` gets it via
 `--append-system-prompt`, layered on top of its own system prompt rather than
 replacing it.
 
-The binary embeds a copy so a downloaded `relay-cli` works on a machine holding
+The binary embeds a copy so a downloaded `relay` works on a machine holding
 nothing but itself, and prefers a `worker-rules.md` sitting in `~/.relay/` when
 there is one, so editing the rules takes effect without rebuilding.
 

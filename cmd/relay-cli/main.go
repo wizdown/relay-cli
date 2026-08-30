@@ -100,7 +100,7 @@ func (s *Supervisor) Statuses() []WorkerStatus {
 // how it works is not a confusing error message, it is a fleet doing something
 // unintended. Everything needed to use it correctly is here, in one place, at
 // zero cost to read.
-const helpText = `relay-cli ` + version + ` (` + channel + `) — run a fleet of relay CLI workers, and watch them work.
+const helpText = `relay ` + version + ` (` + channel + `) — run a fleet of relay CLI workers, and watch them work.
 
 Each worker polls relay over plain HTTP for work assigned to its agent. A poll
 runs no model and costs nothing. Only when relay actually has a task does the
@@ -116,7 +116,7 @@ spend is bounded by default — but relay is still evolving, so an upgrade may
 need edits to your config.
 
 USAGE
-  relay-cli <command> [flags]
+  relay <command> [flags]
 
 GETTING STARTED
   You need two things: this binary, and a relay agent credential. Relay is at
@@ -124,7 +124,7 @@ GETTING STARTED
   demo workspace is enough. Nothing else is installed from here: the coding CLI
   is separate (see RUNTIMES).
 
-    1. relay-cli init
+    1. relay init
        Creates ~/.relay/ with a starting config in it. Everything relay-cli
        keeps lives there and nowhere else.
 
@@ -139,11 +139,11 @@ GETTING STARTED
        a checkout you are willing to have rewritten: a headless run is fully
        autonomous and cannot answer an approval prompt.
 
-    3. relay-cli check
+    3. relay check
        Validates the config and tests every credential. Launches nothing and
        spends nothing, so it is the cheap way to find a mistake.
 
-    4. relay-cli run
+    4. relay run
        Starts the workers and opens the dashboard on 127.0.0.1.
 
   Then delegate a task to that agent in relay and watch the run happen.
@@ -181,11 +181,11 @@ FLAGS (for check)
   credentials relay showed only once.
 
 EXAMPLES
-  relay-cli init                 # start here — writes a starting config
-  relay-cli check                # is everything wired up? costs nothing
-  relay-cli run
-  relay-cli run --port 8080 --no-open
-  relay-cli run --quiet          # dashboard only, quiet terminal
+  relay init                 # start here — writes a starting config
+  relay check                # is everything wired up? costs nothing
+  relay run
+  relay run --port 8080 --no-open
+  relay run --quiet          # dashboard only, quiet terminal
 
 THE CONFIG FILE
   ~/.relay/config is JSON listing your workers, and // comments are allowed.
@@ -328,7 +328,7 @@ func main() {
 		usage(os.Stdout)
 		return
 	case "version", "-v", "--version":
-		fmt.Println("relay-cli " + version + " (" + channel + ")")
+		fmt.Println("relay " + version + " (" + channel + ")")
 		return
 	case "run":
 		runCommand(os.Args[2:])
@@ -344,7 +344,7 @@ func main() {
 	// A flag where the command should be is the likeliest mistake, and the fix
 	// is one word — so say the whole corrected line rather than just refusing.
 	if strings.HasPrefix(os.Args[1], "-") {
-		fmt.Fprintf(os.Stderr, "error: %q is a flag, not a command. Did you mean:\n\n  relay-cli run %s\n\nRun \"relay-cli help\" for the full manual.\n",
+		fmt.Fprintf(os.Stderr, "error: %q is a flag, not a command. Did you mean:\n\n  relay run %s\n\nRun \"relay help\" for the full manual.\n",
 			os.Args[1], strings.Join(os.Args[1:], " "))
 		os.Exit(2)
 	}
@@ -363,9 +363,9 @@ func checkFlags(o *checkOpts) *flag.FlagSet {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `
-usage: relay-cli check [--timeout N]
+usage: relay check [--timeout N]
 
-  Reads %s. Run "relay-cli help" for the full manual.
+  Reads %s. Run "relay help" for the full manual.
 `, displayConfigPath())
 	}
 	fs.IntVar(&o.timeout, "timeout", defaultCheckTimeoutSecs, "seconds to wait for each credential probe")
@@ -380,7 +380,7 @@ func checkCommand(args []string) {
 		os.Exit(2)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay-cli help\" for usage.\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay help\" for usage.\n", fs.Arg(0))
 		os.Exit(2)
 	}
 
@@ -412,7 +412,7 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "relay-cli %s (%s) — checking %d worker(s) from %s\n", version, channel, len(cfg.Workers), cfg.Path)
+	fmt.Fprintf(out, "relay %s (%s) — checking %d worker(s) from %s\n", version, channel, len(cfg.Workers), cfg.Path)
 	for _, line := range runtimeBanner(cfg) {
 		fmt.Fprintln(out, line)
 	}
@@ -495,9 +495,9 @@ func runFlags(o *runOpts) *flag.FlagSet {
 	// lines after a one-word typo buries the error that explains it.
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `
-usage: relay-cli run [--port N] [--no-open] [--quiet] [--no-archive]
+usage: relay run [--port N] [--no-open] [--quiet] [--no-archive]
 
-  Reads %s. Run "relay-cli help" for the full manual.
+  Reads %s. Run "relay help" for the full manual.
 `, displayConfigPath())
 	}
 
@@ -516,7 +516,7 @@ func runCommand(args []string) {
 		os.Exit(2)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay-cli help\" for usage.\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay help\" for usage.\n", fs.Arg(0))
 		os.Exit(2)
 	}
 
@@ -592,7 +592,7 @@ func run(configPath string, port int, noOpen, noArchive, quiet bool) error {
 		}
 	}()
 
-	fmt.Printf("relay-cli %s (%s) — %d worker(s) from %s\n", version, channel, len(cfg.Workers), cfg.Path)
+	fmt.Printf("relay %s (%s) — %d worker(s) from %s\n", version, channel, len(cfg.Workers), cfg.Path)
 	// Which CLI each worker will actually drive, and where it was found. relay-cli
 	// bundles no CLI, so "which claude is this using?" is a question worth
 	// answering before the first run rather than after a surprising one.
@@ -683,7 +683,7 @@ func checkNothingElseRunning(liveDir string) error {
 		}
 	}
 	if pid, ok := livePid(filepath.Join(liveDir, "relay-cli.pid")); ok {
-		return fmt.Errorf("relay-cli is already running (pid %d). Stop it first", pid)
+		return fmt.Errorf("relay is already running (pid %d). Stop it first", pid)
 	}
 	return nil
 }

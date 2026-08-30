@@ -169,8 +169,8 @@ func TestInitOutputExplainsWhatToDoNext(t *testing.T) {
 		"relay_mcp",              // the first placeholder
 		"repo_dir",               // the second
 		"issue_agent_credential", // how to get a credential
-		"relay-cli check",        // verify before spending
-		"relay-cli run",          // then start
+		"relay check",            // verify before spending
+		"relay run",              // then start
 		"rewritten",              // what pointing repo_dir somewhere costs
 		"NEVER COMMIT",           // the one irreversible mistake
 	} {

@@ -1,4 +1,4 @@
-// `relay-cli init` — create ~/.relay/ and write a starting config into it.
+// `relay init` — create ~/.relay/ and write a starting config into it.
 //
 // The generated file is deliberately SHORT. It used to be the whole field
 // reference, on the theory that someone who downloaded one binary has no
@@ -24,11 +24,11 @@ import (
 // one required runtime setting, and nothing else.
 //
 // Both placeholders are obviously placeholders and both are rejected BY NAME by
-// `relay-cli check`, so the two decisions this file cannot make — which agent,
+// `relay check`, so the two decisions this file cannot make — which agent,
 // which repo — fail with the reason rather than with a parse error further in.
 const initConfigTemplate = `{
   // ───────────────────────────────────────────────────────────────────────────
-  //  ~/.relay/config — the workers ` + "`relay-cli run`" + ` will launch.
+  //  ~/.relay/config — the workers ` + "`relay run`" + ` will launch.
   //
   //  One worker = one relay agent identity × one repo checkout × one CLI.
   //  What an agent is FOR — its instructions, what it may decide alone — lives
@@ -105,11 +105,11 @@ func initFlags() *flag.FlagSet {
 	fs.SetOutput(os.Stderr)
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `
-usage: relay-cli init
+usage: relay init
 
   Creates ~/%s/ with a starting config in it. Takes no flags — there is one
   location and nothing points elsewhere.
-  Run "relay-cli help" for the full manual.
+  Run "relay help" for the full manual.
 `, relayDirName)
 	}
 	return fs
@@ -122,8 +122,8 @@ func initCommand(args []string) {
 		os.Exit(2)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. \"relay-cli init\" takes none — it always writes\n"+
-			"       to ~/%s. Run \"relay-cli help\" for usage.\n", fs.Arg(0), relayDirName)
+		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. \"relay init\" takes none — it always writes\n"+
+			"       to ~/%s. Run \"relay help\" for usage.\n", fs.Arg(0), relayDirName)
 		os.Exit(2)
 	}
 
@@ -152,7 +152,7 @@ func initConfig(dir string, out io.Writer) error {
 	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
 		return fmt.Errorf("%s exists and is a file, not a directory.\n"+
 			"       relay-cli keeps its config, state and logs in a directory there.\n"+
-			"       Move or remove that file, then run \"relay-cli init\" again.", dir)
+			"       Move or remove that file, then run \"relay init\" again.", dir)
 	}
 
 	configPath := filepath.Join(dir, configFileName)
@@ -191,11 +191,11 @@ Two placeholders to replace, and it runs:
 
 Then:
 
-  relay-cli check    validates the file and tests the credential against relay.
-                     Launches nothing and spends nothing, so this is the cheap
-                     way to find a mistake. It reports every problem at once.
+  relay check    validates the file and tests the credential against relay.
+                 Launches nothing and spends nothing, so this is the cheap
+                 way to find a mistake. It reports every problem at once.
 
-  relay-cli run      starts the workers and opens the dashboard on 127.0.0.1.
+  relay run      starts the workers and opens the dashboard on 127.0.0.1.
 
 Both read %s. state/ and logs/ are created beside it when a fleet runs.
 

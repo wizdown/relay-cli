@@ -7,7 +7,7 @@
 # downloads one file and runs it, with no jq, no curl, no Go toolchain and no
 # libc version to match.
 
-BINARY  := relay-cli
+BINARY  := relay
 PKG     := ./cmd/relay-cli
 # The version constant lives inside a const ( … ) block, so this matches the
 # indented form. It is the single source of truth: the release workflow refuses
@@ -67,7 +67,7 @@ check:
 
 # Print the version the Makefile resolved. The release workflow reads this, so
 # a silently-empty VERSION becomes a failed release rather than an artifact
-# called relay-cli--macos-arm64.
+# called relay--macos-arm64.
 version:
 	@test -n "$(VERSION)" || { echo "error: could not read the version constant from cmd/relay-cli/main.go" >&2; exit 1; }
 	@echo $(VERSION)

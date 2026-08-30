@@ -58,7 +58,7 @@ Be deliberate about this before you point one at a checkout:
 
 ## What the dashboard exposes
 
-`relay-cli run` serves a page on `127.0.0.1` only. No flag changes that.
+`relay run` serves a page on `127.0.0.1` only. No flag changes that.
 
 It is **read-only**: there is no route that pauses a worker, starts a run, or
 edits a ceiling — not a hidden one, not a disabled button. A page that can spend

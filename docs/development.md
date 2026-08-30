@@ -11,7 +11,7 @@ From the repository root:
 make check    # gofmt + vet + test — the pre-PR command
 make test     # tests only
 make fmt      # gofmt -w
-make build    # build cmd/relay-cli/relay-cli
+make build    # build ./relay
 make hooks    # one-time per clone: install the pre-commit hook
 ```
 
@@ -74,7 +74,7 @@ scan for credential-shaped strings across tracked files.
 
 ## Cutting a release
 
-Releases publish a `relay-cli` binary for **macOS on Apple Silicon**, with a
+Releases publish a `relay` binary for **macOS on Apple Silicon**, with a
 checksum, so a user can download one file and run it without a Go toolchain.
 `.github/workflows/release.yml` builds it.
 
@@ -117,7 +117,7 @@ make dist         # every platform in PLATFORMS + dist/SHA256SUMS
 
 `make version` failing, or printing nothing, means the constant could not be
 read — fix that before tagging, or the release publishes artifacts named
-`relay-cli--macos-arm64`, with the version missing.
+`relay--macos-arm64`, with the version missing.
 
 **3. Merge the bump to `master`.** Releases are cut from merged code.
 

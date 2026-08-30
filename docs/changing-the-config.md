@@ -63,12 +63,12 @@ Add a row to the worker table. Keep the default in the **last** column as
 
 **3. The manual** — `helpText` in `main.go`:
 
-Add it to the `THE CONFIG FILE` block. `relay-cli help` has to stand alone:
+Add it to the `THE CONFIG FILE` block. `relay help` has to stand alone:
 someone running a downloaded binary with no checkout has only this.
 
 Then `make check`. If you missed a surface, the failure names it.
 
-Note what is **not** on this list. `relay-cli init` writes a deliberately short
+Note what is **not** on this list. `relay init` writes a deliberately short
 starting config that links `docs/configuration.md` rather than repeating it —
 adding every new field there is how it grew into a second copy of the manual that
 drifted from the first.
@@ -120,7 +120,7 @@ cheapens the required-ness of the ones that matter.
 Add a placeholder to the init template when a required field has no sensible
 starting value, and reject that exact string by name in `config.go` — the way
 `repo_dir` and `relay_mcp` both work. "`/path/to/your/repo` is not a directory"
-reads like a typo; "still the placeholder from `relay-cli init`" reads like the
+reads like a typo; "still the placeholder from `relay init`" reads like the
 step it is.
 
 ## What must not go in the config

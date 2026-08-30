@@ -8,10 +8,10 @@ the config parser are built in, so it needs neither `jq` nor `curl`.
 ## Commands
 
 ```bash
-relay-cli                 # prints the full manual — commands, flags, config, safeguards
-relay-cli check           # validate the config and test every credential; launches nothing
-relay-cli run             # reads ~/.relay/config, opens the dashboard
-relay-cli run --port 7717 --no-open
+relay                 # prints the full manual — commands, flags, config, safeguards
+relay check           # validate the config and test every credential; launches nothing
+relay run             # reads ~/.relay/config, opens the dashboard
+relay run --port 7717 --no-open
 ```
 
 | Command | |
@@ -47,7 +47,7 @@ agent identity holding a credential issued to you, and a fleet routinely spans
 several checkouts — so one user-scoped location means "which config is this
 actually running?" is a question nobody has to ask.
 
-`relay-cli help` prints all of this, so the binary explains itself with nothing
+`relay help` prints all of this, so the binary explains itself with nothing
 else installed.
 
 ## Why it exists
@@ -110,7 +110,7 @@ scrubbed on the way out.
 ## Startup and shutdown
 
 ```text
-relay-cli 0.1.0 — 1 worker(s) from /Users/you/.relay/config
+relay 0.1.0 — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
   wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
 
@@ -134,7 +134,7 @@ means re-running is how you apply a config change.
 ## Building it
 
 ```bash
-make          # gofmt + vet + test, then build ./relay-cli
+make          # gofmt + vet + test, then build ./relay
 make dist     # release artifacts + SHA256SUMS
 ```
 

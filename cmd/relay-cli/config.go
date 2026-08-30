@@ -49,7 +49,7 @@ const (
 // nobody can reason about.
 const minPollSeconds = 5.0
 
-// The two placeholders `relay-cli init` writes, rejected BY NAME.
+// The two placeholders `relay init` writes, rejected BY NAME.
 //
 // Both mark a decision relay-cli cannot make for anyone, and both are rejected
 // here — in the same pass as every other problem — rather than later. A step the
@@ -146,7 +146,7 @@ var removedKeys = map[string]string{
 //
 // The config is JSON, and JSON has no comments — but this is a file humans
 // hand-edit, where "wait, is this one required?" is the question they have while
-// editing it. So `relay-cli init` annotates each field where the field is, and
+// editing it. So `relay init` annotates each field where the field is, and
 // comments are stripped before the parser ever sees them.
 //
 // The quote-awareness is the only part that needs care: relay_mcp is a URL, and
@@ -226,7 +226,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("no config at %s.\n"+
-				"       Run \"relay-cli init\" to create one.", path)
+				"       Run \"relay init\" to create one.", path)
 		}
 		return nil, err
 	}
@@ -327,7 +327,7 @@ func LoadConfig(path string) (*Config, error) {
 		}
 
 		if strings.Contains(w.Endpoint, endpointPlaceholder) {
-			problems = append(problems, fmt.Sprintf("  %s: relay_mcp is still the placeholder from `relay-cli init` — paste the whole\n"+
+			problems = append(problems, fmt.Sprintf("  %s: relay_mcp is still the placeholder from `relay init` — paste the whole\n"+
 				"      connector_url over it (relay: onboard_agent, then issue_agent_credential).\n"+
 				"      The secret is part of that URL and is shown exactly once", label))
 		}
@@ -371,7 +371,7 @@ func LoadConfig(path string) (*Config, error) {
 		// learn about a typo than a line at startup.
 		switch {
 		case w.RepoDir == repoDirPlaceholder:
-			problems = append(problems, fmt.Sprintf("  %s: repo_dir is still the placeholder from `relay-cli init` — point it at the\n"+
+			problems = append(problems, fmt.Sprintf("  %s: repo_dir is still the placeholder from `relay init` — point it at the\n"+
 				"      checkout this agent should work in, and one you are willing to have rewritten", label))
 		case w.RepoDir != "":
 			expanded := expandTilde(w.RepoDir)

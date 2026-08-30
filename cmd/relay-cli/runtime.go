@@ -12,7 +12,7 @@
 // An adapter passes along the runtime contract and nothing more.
 //
 // `claude` is the only runtime offered today, and its adapter is native Go —
-// which is what lets relay-cli run with no jq, no curl and no scripts on disk.
+// which is what lets relay run with no jq, no curl and no scripts on disk.
 //
 // A second kind exists in this file and does not run: bashRuntime drives a
 // runtimes/<name>.sh through the contract documented on bashAdapterEnv below.

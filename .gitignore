@@ -1,4 +1,6 @@
-# Local build outputs
+# Local build outputs. /relay-cli is the pre-0.4 binary name, kept so a stale
+# build left in a checkout from before the rename is still ignored.
+/relay
 /relay-cli
 bin/
 dist/

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with `relay-cli check`. It validates the config and tests every
+Start with `relay check`. It validates the config and tests every
 credential without launching anything, so it separates "misconfigured" from
 "working, but idle" for free.
 
@@ -14,7 +14,7 @@ The dashboard shows every poll including the empty ones, which is how you tell
 
 | Symptom | Where to look |
 |---|---|
-| Nothing ever launches | `worker.log`. Queue genuinely empty (`relay-cli check`)? Task delegated to *this* agent? `PAUSED` file present? Hourly ceiling hit? |
+| Nothing ever launches | `worker.log`. Queue genuinely empty (`relay check`)? Task delegated to *this* agent? `PAUSED` file present? Hourly ceiling hit? |
 | `FAIL … HTTP 401` from `check` | Credential revoked, or the wrong `relay_mcp`. Issue a new one with `issue_agent_credential` and replace the whole URL, secret included. |
 | A config key is rejected by name | That field was removed; the message names its replacement. Agent identity moved to the agent's `instructions_md` in relay. |
 | A config key seems to do nothing | Unknown keys are silently ignored — every optional field is read with a fallback. Check the spelling against [Configuration](configuration.md#optional-fields). |
@@ -44,7 +44,7 @@ agent's page in your workspace. Deleting the config does not invalidate a
 credential relay has already issued.
 
 To remove everything: `rm -rf ~/.relay/` (revoke every credential in
-it first), and `rm $(command -v relay-cli)`. Archived sessions under `logs/`
+it first), and `rm $(command -v relay)`. Archived sessions under `logs/`
 can contain anything the agents read, so delete them deliberately rather than by
 habit.
 

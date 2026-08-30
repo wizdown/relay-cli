@@ -97,10 +97,10 @@ func TestInitTakesNoFlags(t *testing.T) {
 // running worker.
 func TestHelpCarriesTheWholeGettingStartedPath(t *testing.T) {
 	for _, want := range []string{
-		"relay-cli init",         // make a config
+		"relay init",             // make a config
 		"issue_agent_credential", // get a credential
-		"relay-cli check",        // verify it
-		"relay-cli run",          // start
+		"relay check",            // verify it
+		"relay run",              // start
 		"CHOOSING A MODEL",       // which model, without leaving the terminal
 		"NEVER COMMIT",           // the irreversible mistake
 	} {
@@ -149,7 +149,7 @@ func TestVersionStaysOnZeroX(t *testing.T) {
 	}
 }
 
-// Parsing must not require the flags: `relay-cli run` alone is the common case.
+// Parsing must not require the flags: `relay run` alone is the common case.
 func TestRunParsesWithNoFlags(t *testing.T) {
 	var o runOpts
 	fs := runFlags(&o)

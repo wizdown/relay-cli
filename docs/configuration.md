@@ -1,14 +1,14 @@
 # Configuration
 
 Everything here describes `~/.relay/config`, the JSON file listing your workers.
-This page is the reference: `relay-cli init` writes a short starting config that
+This page is the reference: `relay init` writes a short starting config that
 points back here rather than repeating it.
 
 The file is one JSON object with a `workers` array. **`//` comments are allowed**
 and are stripped before parsing.
 
 ```bash
-relay-cli init
+relay init
 ```
 
 ## Two clocks: polls are free, runs are not
@@ -248,7 +248,7 @@ silently dropping any of them would change what a worker does:
 
 ## What is checked before anything launches
 
-`relay-cli run` and `relay-cli check` perform the same validation, and both
+`relay run` and `relay check` perform the same validation, and both
 refuse to start rather than failing 120 times an hour in a log nobody is reading.
 Problems with the *file* are collected and reported together; a runtime whose CLI
 is missing is reported separately, because a config that is correct and a machine
@@ -271,11 +271,11 @@ It fails if:
   runtime does not accept, or gives one the wrong type
 - a `runtime` has no adapter **or that CLI isn't usable on this machine**
 
-`relay-cli check` then goes one step further and tests each credential against
+`relay check` then goes one step further and tests each credential against
 relay. It launches nothing and spends nothing:
 
 ```bash
-relay-cli check
+relay check
 ```
 
 ```text

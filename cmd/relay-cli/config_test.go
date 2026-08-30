@@ -373,7 +373,7 @@ func TestInitTemplateValidates(t *testing.T) {
 	filled = strings.ReplaceAll(filled, "wzh_REPLACE_ME", "wzh_realsecret")
 
 	if err := loadErr(write(t, filled)); err != nil {
-		t.Fatalf("the config `relay-cli init` writes does not validate: %v", err)
+		t.Fatalf("the config `relay init` writes does not validate: %v", err)
 	}
 }
 
@@ -384,7 +384,7 @@ func TestMissingConfigPointsAtInit(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error when there is no config")
 	}
-	for _, want := range []string{missing, "relay-cli init"} {
+	for _, want := range []string{missing, "relay init"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error does not mention %q:\n%v", want, err)
 		}

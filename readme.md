@@ -45,7 +45,7 @@ one it names is missing or too old. Codex support is coming soon;
   identity is created. Sign in with Google or Microsoft; the free workspace is
   enough for everything below.
 - [Claude Code](https://claude.com/claude-code) on your `PATH`. No version to
-  match: `relay-cli check` reads the installed CLI's own `--help` and names any
+  match: `relay check` reads the installed CLI's own `--help` and names any
   flag it is missing.
 - Nothing else. `relay-cli` is one static binary — no `jq`, no `curl`, no
   runtime. Go 1.22+ only if you build it yourself.
@@ -58,11 +58,11 @@ one it names is missing or too old. Codex support is coming soon;
 
 ```bash
 gh release download --repo wizdown/relay-cli \
-  --pattern 'relay-cli-*-macos-arm64' --pattern 'SHA256SUMS'
+  --pattern 'relay-*-macos-arm64' --pattern 'SHA256SUMS'
 shasum -a 256 -c SHA256SUMS --ignore-missing    # verify it before running it
-chmod +x relay-cli-*-macos-arm64
-xattr -c relay-cli-*-macos-arm64                # unsigned build
-sudo mv relay-cli-*-macos-arm64 /usr/local/bin/relay-cli
+chmod +x relay-*-macos-arm64
+xattr -c relay-*-macos-arm64                # unsigned build
+sudo mv relay-*-macos-arm64 /usr/local/bin/relay
 ```
 
 Without `gh`, take the binary and `SHA256SUMS` from the
@@ -75,7 +75,7 @@ after `xattr -c`, allow it once in System Settings → Privacy & Security →
 Go 1.22+, one command:
 
 ```bash
-make build && sudo mv relay-cli /usr/local/bin/
+make build && sudo mv relay /usr/local/bin/
 ```
 
 ### 2. Give the worker its own relay identity
@@ -115,7 +115,7 @@ handed that repo's tasks.
 ### 3. Describe the worker
 
 ```bash
-relay-cli init
+relay init
 ```
 
 That writes `~/.relay/config` — one location, from any directory, which is where
@@ -155,7 +155,7 @@ per-runtime `runtime_config` tables.
 ### 4. Check it, then start it
 
 ```bash
-relay-cli check
+relay check
 ```
 
 Validates the config and tests every credential against relay. It launches
@@ -163,7 +163,7 @@ nothing and spends nothing, so it is the cheap way to find a typo or a revoked
 credential:
 
 ```text
-relay-cli 0.3.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
+relay 0.3.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   hello-claude             ok    queue: resume 0 · attention 0 · todo 0
@@ -175,7 +175,7 @@ simply no work waiting. Nothing was launched and nothing was spent.
 Then:
 
 ```bash
-relay-cli run
+relay run
 ```
 
 `run` starts every worker and opens a dashboard at `http://127.0.0.1:7717/`.
@@ -240,7 +240,7 @@ touch ~/.relay/state/hello-claude/PAUSED   # stop it next tick
 rm ~/.relay/state/hello-claude/PAUSED      # resume it
 ```
 
-Ctrl-C in the `relay-cli run` terminal stops everything.
+Ctrl-C in the `relay run` terminal stops everything.
 
 ## What relay is
 
@@ -282,7 +282,7 @@ Go 1.22+ and nothing else — no third-party dependencies, no network needed:
 
 ```bash
 make check    # gofmt + vet + test
-make build    # ./relay-cli
+make build    # ./relay
 ```
 
 A fresh clone passes its tests with no coding CLI installed — if that ever stops

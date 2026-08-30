@@ -17,7 +17,7 @@ Run from the repository root:
 ```bash
 make check    # gofmt + vet + test — run this before any PR
 make test     # tests only
-make build    # build ./relay-cli
+make build    # build ./relay
 make hooks    # one-time: install the pre-commit hook
 ```
 
@@ -36,7 +36,7 @@ env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 | File | Owns |
 |---|---|
 | `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, and `helpText` — the full manual |
-| `init.go` | `relay-cli init` and the short starting config it writes |
+| `init.go` | `relay init` and the short starting config it writes |
 | `config.go` | config parse, defaults, and every validation done before launch — problems are accumulated and reported together |
 | `probe.go` | MCP JSON-RPC over `net/http` — the token-free gate, no model anywhere |
 | `worker.go` | the poll loop: ceilings, the three circuit breakers, locking, timeouts |
@@ -56,12 +56,12 @@ Outside the binary:
 ## Running it
 
 ```bash
-relay-cli init     # creates ~/.relay/config (never overwrites an existing one)
-relay-cli check    # validate config + test every credential — launches nothing, spends nothing
-relay-cli run      # start the fleet, open the dashboard on 127.0.0.1:7717
+relay init     # creates ~/.relay/config (never overwrites an existing one)
+relay check    # validate config + test every credential — launches nothing, spends nothing
+relay run      # start the fleet, open the dashboard on 127.0.0.1:7717
 ```
 
-A bare `relay-cli` prints the whole manual — starting is asked for by name
+A bare `relay` prints the whole manual — starting is asked for by name
 because it launches autonomous sessions that spend money.
 
 Every command reads `~/.relay/config`. **One location, and no flag moves it** —
@@ -72,7 +72,7 @@ Ctrl-C stops everything and archives logs.
 ## Making a config
 
 ```bash
-relay-cli init
+relay init
 ```
 
 Four fields per worker are required — `name`, `relay_mcp`, `repo_dir`,
@@ -96,7 +96,7 @@ URLs*; prose should still link the product itself, at
 
 You cannot create a credential from here — it comes from relay
 (`issue_agent_credential`) and is shown exactly once. If you don't have one,
-`relay-cli check` is still the right way to prove a config parses.
+`relay check` is still the right way to prove a config parses.
 
 ## Runtime defaults
 
