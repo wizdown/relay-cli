@@ -12,7 +12,7 @@ make check    # gofmt + vet + test — the pre-PR command
 make test     # tests only
 make fmt      # gofmt -w
 make build    # build ./relay
-make hooks    # one-time per clone: install the pre-commit hook
+make hooks    # one-time per clone: install the git hooks
 
 make release VERSION=x.y.z   # cut a release — see below
 ```
@@ -36,16 +36,17 @@ To check you haven't broken it:
 env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 ```
 
-## The pre-commit hook
+## The git hooks
 
 ```bash
 make hooks
 ```
 
-This sets `core.hooksPath` to the tracked `.githooks/` directory, so an updated
-hook reaches you with a `git pull` rather than needing a reinstall.
+This sets `core.hooksPath` to the tracked `.githooks/` directory, so every hook
+in it is installed at once and an updated one reaches you with a `git pull`
+rather than needing a reinstall.
 
-It runs, cheapest first:
+**pre-commit** runs, cheapest first:
 
 1. **Credentials** — refuses a staged relay-cli config, or any connector-shaped
    secret in added lines. First because it is the only check here guarding a
@@ -56,9 +57,16 @@ It runs, cheapest first:
    because the drift tests read those docs. Without `-race`, for speed; CI runs
    the race detector.
 
-It is a fast local loop, not a guarantee: it only runs where someone ran `make
-hooks`, and `git commit --no-verify` skips it. The manual CI workflow is the
-backstop.
+**commit-msg** scans the commit message for the same connector shapes, using the
+same allow-list — both hooks read it from `.githooks/lib.sh`, so a placeholder
+legal in one is legal in the other. It exists because nothing else looks there:
+the pre-commit scan and `ci.yml` both read files. A message is where a failing
+`check` gets pasted, and that output quotes the credential.
+
+They are a fast local loop, not a guarantee: they only run where someone ran
+`make hooks`, and `git commit --no-verify` skips them. The manual CI workflow is
+the backstop for the file scan — nothing is a backstop for the message, which is
+why the rule matters more than the hook.
 
 ## CI
 
@@ -216,6 +224,15 @@ version that no longer exists.
 
 Commit messages and PR bodies here explain **why**, matching the codebase's own
 comments. A reviewer can read the diff; what they cannot read is the reason.
+
+**The repo is public, and a message outlives the branch.** No connector URL, no
+internal hostname, no absolute path off your machine, nobody else's name. Redact
+rather than omit: "HTTP 401 from the configured endpoint" carries what the value
+would. The `commit-msg` hook catches connector shapes in a commit message; a PR
+title and body are checked by you or by nobody, so read them before you open one.
+This is about what is safe to disclose, not about tone — the rule below that an
+admitted gap beats an unverified claim still holds, and a summary that sounds
+tidier than the work is the worse failure.
 
 A PR summary should cover:
 

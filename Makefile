@@ -42,7 +42,7 @@ help:
 	@echo "make test    go test ./..."
 	@echo "make build   build ./$(BINARY)"
 	@echo "make fmt     gofmt -w ."
-	@echo "make hooks   install the pre-commit hook (one-time, per clone)"
+	@echo "make hooks   install the git hooks (one-time, per clone)"
 	@echo
 	@echo "make release VERSION=x.y.z   cut a release: checks, two commits, one tag"
 	@echo "make release                 refuses, and shows what to pass"
@@ -52,7 +52,7 @@ help:
 # so an updated hook reaches you with a pull instead of needing a reinstall.
 hooks:
 	@git config core.hooksPath .githooks
-	@echo "pre-commit hook installed (core.hooksPath = .githooks)"
+	@echo "git hooks installed (core.hooksPath = .githooks)"
 	@echo "skip it for one commit with: git commit --no-verify"
 
 all: check build

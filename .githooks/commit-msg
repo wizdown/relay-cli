@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+#
+# Commit-message check for relay-cli. Installed by `make hooks` along with
+# pre-commit — core.hooksPath covers the whole directory.
+#
+# pre-commit scans what you are committing; this scans what you say about it. A
+# message is the natural place to paste a failing `relay check`, and that output
+# quotes the connector URL — which IS the credential. Nothing else looks here:
+# the pre-commit scan and ci.yml both read files, not messages.
+#
+# In a public repo this is the mistake you cannot take back. A pushed message is
+# world-readable immediately, `master` refuses a force-push, and squashing does
+# not help — a pull request's original commits stay fetchable at
+# refs/pull/N/head for good.
+
+set -uo pipefail
+
+root=$(git rev-parse --show-toplevel) || exit 1
+. "$root/.githooks/lib.sh"
+
+# git strips comments and the `commit -v` diff only after this hook runs, so
+# strip them here as well — otherwise the verbose diff gets scanned a second
+# time and reported as if it were prose the author wrote.
+secrets=$(git stripspace --strip-comments <"$1" |
+	grep -oE "$CONNECTOR_RE" |
+	grep -viE "$PLACEHOLDER_RE" |
+	sort -u)
+
+if [ -n "$secrets" ]; then
+	printf '\nREFUSING: the commit message contains a connector-shaped secret:\n'
+	echo "$secrets" | sed 's/^/    /'
+	printf '\n  Redact it — describe the shape, not the value.\n'
+	printf '  If this is a real credential, revoke it in relay before anything else.\n'
+	printf '\ncommit blocked. Fix the message, or bypass with: git commit --no-verify\n\n'
+	exit 1
+fi
+
+exit 0
