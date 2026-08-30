@@ -23,12 +23,11 @@ today; no CLI is bundled.
 
 - A [Relay](https://relay.bytecurio.com/) workspace, where your tasks and agents
   live. Sign in with Google or Microsoft; the free workspace is enough.
-- [Claude Code](https://claude.com/claude-code) on your `PATH`, **signed in** —
-  run `claude` once and complete its login. A worker launches that CLI as you,
-  so it authenticates the way your own sessions do. `relay check` proves the CLI
-  is installed and new enough; proving it can *authenticate* would cost a model
-  call, and `check` spends nothing. A worker whose CLI is not signed in fails on
-  its first run, not before it.
+- [Claude Code](https://claude.com/claude-code) on your `PATH`, **and signed
+  in** — run `claude` once and log in. A worker launches it as you.
+  - `relay check` does not catch this: proving a CLI can authenticate costs a
+    model call, and `check` spends nothing.
+  - So an unauthenticated CLI fails on the first run, not before it.
 - Nothing else — one static binary. Go 1.22+ only to build it yourself.
 
 ## Install
@@ -44,11 +43,11 @@ xattr -c relay-*-macos-arm64                    # unsigned build
 sudo mv relay-*-macos-arm64 /usr/local/bin/relay
 ```
 
-Without `gh` — or without `gh auth login`, which it needs even for a public
-repo — download both files from the
-[latest release](https://github.com/wizdown/relay-cli/releases/latest). If
-macOS still refuses the binary, allow it once in System Settings → Privacy &
-Security → **Open Anyway**.
+Without `gh` — it needs `gh auth login` even for a public repo — download both
+files from the
+[latest release](https://github.com/wizdown/relay-cli/releases/latest). If macOS
+still refuses the binary, allow it once in System Settings → Privacy & Security
+→ **Open Anyway**.
 
 **Intel Mac or Linux** — no binaries published yet; build it from a clone with
 Go 1.22+:
@@ -67,16 +66,16 @@ simply not published yet. Windows is untested.
 ### 1. Create the agent in relay
 
 A worker authenticates as one relay agent and works whatever is delegated to
-that agent. In your [Relay](https://relay.bytecurio.com/) workspace: add the
-agent (`onboard_agent`), give it a description and instructions, then issue its
-credential (`issue_agent_credential`) and copy the `connector_url` — the secret
-is in the URL and is shown **once**. Leave the agent's capabilities off; a first
-worker needs none.
+that agent. In your [Relay](https://relay.bytecurio.com/) workspace:
 
-Those two names are relay's own, and are what `relay init` and `relay check`
-name back at you when they want a credential. How you invoke them is relay's to
-document — see the [relay docs](https://relay.bytecurio.com/). Everything below
-assumes you are holding that URL.
+- **Add the agent** (`onboard_agent`) — a description and instructions.
+- **Issue its credential** (`issue_agent_credential`), and copy the
+  `connector_url`. The secret is in that URL, and it is shown **once**.
+- **Leave its capabilities off.** A first worker needs none.
+
+Both names are relay's own, and are what `relay init` and `relay check` name
+back at you when they want a credential. How you invoke them is relay's to
+document — see the [relay docs](https://relay.bytecurio.com/).
 
 Never point two workers at one connector URL. What an agent is *for* — its
 instructions, capabilities and claim limits — is configured in relay, not here.
@@ -87,9 +86,8 @@ instructions, capabilities and claim limits — is configured in relay, not here
 relay init
 ```
 
-That writes `~/.relay/config`: one worker, commented, with every ceiling already
-filled in. Two placeholders are yours to replace — the rest runs as written.
-Search the file for these two values:
+That writes `~/.relay/config`: one worker, commented, every ceiling filled in.
+Two placeholders are yours to replace — search the file for these two values:
 
 ```jsonc
 {
@@ -105,21 +103,18 @@ Search the file for these two values:
 }
 ```
 
-That is the file with its comments and ceilings stripped out, so the two lines
-that need you are the two you see. Both placeholders are rejected by name, so a
-config you forget to finish fails in `check` rather than inside a run you have
-already paid for.
+That is the file with its comments and ceilings stripped out. Both placeholders
+are rejected by name, so an unfinished config fails in `check` rather than
+inside a run you have already paid for.
 
 - **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md`, skills
-  and tooling. An empty one is a valid start:
+  and tooling. An empty one is a valid start;
   [The working directory](docs/working-directory.md) is the ladder from there.
 - **Point it somewhere you are willing to have rewritten** — a headless run is
   autonomous and can never answer an approval prompt.
-- **The ceilings are written for you, and every one is bounded** — the file
-  starts you at 6 runs/hour, $5 per run, a 15-minute kill and a poll every 30s.
-  Delete any of them and its default applies instead, which is bounded too (12
-  runs/hour, and the rest unchanged). [Configuration](docs/configuration.md) has
-  the full reference.
+- **The ceilings are written for you, and bounded** — 6 runs/hour, $5 per run, a
+  15-minute kill, a poll every 30s. Delete one and its default applies, bounded
+  too (12 runs/hour). [Configuration](docs/configuration.md) has the rest.
 
 ### 3. Check it, then run it
 
@@ -169,11 +164,15 @@ state, not a symptom.
 
 ## Safeguards
 
-Defaults are bounded without configuring anything: **12 runs/hour** (the ceiling
-that actually caps spend), **$5 per run**, a **15-minute** wall-clock kill, a
-fixed **60s** relaunch cooldown, and three circuit breakers that pause a worker
-rather than let it fail forever. [Safeguards in
-full](docs/configuration.md#safeguards).
+Defaults are bounded without configuring anything:
+
+- **12 runs/hour** — the ceiling that actually caps spend.
+- **$5 per run**, and a **15-minute** wall-clock kill.
+- **60s relaunch cooldown**, fixed — two launches never go back-to-back.
+- **Three circuit breakers**, which pause a worker rather than let it fail
+  forever.
+
+[Safeguards in full](docs/configuration.md#safeguards).
 
 The kill switch, worth knowing before you need it:
 
