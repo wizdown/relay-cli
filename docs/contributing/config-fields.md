@@ -75,6 +75,11 @@ starting config that links `docs/configuration.md` rather than repeating it —
 adding every new field there is how it grew into a second copy of the manual that
 drifted from the first.
 
+That link, and every doc link the binary prints, is a **full URL** built from
+`docsBase` in `main.go`. The config lands in `~/.relay/`, and whoever reads it
+may have downloaded a binary and nothing else, so a relative `docs/` path there
+points at nothing. `TestUserFacingDocLinksAreFullURLs` fails on one.
+
 ## Removing or renaming a field
 
 A removed key is **not** just a deleted field. Dropping it from `workerKeys`

@@ -373,6 +373,10 @@ user recognises (`macos-arm64`), not for `GOOS`. Releases are marked
   to be the safe one.
 - **Everything printed, logged, served or returned goes through `Scrub`.** A
   probe error can quote the URL it failed on, and that URL is the credential.
+- **A doc link the binary prints is a full URL**, built from `docsBase` in
+  `main.go` — the reader may hold nothing but the binary, and the config `init`
+  writes lands in `~/.relay/`, so a relative `docs/` path points at nothing. The
+  branch in it is `master`; a link to `blob/main/` is a 404. Both are tested.
 - **The dashboard is read-only.** No route may start a run, pause a worker or
   edit a ceiling. Adding one changes what the page *is* — don't, without asking.
 - **Runtime-specific behaviour belongs in an adapter.** If you're adding

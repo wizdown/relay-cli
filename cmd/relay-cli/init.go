@@ -7,6 +7,10 @@
 // here is the two blanks to fill in and where to read the rest; that is what
 // this writes.
 //
+// "Where to read the rest" has to be a URL. The binary is downloadable on its
+// own and the config lands in ~/.relay/, so the reader of this file may have no
+// checkout for a relative docs/ path to point into.
+//
 // Comment support in the parser is what lets it annotate at all: the config is
 // JSON, JSON has no comments, and stripLineComments exists so the file can
 // explain itself where it is being edited.
@@ -20,83 +24,57 @@ import (
 	"path/filepath"
 )
 
-// initConfigTemplate is one claude worker with the four required fields, the
-// one required runtime setting, and nothing else.
+// initConfigTemplate is one claude worker: the four required fields, the one
+// required runtime setting, and the ceilings — annotated only where the file
+// itself is the right place to say something.
+//
+// That last part is the whole editing rule for this string. A comment earns its
+// line here if it is irreversible when missed (the credential, the directory the
+// agent may rewrite) or unknowable at the point of editing (that JSON with
+// comments parses at all). Everything else — what a poll costs, why "model" has
+// no default, what trips the budget breaker — belongs in the reference, which is
+// linked at the top. Rationale that lives in two places is rationale that will
+// disagree with itself.
 //
 // Both placeholders are obviously placeholders and both are rejected BY NAME by
-// `relay check`, so the two decisions this file cannot make — which agent,
-// which repo — fail with the reason rather than with a parse error further in.
+// `relay check`, so the two decisions this file cannot make — which agent, which
+// repo — fail with the reason rather than with a parse error further in.
+//
+// Every link is a full URL: this file lands in ~/.relay/, where a relative
+// docs/ path resolves to nothing, and its reader may never have cloned anything.
 const initConfigTemplate = `{
-  // ───────────────────────────────────────────────────────────────────────────
-  //  ~/.relay/config — the workers ` + "`relay run`" + ` will launch.
-  //
-  //  One worker = one relay agent identity × one repo checkout × one CLI.
-  //  What an agent is FOR — its instructions, what it may decide alone — lives
-  //  in relay as that agent's instructions_md, not here: that reaches a session
-  //  already running, which a local file never could.
-  //
-  //  // comments are stripped before this file is parsed, so annotate freely.
-  //  Full field reference: https://github.com/wizdown/relay-cli/blob/main/docs/configuration.md
-  //
-  //  NEVER COMMIT THIS FILE. The relay_mcp below is a live credential.
-  // ───────────────────────────────────────────────────────────────────────────
+  // ~/.relay/config — the workers ` + "`relay run`" + ` will launch.
+  // NEVER COMMIT THIS FILE: every relay_mcp below is a live credential.
+  // Fields, defaults, safeguards:
+  //   ` + docsBase + `configuration.md
+  // (// comments are stripped before parsing — annotate freely.)
 
-  // How often every worker asks relay "any work?". A poll runs no model and
-  // costs nothing. Optional, default 30, minimum 5.
-  "poll_seconds": 30,
+  "poll_seconds": 30,             // how often a worker asks relay for work; runs no model
 
   "workers": [
     {
-      // Unique, and filesystem-safe: it becomes ~/.relay/state/<name>/, which
-      // is how you pause this one worker and find its logs. <repo>-<runtime>
-      // reads well.
-      "name": "my-repo-claude",
+      "name": "my-repo-claude",   // unique; becomes ~/.relay/state/<name>/
 
-      // REPLACE THIS. The connector_url relay gave you, secret included.
-      // Get one from relay: onboard_agent to create the agent, then
-      // issue_agent_credential. It is shown EXACTLY ONCE.
+      // REPLACE — the connector_url relay issued, secret included.
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
 
-      // REPLACE THIS. The directory this agent works in — its CLAUDE.md,
-      // skills and tooling are what the agent gets, so this decides what the
-      // worker can actually do. "~" is expanded and it must exist.
-      // docs/working-directory.md is how to prepare one.
-      //
-      // A headless run is fully autonomous and cannot answer an approval
-      // prompt, so point this at a checkout you are willing to have rewritten,
-      // not at your only copy of anything.
-      "repo_dir": "` + repoDirPlaceholder + `",
+      // REPLACE — where this agent works, and what it is free to rewrite: a
+      // headless run cannot answer an approval prompt. How to prepare one:
+      //   ` + docsBase + `working-directory.md
+      "repo_dir": "` + repoDirPlaceholder + `",   // "~" is expanded; it must exist
 
-      // Which CLI drives this worker. "claude" is the only one supported today.
-      "runtime": "claude",
+      "runtime": "claude",        // the only runtime today
 
-      // Optional. Maximum CLI LAUNCHES per rolling hour — not polls. This is
-      // the ceiling that actually caps what you spend. Default 12, 0 for none.
-      "max_runs_per_hour": 6,
+      // Ceilings — delete any one and its default applies, bounded either way.
+      "max_runs_per_hour": 6,     // CLI launches, not polls. Default 12.
+      "max_seconds_per_run": 900, // wall-clock kill for one run
 
-      // Optional. Wall-clock kill for one session, enforced by relay-cli.
-      // Default 900.
-      "max_seconds_per_run": 900,
-
-      // Settings the RUNTIME understands, in its own vocabulary. The keys here
-      // depend on "runtime" above; anything it does not accept is refused when
-      // the config loads.
-      "runtime_config": {
-        // REQUIRED for claude. opus | sonnet | haiku, or a full id such as
-        // claude-opus-5 to pin an exact version. Required rather than
-        // defaulted because the CLI's own default moves between versions, and
-        // an unattended worker should say what it runs.
-        "model": "sonnet",
-
-        // Optional. Hard dollar cap INSIDE one run. Default 5, 0 removes it.
-        // Two runs killed by this in a row pause the worker, because retrying
-        // unchanged just spends it again.
-        "max_usd_per_run": 5
+      "runtime_config": {         // claude's own vocabulary
+        "model": "sonnet",        // required — opus | sonnet | haiku, or a pinned id
+        "max_usd_per_run": 5      // hard cap inside one run
       }
     }
-
-    // Add more workers by copying the block above. Each needs its OWN name and
-    // its OWN credential — never point two workers at one connector URL.
+    // More workers: copy the block. Each needs its own name and credential.
   ]
 }
 `
@@ -186,9 +164,10 @@ Two placeholders to replace, and it runs:
 
   2. "repo_dir" — the directory this agent should work in. Its CLAUDE.md,
      skills and tooling are what the agent gets, so this is the choice that
-     decides what the worker can actually do; docs/working-directory.md is how
-     to prepare one. A headless run is fully autonomous and cannot answer an
-     approval prompt, so point it somewhere you are willing to have rewritten.
+     decides what the worker can actually do. A headless run is fully autonomous
+     and cannot answer an approval prompt, so point it somewhere you are willing
+     to have rewritten. How to prepare one:
+       `+docsBase+`working-directory.md
 
 Then:
 

@@ -74,6 +74,19 @@ const (
 	// host that never answers, and a slow relay answering in eight seconds is
 	// not the thing `check` should report as broken.
 	defaultCheckTimeoutSecs = 15
+
+	// Doc links this CLI prints have to be openable by whoever reads them, and
+	// that reader may hold nothing but this binary: there is no checkout for a
+	// bare "docs/configuration.md" to resolve against, and ~/.relay/ — where the
+	// config `init` writes lands — is not one either. So every doc pointer
+	// relay-cli emits is a full URL, built from here so they cannot drift apart.
+	//
+	// The branch is master, this repo's default. A link to a branch that does
+	// not exist is a 404 shipped inside somebody's config file, which is worse
+	// than no link at all. If the default is ever renamed, GitHub redirects the
+	// old name, so this keeps resolving until it is updated.
+	repoURL  = "https://github.com/wizdown/relay-cli"
+	docsBase = repoURL + "/blob/master/docs/"
 )
 
 // The relay protocol every worker's CLI is given. Embedded so the binary is
@@ -172,9 +185,10 @@ GETTING STARTED
        "repo_dir" — the directory this agent should work in. Its CLAUDE.md,
        skills and tooling are what the agent gets, so this is the choice that
        decides what the worker is actually able to do. An empty directory is a
-       valid start; docs/working-directory.md is the ladder from there. Point
-       it somewhere you are willing to have rewritten: a headless run is fully
-       autonomous and cannot answer an approval prompt.
+       valid start, and this is the ladder from there:
+       ` + docsBase + `working-directory.md
+       Point it somewhere you are willing to have rewritten: a headless run is
+       fully autonomous and cannot answer an approval prompt.
 
     3. relay check
        Validates the config, tests every credential, and prints what each
@@ -266,8 +280,10 @@ THE CONFIG FILE
   "repo_dir" has to be an absolute path that exists. Every problem in the file
   is reported at once.
 
-  Full reference, per runtime: docs/configuration.md
-  Preparing a repo_dir:        docs/working-directory.md
+  Full reference, per runtime:
+    ` + docsBase + `configuration.md
+  Preparing a repo_dir:
+    ` + docsBase + `working-directory.md
 
   NEVER COMMIT IT: each relay_mcp is a live credential, and each is shown by
   relay exactly once.
@@ -357,7 +373,7 @@ EVERYTHING COSTS WHAT IT SAYS
   with nothing changing. Each explains its own fix in the worker's log.
 
 Source and full documentation:
-  https://github.com/wizdown/relay-cli
+  ` + repoURL + `
 `
 
 func usage(w *os.File) { fmt.Fprint(w, helpText) }
