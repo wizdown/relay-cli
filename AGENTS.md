@@ -17,17 +17,26 @@ Run from the repository root:
 ```bash
 make check    # gofmt + vet + test — run this before any PR
 make test     # tests only
+make fmt      # gofmt -w .
 make build    # build ./relay
-make hooks    # one-time: install the pre-commit hook
+make dist     # release artifacts + SHA256SUMS
+make version  # print the version constant the release compares a tag against
+make hooks    # one-time per clone: install the pre-commit hook
 ```
 
 Go 1.22+, no other dependencies, no network needed. **A fresh clone passes its
 tests with no coding CLI installed** — that is a property to protect, not an
-accident. To verify you haven't broken it:
+accident. The seam is `checkRuntime` in `config.go`, a package variable the
+parsing tests stub via `noRuntimeCheck(t)`. A test that genuinely needs a CLI
+gates on it being present. To verify you haven't broken it:
 
 ```bash
 env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 ```
+
+Some tests read the docs — `docs_test.go` reflects over the `Worker` struct and
+each runtime's `ConfigFields()` and fails when a field, default or removed key is
+undocumented. So a docs-only change still runs the suite.
 
 ## Codemap
 
@@ -35,7 +44,7 @@ env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 
 | File | Owns |
 |---|---|
-| `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, and `helpText` — the full manual |
+| `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, the `version` constant, and `helpText` — the full manual |
 | `init.go` | `relay init` and the short starting config it writes |
 | `config.go` | config parse, defaults, and every validation done before launch — problems are accumulated and reported together |
 | `probe.go` | MCP JSON-RPC over `net/http` — the token-free gate, no model anywhere |
@@ -45,13 +54,16 @@ env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 | `events.go` | the event bus → `worker.log`, `events.ndjson`, SSE |
 | `server.go` | `/api/snapshot`, `/api/stream`, and the embedded page. **Read-only by design** |
 | `redact.go` | `Scrub` / `RedactURL`. Everything user-facing goes through these |
+| `docs_test.go` | the drift tests that keep the config reference honest |
 
 Outside the binary:
 
 | Path | |
 |---|---|
 | `worker-rules.md` | the harness contract given to every CLI — the editable copy; `cmd/relay-cli/assets/` holds the one compiled in |
-| `docs/` | user documentation, and the contributor detail behind this file |
+| `docs/` | user documentation — keep it about what the CLI does |
+| `docs/contributing/` | contributor detail behind this file |
+| `.github/workflows/` | `ci.yml` (manual only) and `release.yml` (tags) |
 
 ## Running it
 
@@ -61,15 +73,16 @@ relay check    # validate config + test every credential — launches nothing, s
 relay run      # start the fleet, open the dashboard on 127.0.0.1:7717
 ```
 
-A bare `relay` prints the whole manual — starting is asked for by name
-because it launches autonomous sessions that spend money.
+A bare `relay` prints the whole manual — starting is asked for by name because it
+launches autonomous sessions that spend money.
 
 Every command reads `~/.relay/config`. **One location, and no flag moves it** —
 `state/` and `logs/` sit beside it. Don't add a path flag back without a reason
 that survives "which config is this actually running?". **Always `check` first.**
-Ctrl-C stops everything and archives logs.
+Ctrl-C stops everything and archives logs. `state/` is rebuilt on every start, so
+**restarting is how a config change is applied**.
 
-## Making a config
+## The worker config
 
 ```bash
 relay init
@@ -78,8 +91,9 @@ relay init
 Four fields per worker are required — `name`, `relay_mcp`, `repo_dir`,
 `runtime` — because each is a decision relay-cli cannot make for anyone, plus
 whatever the named runtime requires inside `runtime_config` (`model`, for
-claude). Everything else is already bounded (12 runs/hour, $5 per run, a
-15-minute kill, a 30-second fleet poll with a fixed 5-second floor).
+claude). Everything else is already bounded: 12 runs/hour, $5 per run, a
+15-minute kill, a 30-second fleet poll with a fixed 5-second floor. The full
+reference for users is **[docs/configuration.md](docs/configuration.md)**.
 
 The split is the thing to preserve: fields **outside** `runtime_config` are
 enforced by relay-cli and mean the same for every runtime; fields **inside** are
@@ -87,16 +101,25 @@ one CLI's own vocabulary, declared by that adapter's `ConfigFields()`. A new
 runtime setting is added there and nowhere else — the parser, the bash-adapter
 environment and the docs test all read that one table.
 
+**Changing a config field is a loop, not an edit.** Adding, renaming, removing
+one or changing a default touches the struct or `ConfigFields()`, the field table
+in `docs/configuration.md` (default in the **last** column, backticked — a test
+parses that cell), and the `THE CONFIG FILE` block in `helpText`. A **removed**
+key is deleted from the docs entirely and added to `removedKeys` mapped to *what
+to do instead* — that error message is the whole migration path, and the user
+docs stay a description of what this version accepts. Step by step:
+**[docs/contributing/config-fields.md](docs/contributing/config-fields.md)**.
+
 **Never commit a config.** Every `relay_mcp` is a live relay credential with the
-secret embedded in the URL. It is gitignored by name at any depth, and the
-pre-commit hook refuses it. If you need one in a test or a doc, use
-`relay.example.com` and `wzh_REPLACE_ME`. That rule is about example *connector
-URLs*; prose should still link the product itself, at
+secret embedded in the URL. It is gitignored by name at any depth, the pre-commit
+hook refuses it, and `ci.yml` scans tracked files for connector-shaped strings.
+In tests and docs use `relay.example.com` and `wzh_REPLACE_ME`. That rule is
+about example *connector URLs*; prose should still link the product itself, at
 <https://relay.bytecurio.com/>.
 
 You cannot create a credential from here — it comes from relay
-(`issue_agent_credential`) and is shown exactly once. If you don't have one,
-`relay check` is still the right way to prove a config parses.
+(`issue_agent_credential`) and is shown exactly once. Without one, `relay check`
+is still the right way to prove a config parses.
 
 ## Runtime defaults
 
@@ -105,53 +128,183 @@ You cannot create a credential from here — it comes from relay
 | `claude` | **The only supported runtime.** Adapter compiled in. `runtime_config.model` is REQUIRED — `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`. |
 | `codex` | **Coming soon, not offered.** Refused at config load. Don't document it as usable, and don't add a `codex` branch anywhere outside `ResolveRuntime`. |
 
-No CLI is bundled. The adapter ships; the CLI is installed separately and found
-on `PATH`, and the runtime proves itself at startup.
+No CLI is bundled. The adapter ships; the CLI is installed separately, found on
+`PATH`, and proves itself at startup by its `--help` rather than by a version.
 
 The bash-adapter path (`bashRuntime`) is **complete but gated off** by
 `bashAdaptersEnabled` in `runtime.go`, and is the half of codex support that
 already exists. Keep it compiling and keep its test passing — it is not dead
 code, it is unreleased code. Shipping codex means flipping that constant and
-adding a `runtimes/` directory back; nothing else should need to change.
+adding a `runtimes/` directory back; nothing else should need to change. The
+contract is **[docs/contributing/adapters.md](docs/contributing/adapters.md)**.
+
+## Documentation rules
+
+Docs drift because nobody decides where a sentence belongs. Here it is decided:
+
+| Question | Where it is answered |
+|---|---|
+| How do I install and run one worker? | `readme.md` — and nothing else lives there |
+| What does this config field do? | `docs/configuration.md`, the only field reference |
+| What commands and flags exist? | `docs/cli.md` |
+| How do I run several workers? | `docs/fleets.md` — the CLI side only |
+| Why isn't it working? | `docs/troubleshooting.md` |
+| How does relay work — tasks, agents, capabilities, delegation, leases? | **Not here.** Link <https://relay.bytecurio.com/> |
+| Why is it built this way? How do I change it? | `docs/contributing/` |
+
+- **The readme is for users, not contributors.** It gets someone from nothing to
+  a working worker; rationale goes to `docs/contributing/design.md`.
+- **Don't explain the relay product.** Anything configured on the relay agent —
+  `instructions_md`, capabilities, `max_parallel_claims`, `lease_ttl_seconds`,
+  task states — is relay's to document. Say what this CLI does and link out.
+- **One home per fact.** If a table exists in two files, one of them is wrong and
+  nobody knows which. Link instead of restating.
+- **Document the present tense.** The docs describe what this version does — not
+  what it used to do, what a field was renamed from, or what the old shell poller
+  did differently. No "no longer accepted" tables, no "previously this was…", no
+  migration notes. A user reading them has the current binary; the only thing
+  history costs them is a longer page. Where a change genuinely needs to reach
+  someone, it goes in the **error message** (`removedKeys` names the replacement)
+  or the **release notes** — surfaces that find them, which a doc section they
+  will never scroll to does not. Rationale that explains why the current design
+  is what it is belongs in `docs/contributing/`, and may say what was tried.
+
+### Documentation is part of the change, not a follow-up
+
+**A behaviour change and its documentation land in the same commit.** A
+follow-up commit is how documentation ends up describing a version that no
+longer exists, and a docs PR nobody writes is indistinguishable from a lie in
+the readme. If a change is too big to document in the same commit, it is too big
+for one commit.
+
+Before you open a PR, walk this table for what you touched. Every row is a place
+a reader will look and be wrong:
+
+| If you changed… | Update, in the same commit |
+|---|---|
+| a config field or its default | the tables in `docs/configuration.md`, the `THE CONFIG FILE` block in `helpText`, and `docs/contributing/config-fields.md` if the loop itself moved |
+| a field you **removed** | delete every mention from `docs/configuration.md` and `helpText`; add it to `removedKeys` with what to use instead — the error carries the migration, the docs do not |
+| a command or a flag | `helpText`, `docs/cli.md`, and the quickstart in `readme.md` if it appears there |
+| a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` **and** the one-paragraph summary in `readme.md` |
+| what the dashboard shows or serves | `docs/cli.md` |
+| a runtime's support status or its startup check | `docs/runtimes.md`, and the runtime table in this file |
+| the adapter contract or its environment | `docs/contributing/adapters.md` |
+| an error message a user can hit | `docs/troubleshooting.md` — the symptom row should quote what they actually see |
+| where files live under `~/.relay/` | `docs/configuration.md`, and any command that names a path |
+| the release, CI or hook flow | `docs/contributing/development.md` and this file |
+| a file's job, or a file's name | the codemap above, and every doc that links it |
+
+Some of that is enforced and the rest is not, so know which is which:
+
+- `docs_test.go` fails the build when a worker field, a `runtime_config` key, a
+  default or a removed key is missing from `docs/configuration.md`, and when the
+  `jsonc` example there no longer validates.
+- `TestHelpQuotesTheRealDefaults` and the flag/command tests hold `helpText` to
+  the code.
+- The pre-commit hook runs the suite when **docs** change, not only Go — because
+  those tests read the docs.
+- **Nothing checks prose.** Every sentence outside those tables — the readme, the
+  quickstart, `docs/cli.md`, the troubleshooting rows — is only as current as the
+  last person who read it. Re-read the pages your change touches; do not assume
+  a green `make check` means the docs are right.
+
+Two more rules that keep this cheap:
+
+- **Delete rather than caveat.** A section that no longer describes the code is
+  removed, not annotated with "note: this changed" — the page says what is true
+  now, and nothing about the version it used to describe.
+- **If you cannot find where a sentence belongs, the doc map is wrong.** Fix the
+  map in this file rather than dropping the sentence into whichever page is
+  nearest — that is precisely how a page becomes 300 lines nobody reads.
 
 ## Before you commit
 
-`make hooks` once per clone, and the hook does most of this for you.
+`make hooks` once per clone, and the hook does most of this for you: it refuses a
+staged config or a connector-shaped secret, runs gofmt on staged Go files, and
+runs the tests when Go *or* docs changed.
 
 1. **No credentials.** No config file, no real `wzh_` secret.
 2. `make check` passes.
-3. If you changed a config field → [the config loop](docs/changing-the-config.md).
+3. If you changed a config field → [the config loop](docs/contributing/config-fields.md).
 4. If you added a flag or command, `helpText` documents it — a test enforces it.
-5. Docs updated in the same commit, not a follow-up.
+5. Docs updated in the same commit — walk [the table above](#documentation-is-part-of-the-change-not-a-follow-up).
 6. **The version constant is bumped** — [Version on every PR](#version-on-every-pr).
 
-Details and the PR summary format: **[docs/development.md](docs/development.md)**.
+PR summary format: **[docs/contributing/development.md](docs/contributing/development.md)**.
 
 ## Version on every PR
 
-**Every PR bumps `version` in `cmd/relay-cli/main.go`.** One PR, one
-bump. That constant is the single source of truth — the binary prints it, the
-release artifacts are named from it, and the tag must match it — so a merge
-that moves the code without moving the constant leaves `--version` lying about
-what is installed.
+**Every PR bumps `version` in `cmd/relay-cli/main.go`.** One PR, one bump. That
+constant is the single source of truth — the binary prints it, the release
+artifacts are named from it, and the tag must match it — so a merge that moves
+the code without moving the constant leaves `--version` lying about what is
+installed.
 
 Read the constant as `MAJOR.MINOR.PATCH` and apply exactly one of these:
 
-1. **Major** — leave it alone. Increment it only when the PR was explicitly
-   asked to, and **never decrement it**. Everything here is `0.x`, and a test
-   fails the build if it leaves `0.` — see [Versioning](readme.md#versioning).
+1. **Major** — leave it alone. Increment it only when the PR was explicitly asked
+   to, and **never decrement it**. Everything here is `0.x`, and a test fails the
+   build if it leaves `0.` — see [Versioning](readme.md#versioning).
 2. **Minor** — increment for any new feature, and reset patch to `0`
    (`0.1.4` → `0.2.0`).
-3. **Patch** — increment for a bug fix (`0.1.4` → `0.1.5`). Docs-only,
-   refactor and chore PRs take a patch too: the rule is one bump per PR, never
-   none.
+3. **Patch** — increment for a bug fix (`0.1.4` → `0.1.5`). Docs-only, refactor
+   and chore PRs take a patch too: the rule is one bump per PR, never none.
 
-A PR carrying both a feature and a fix is a minor bump — the largest change in
-it wins. If `master` moved ahead of your branch, rebase and re-apply the bump
-from the constant on `master`, not from yours.
+A PR carrying both a feature and a fix is a minor bump — the largest change wins.
+If `master` moved ahead of your branch, rebase and re-apply the bump from the
+constant on `master`, not from yours.
 
-Releases no longer bump anything; they tag the constant already on `master`.
-See [docs/development.md](docs/development.md).
+## CI: manual only
+
+`.github/workflows/ci.yml` does **not** run on push or pull request. Everything
+it does runs locally with nothing but Go, and runner time is a cost this repo
+does not spend per commit. Trigger it when you want a clean-machine second
+opinion — in particular that the suite still passes with **no coding CLI
+installed**, which is easy to break on a machine that has one:
+
+```bash
+gh workflow run ci.yml --ref <branch>
+gh run watch
+```
+
+It runs gofmt, `go vet`, `go test -race`, a build, and a scan for
+credential-shaped strings across tracked files.
+
+## Cutting a release
+
+Releases publish a `relay` binary for **macOS on Apple Silicon** plus
+`SHA256SUMS`, built by `.github/workflows/release.yml`. Other platforms build
+fine — CGO is off and nothing here is platform-specific — they are simply not
+published; adding one is a line in `PLATFORMS` in the `Makefile`. Artifacts are
+named for the platform a user recognises (`macos-arm64`), not for `GOOS`.
+
+**Pushing a matching tag is what publishes.** It is the only workflow here that
+runs unasked, because pushing `v0.0.1` *is* the request.
+
+```bash
+make version                       # what the workflow compares the tag against
+make dist                          # prove the build locally first
+git checkout master && git pull    # releases are cut from merged code
+git tag v0.0.1                     # must be "v" + the constant, exactly
+git push origin v0.0.1
+gh run watch
+```
+
+The workflow re-checks the tag against the constant, runs gofmt/vet/`test -race`,
+builds every platform in `PLATFORMS`, and publishes a **pre-release** with
+`SHA256SUMS` attached. The version is not bumped at release time — every PR
+already bumped it, so a release tags what is on `master`.
+
+If publishing fails after the tag is pushed, fix the cause and re-run **without
+moving the tag**:
+
+```bash
+gh workflow run release.yml -f tag=v0.0.1
+```
+
+Only move or delete a tag that never published. A tag someone may already have
+downloaded is superseded by a new version, not rewritten. Full walkthrough:
+[docs/contributing/development.md](docs/contributing/development.md).
 
 ## Conventions
 
@@ -178,8 +331,8 @@ See [docs/development.md](docs/development.md).
 
 | | |
 |---|---|
-| [docs/development.md](docs/development.md) | build, test, hooks, releases, PR format |
-| [docs/changing-the-config.md](docs/changing-the-config.md) | the self-update loop for the config |
-| [docs/design.md](docs/design.md) | why the probe exists, what relay owns |
-| [docs/runtimes.md](docs/runtimes.md) | which runtimes are offered, and the adapter contract |
-| [docs/configuration.md](docs/configuration.md) | every config field |
+| [docs/contributing/development.md](docs/contributing/development.md) | build, test, hooks, releases, PR format |
+| [docs/contributing/config-fields.md](docs/contributing/config-fields.md) | the self-update loop for the config |
+| [docs/contributing/design.md](docs/contributing/design.md) | why the probe exists, what relay owns |
+| [docs/contributing/adapters.md](docs/contributing/adapters.md) | the adapter contract, and where codex stands |
+| [docs/configuration.md](docs/configuration.md) | every config field, for users |

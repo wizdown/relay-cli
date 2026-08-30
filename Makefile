@@ -33,7 +33,7 @@ help:
 	@echo "make fmt     gofmt -w ."
 	@echo "make hooks   install the pre-commit hook (one-time, per clone)"
 	@echo
-	@echo "Release: see docs/development.md"
+	@echo "Release: see docs/contributing/development.md"
 
 # Git hooks are not versioned, so they have to be opted into per clone. This
 # points git at the tracked .githooks/ directory rather than copying anything,

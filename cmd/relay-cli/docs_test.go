@@ -151,17 +151,12 @@ func docsTableDefault(docs, field string) (string, bool) {
 	return strings.Trim(last, "`"), true
 }
 
-// A removed key is rejected by name with its replacement, which is the whole
-// reason it is worth listing: a config still carrying one would otherwise change
-// what the worker does. Someone hitting that error should be able to search the
-// docs for the key and find out what happened to it.
-func TestEveryRemovedKeyIsDocumented(t *testing.T) {
-	docs := mustRead(t, configDocsPath)
+// A removed key is rejected by name, and the error IS its documentation: the
+// user docs describe what this version accepts, not how it got here, so the
+// replacement text is the only place someone hitting one is told what to do.
+// An empty one turns a fleet that refuses to start into a dead end.
+func TestEveryRemovedKeyExplainsItself(t *testing.T) {
 	for key, replacement := range removedKeys {
-		if !strings.Contains(docs, key) {
-			t.Errorf("removed key %q is rejected by the parser but not mentioned in "+
-				"docs/configuration.md — add it to the removed-keys list", key)
-		}
 		if strings.TrimSpace(replacement) == "" {
 			t.Errorf("removed key %q has no replacement text; the error it produces "+
 				"would tell someone what is wrong but not what to do", key)

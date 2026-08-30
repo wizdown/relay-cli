@@ -91,12 +91,12 @@ prints it, the artifacts are named from it, and the workflow refuses to publish
 a tag that disagrees with it.
 
 **1. Confirm the version.** Every PR already bumps the constant — see [Version
-on every PR](../AGENTS.md#version-on-every-pr) — so a release tags what is
+on every PR](../../AGENTS.md#version-on-every-pr) — so a release tags what is
 on `master` rather than bumping again. Read it in
 `cmd/relay-cli/main.go`:
 
 ```go
-version = "0.3.0"
+version = "0.0.1"
 channel = "beta"
 ```
 
@@ -105,7 +105,7 @@ its bump; that is a gap in the PR rule, not a release step.
 
 Stay on `0.x`. A test fails the build if the version leaves it, because 1.0
 would be a claim that the interface is settled — see
-[Versioning](../readme.md#versioning). If that is genuinely the intent, delete
+[Versioning](../../readme.md#versioning). If that is genuinely the intent, delete
 that test in the same commit, deliberately.
 
 **2. Verify the build locally.** From the repository root:
@@ -125,8 +125,8 @@ read — fix that before tagging, or the release publishes artifacts named
 
 ```bash
 git checkout master && git pull
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.0.1
+git push origin v0.0.1
 ```
 
 Pushing the tag is what starts the release — it is the only workflow here that
@@ -146,7 +146,7 @@ Releases are marked **pre-release** while the project is `0.x`.
 without moving the tag:
 
 ```bash
-gh workflow run release.yml -f tag=v0.3.0
+gh workflow run release.yml -f tag=v0.0.1
 ```
 
 Only move or delete a tag that never published. A tag someone may already have

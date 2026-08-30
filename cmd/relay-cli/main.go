@@ -34,7 +34,7 @@ const (
 	// surface is still evolving, so a release may still change configuration or
 	// the worker contract. A 1.0 would be a claim that it will not, which is not
 	// a claim this can make yet — see the versioning note in the root readme.
-	version = "0.3.0"
+	version = "0.0.1"
 	channel = "beta"
 
 	// Everything relay-cli owns lives in ONE place:

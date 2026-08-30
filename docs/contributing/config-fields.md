@@ -82,13 +82,17 @@ silence is the wrong answer.
 1. Add it to `removedKeys` in `config.go`, mapped to **what to do instead**, not
    merely "removed". The map value is printed to a person whose fleet just
    refused to start; it should end the problem, not name it.
-2. Delete it from the manual.
-3. In `docs/configuration.md`, move it to the *Keys this version no longer
-   accepts* table, so someone hitting the error can search for the key and find
-   out what happened.
+2. Delete it from the manual and from `docs/configuration.md` — every trace,
+   including any sentence explaining what it used to do.
 
-`TestEveryRemovedKeyIsDocumented` checks both the mention and that the
-replacement text is non-empty.
+**The error message is the whole migration path**, which is why step 1 carries
+the weight. The user documentation describes what this version accepts, not how
+it got there: a table of dead keys is a page that grows forever and that nobody
+reading a current config needs. Someone still carrying one is not reading the
+docs anyway — their fleet has already refused to start, and the message in front
+of them names the key and its replacement.
+
+`TestEveryRemovedKeyExplainsItself` fails the build on an empty replacement.
 
 ## Changing a default
 

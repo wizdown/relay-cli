@@ -4,8 +4,8 @@ name: Release
 # a release is already a deliberate act — pushing `v0.2.0` IS the request. It
 # does not run on push or pull request; CI (ci.yml) is manual-dispatch only.
 #
-# To cut a release, see docs/development.md — the short version is: bump the
-# version constant, merge, then push a matching tag.
+# To cut a release, see docs/contributing/development.md — the short version
+# is: bump the version constant, merge, then push a matching tag.
 on:
   push:
     tags:
@@ -77,17 +77,17 @@ jobs:
 
           ```bash
           shasum -a 256 -c SHA256SUMS --ignore-missing   # verify before running
-          chmod +x relay-cli-*-macos-arm64
-          xattr -c relay-cli-*-macos-arm64               # unsigned build
-          ./relay-cli-*-macos-arm64                      # prints the manual
+          chmod +x relay-*-macos-arm64
+          xattr -c relay-*-macos-arm64               # unsigned build
+          ./relay-*-macos-arm64                      # prints the manual
           ```
 
           Then:
 
           ```bash
-          ./relay-cli-*-macos-arm64 init     # writes ~/.relay/config
-          ./relay-cli-*-macos-arm64 check    # validates it; launches nothing
-          ./relay-cli-*-macos-arm64 run      # starts the fleet + dashboard
+          ./relay-*-macos-arm64 init     # writes ~/.relay/config
+          ./relay-*-macos-arm64 check    # validates it; launches nothing
+          ./relay-*-macos-arm64 run      # starts the fleet + dashboard
           ```
 
           No coding CLI is bundled — install [Claude Code](https://claude.com/claude-code)
