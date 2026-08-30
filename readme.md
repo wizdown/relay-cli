@@ -93,7 +93,7 @@ Two placeholders are yours to replace — search the file for these two values:
 {
   "workers": [
     {
-      "name":      "my-repo-claude",
+      "name":      "worker-1",
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",  // ← paste yours
       "repo_dir":  "/path/to/your/repo",                                    // ← choose one
       "runtime":   "claude",
@@ -129,7 +129,7 @@ nothing, so it is the cheap way to find a typo or a revoked credential:
 relay 0.1.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
-  my-repo-claude           ok    queue: resume 0 · attention 0 · todo 0
+  worker-1                 ok    queue: resume 0 · attention 0 · todo 0
     repo /Users/you/code/scratch   nothing to load — the agent arrives with its task and its tools
 ```
 
@@ -151,11 +151,11 @@ Create a task in relay and delegate it to the agent from step 1. Within one poll
 interval the terminal shows the whole cycle:
 
 ```text
-14:22:08  my-repo-claude   poll  resume 0 · attention 0 · todo 1
-14:22:08  my-repo-claude   ▶ run started   claude · ~/code/scratch
-14:22:11  my-repo-claude   → relay:claim_task   task_id=42
-14:22:31  my-repo-claude   → Write   hello.html
-14:23:02  my-repo-claude   ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
+14:22:08  worker-1           poll  resume 0 · attention 0 · todo 1
+14:22:08  worker-1           ▶ run started   claude · ~/code/scratch
+14:22:11  worker-1           → relay:claim_task   task_id=42
+14:22:31  worker-1           → Write   hello.html
+14:23:02  worker-1           ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
 ```
 
 The result is in your `repo_dir`, and the task is waiting in relay for review.
@@ -177,8 +177,8 @@ Defaults are bounded without configuring anything:
 The kill switch, worth knowing before you need it:
 
 ```bash
-touch ~/.relay/state/my-repo-claude/PAUSED   # stop it next tick
-rm ~/.relay/state/my-repo-claude/PAUSED      # resume it
+touch ~/.relay/state/worker-1/PAUSED   # stop it next tick
+rm ~/.relay/state/worker-1/PAUSED      # resume it
 ```
 
 ## Documentation
