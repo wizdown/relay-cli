@@ -126,7 +126,7 @@ Validates the config and tests every credential. It launches nothing and spends
 nothing, so it is the cheap way to find a typo or a revoked credential:
 
 ```text
-relay 0.1.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
+relay 0.1.1 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   worker-1                 ok    queue: resume 0 · attention 0 · todo 0
@@ -204,7 +204,7 @@ releases, not downloaded from one — it names the commit it came from, which is
 the thing worth quoting in a bug report:
 
 ```text
-relay 0.1.0-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]
+relay 0.1.1-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]
 ```
 
 **Public contributions are not open yet.** The repo is public so you can read
