@@ -422,7 +422,8 @@ func LoadConfig(path string) (*Config, error) {
 	if len(topProblems) > 0 {
 		return nil, fmt.Errorf("%s uses %d top-level key(s) this version does not accept:\n%s\n\n"+
 			"       The top level takes %s, and nothing else — every\n"+
-			"       other setting belongs to one worker. See docs/configuration.md.",
+			"       other setting belongs to one worker. The full reference is\n"+
+			"       "+docsBase+"configuration.md",
 			path, len(topProblems), strings.Join(topProblems, "\n"), strings.Join(quoted(topLevelKeys), " and "))
 	}
 
@@ -652,7 +653,7 @@ func LoadConfig(path string) (*Config, error) {
 			"       Every worker needs a name, a relay_mcp credential, a repo_dir and a\n"+
 			"       runtime; every other key has to be one this version accepts, because a\n"+
 			"       key relay-cli does not read is a setting you would believe was in force.\n"+
-			"       See docs/configuration.md for the full reference.",
+			"       The full reference is "+docsBase+"configuration.md",
 			path, len(problems), strings.Join(problems, "\n"))
 	}
 

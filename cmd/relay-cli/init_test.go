@@ -65,10 +65,17 @@ func TestInitTemplateIsAnnotated(t *testing.T) {
 
 // It is short on purpose. The reference is docs/configuration.md; a template
 // that grows back into a second copy of the manual is the thing this replaced.
+//
+// The link has to be a full URL, because this file lands in ~/.relay/ and its
+// reader may never have cloned anything for a relative path to point into.
 func TestInitTemplatePointsAtTheRealReference(t *testing.T) {
-	if !strings.Contains(initConfigTemplate, "docs/configuration.md") {
-		t.Error("the template should link the full field reference — it deliberately " +
-			"does not repeat it")
+	if !strings.Contains(initConfigTemplate, docsBase+"configuration.md") {
+		t.Error("the template should link the full field reference, as a URL its " +
+			"reader can open — it deliberately does not repeat it")
+	}
+	if !strings.Contains(initConfigTemplate, docsBase+"working-directory.md") {
+		t.Error("repo_dir is the choice that decides what the worker can do; the " +
+			"template should link how to prepare one")
 	}
 }
 

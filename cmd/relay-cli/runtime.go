@@ -210,7 +210,8 @@ func ResolveRuntime(name, relayDir string) (Runtime, error) {
 	if _, err := os.Stat(script); err != nil {
 		return nil, fmt.Errorf("relay-cli has no adapter for it: %s does not exist.\n"+
 			"       adapters compiled in: claude\n"+
-			"       add one by copying a bash adapter into runtimes/ — see docs/contributing/adapters.md", script)
+			"       add one by copying a bash adapter into runtimes/ — see\n"+
+			"       "+docsBase+"contributing/adapters.md", script)
 	}
 	return &bashRuntime{name: name, script: script}, nil
 }
