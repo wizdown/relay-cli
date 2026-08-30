@@ -1,0 +1,42 @@
+# Local build outputs
+/relay-cli
+bin/
+dist/
+build/
+
+# Runtime state and archived logs. These now live in ~/.relay/ and so are never
+# inside a checkout — but a scratch copy someone made while debugging is exactly
+# what a name-matched rule is for, and live-workers/ catches state left by a
+# pre-0.3 layout that is still on disk.
+state/
+live-workers/
+logs/
+
+# A relay-cli config, ANYWHERE in the tree. The real one is ~/.relay/config and
+# is outside every repo — this catches a copy made in a checkout to test with.
+# Every relay_mcp in it is a live credential, shown exactly once when the agent
+# was issued, so the moment to catch it is before the commit, not after the
+# revocation. .worker-config is the pre-0.3 name, kept for the same reason.
+.relay/
+.worker-config
+
+# Go caches and test artifacts
+*.test
+coverage.out
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Logs
+*.log
+
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp

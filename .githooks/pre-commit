@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+#
+# Pre-commit checks for relay-cli. Install with `make hooks`.
+#
+# Ordered cheapest-first so a failure arrives fast. The credential check runs
+# before anything else because it is the only one here guarding against a
+# mistake you cannot take back: a secret pushed to a public repo is leaked the
+# moment it lands, and rewriting history does not un-leak it.
+#
+# This is a fast local feedback loop, not a guarantee. It runs only on machines
+# where someone ran `make hooks`, and `git commit --no-verify` skips it. The
+# manual CI workflow (.github/workflows/ci.yml) is the backstop.
+
+set -uo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root" || exit 1
+
+fail=0
+note() { printf '  %s\n' "$1"; }
+step() { printf '\n%s\n' "$1"; }
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# ── 1. credentials ───────────────────────────────────────────────────────────
+step "checking for credentials"
+
+# The live config lives in ~/.relay/config and so is never in a checkout — but a
+# copy someone dropped in a repo to test with is exactly the accident worth
+# catching, and `git add -f` bypasses any .gitignore.
+if echo "$staged" | grep -qE '(^|/)(\.relay/config|\.worker-config)$'; then
+	note "REFUSING: a relay-cli config is staged. Every relay_mcp in it is a live"
+	note "credential. Unstage it: git restore --staged <path>"
+	fail=1
+fi
+
+# Connector-shaped strings in ADDED lines only, so an existing placeholder in an
+# untouched file costs nothing to check. Placeholders are allowed by name.
+secrets=$(git diff --cached -U0 -- $(echo "$staged" | tr '\n' ' ') 2>/dev/null |
+	grep '^+' | grep -vE '^\+\+\+' |
+	grep -oE 'wzh_[A-Za-z0-9_-]{6,}' |
+	grep -viE '^wzh_(REPLACE_ME|REDACTED|secret_?value|supersecretvalue|longsecrettoken|someotherunknownsecret|abcdefghijkl|a{6,}|b{6,}|abc)' |
+	sort -u)
+if [ -n "$secrets" ]; then
+	note "REFUSING: a connector-shaped secret is being added:"
+	echo "$secrets" | sed 's/^/    /'
+	note "Use relay.example.com and wzh_REPLACE_ME in committed files."
+	note "If this is a real credential, revoke it in relay before anything else."
+	fail=1
+fi
+
+[ "$fail" -eq 0 ] && note "ok"
+
+# ── 2. gofmt ─────────────────────────────────────────────────────────────────
+go_files=$(echo "$staged" | grep '\.go$' || true)
+if [ -n "$go_files" ]; then
+	step "gofmt"
+	unformatted=$(gofmt -l $go_files 2>/dev/null)
+	if [ -n "$unformatted" ]; then
+		note "these staged files need gofmt:"
+		echo "$unformatted" | sed 's/^/    /'
+		note "fix with: gofmt -w $(echo "$unformatted" | tr '\n' ' ')"
+		fail=1
+	else
+		note "ok"
+	fi
+fi
+
+# ── 3. tests ─────────────────────────────────────────────────────────────────
+#
+# Without -race: this runs on every commit, and the point is a fast answer. CI
+# runs the race detector.
+#
+# The tests include the documentation-drift checks, which is why adding a config
+# field without documenting it fails here rather than shipping.
+if echo "$staged" | grep -qE '\.go$|^go\.mod$'; then
+	step "go test ./..."
+	if out=$(go test ./... 2>&1); then
+		note "ok"
+	else
+		echo "$out" | sed 's/^/    /'
+		fail=1
+	fi
+fi
+
+# A docs edit can break the drift tests without touching Go at all.
+if echo "$staged" | grep -qE '^(docs/|readme\.md)'; then
+	if ! echo "$staged" | grep -qE '\.go$'; then
+		step "go test ./... (docs changed)"
+		if out=$(go test ./... 2>&1); then
+			note "ok"
+		else
+			echo "$out" | sed 's/^/    /'
+			fail=1
+		fi
+	fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+	printf '\ncommit blocked. Fix the above, or bypass with: git commit --no-verify\n\n'
+	exit 1
+fi
+
+printf '\nall pre-commit checks passed\n'
+exit 0

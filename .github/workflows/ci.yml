@@ -1,0 +1,72 @@
+name: CI
+
+# Manual only. These jobs are not run automatically on push or pull request —
+# runner time is a cost this project does not want to spend on every commit.
+#
+# Run it from the Actions tab ("Run workflow"), or:
+#   gh workflow run ci.yml --ref <branch>
+#
+# Everything here also runs locally with no setup beyond Go (`make check`), and
+# that is what to run before a merge. This workflow is for when you want a
+# clean-machine second opinion — in particular that the tests still pass with no
+# coding CLI installed, which is easy to break and hard to notice on your own
+# machine.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          # There is no third-party dependency, so there is no go.sum and
+          # nothing to cache.
+          cache: false
+
+      # No coding CLI is installed here, deliberately: a fresh clone must pass
+      # its tests without one. If that ever stops being true, this job is where
+      # it should be caught.
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        run: go test -race ./...
+
+      - name: build
+        run: go build ./...
+
+  secrets:
+    name: no committed credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every relay connector URL is a live credential. Placeholders are fine;
+      # anything that looks like a real secret is not. This is a backstop for
+      # the .gitignore, not a replacement for it.
+      - name: scan for connector secrets
+        run: |
+          if git ls-files -z | xargs -0 grep -nE 'wzh_[A-Za-z0-9_-]{6,}' \
+               | grep -viE 'wzh_(REPLACE_ME|REDACTED|secret_?value|supersecretvalue|longsecrettoken|someotherunknownsecret|abcdefghijkl|a{6,}|b{6,}|abc)' ; then
+            echo
+            echo "A connector-shaped secret was found in a tracked file."
+            echo "Use relay.example.com and wzh_REPLACE_ME in committed files."
+            exit 1
+          fi
+          echo "no credential-shaped strings in tracked files"
