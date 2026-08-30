@@ -17,7 +17,10 @@ noise included, so "no output" is the healthy steady state.
 |---|---|
 | Nothing ever launches | `worker.log`. Queue genuinely empty (`relay check`)? Task delegated to *this* agent? `PAUSED` file present? Hourly ceiling hit? |
 | `FAIL … HTTP 401` from `check` | Credential revoked, or the wrong `relay_mcp`. Issue a new one in relay and replace the whole URL, secret included. |
-| A config key is rejected by name, or seems to do nothing | This version does not accept that key — a rejection names what to use instead, and an unknown key at worker level is ignored silently. Check it against [Worker fields](configuration.md#worker-fields). |
+| `is not a key this version accepts` | Every key is checked by name. The error suggests the one you meant, or says where the setting belongs — a runtime's setting goes inside `runtime_config`, and `poll_seconds` at the top level. Full list: [Worker fields](configuration.md#worker-fields). |
+| A key is rejected with what to use *instead* | That key was removed in an earlier version; the message is the migration. The docs only describe what this version accepts. |
+| `no config at …` / `has no configuration in it` | Nothing has been set up here yet — run `relay init`. It refuses to overwrite an existing file, so move an empty one aside first. |
+| `still the placeholder from relay init` | The config was written but not filled in. Replace `relay_mcp` with the whole `connector_url` from relay, and `repo_dir` with the checkout this agent works in. |
 | A config change had no effect | `state/` is rebuilt on start — restart `relay run` to apply it. |
 | Worker starts and stops instantly | `worker.log` — usually the repo's own hooks, or a denied tool. |
 | An agent says a tool isn't available | If relay refused it, the refusal names the capability; grant it on the agent in relay. If the *CLI* refused it, the log names it under "the CLI refused these tool calls". |

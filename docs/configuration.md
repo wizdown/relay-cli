@@ -139,18 +139,18 @@ the worker keeps ticking, stops launching, and says so:
 | Field | Required | What it does | Default |
 | --- | --- | --- | --- |
 | `name` | **yes** | Unique, and a single path segment — it becomes `~/.relay/state/<name>/`, which is how you pause, tail and find logs for this worker. `<repo>-<runtime>` reads well. | — |
-| `relay_mcp` | **yes** | Unique. The `connector_url` relay issued for this agent, secret included. Shown by relay exactly once. | — |
-| `repo_dir` | **yes** | The checkout this worker's CLI runs inside, so that repo's `AGENTS.md` / `CLAUDE.md`, skills and tooling load as they would for you. `~` is expanded; the directory must exist at startup. A headless run is autonomous and cannot answer a prompt — point it somewhere you are willing to have rewritten. | — |
+| `relay_mcp` | **yes** | Unique. The `connector_url` relay issued for this agent, secret included, and it must be a full `http(s)` URL. Shown by relay exactly once. | — |
+| `repo_dir` | **yes** | The checkout this worker's CLI runs inside, so that repo's `AGENTS.md` / `CLAUDE.md`, skills and tooling load as they would for you. `~` is expanded; the path must be absolute — a relative one would resolve against wherever `relay run` was started from — and the directory must exist at startup. A headless run is autonomous and cannot answer a prompt — point it somewhere you are willing to have rewritten. | — |
 | `runtime` | **yes** | Which CLI drives this worker, and which `runtime_config` keys apply. `claude` is the only supported value — see [Runtimes](runtimes.md). | — |
-| `max_runs_per_hour` | no | Maximum CLI launches per rolling hour — not polls. The only ceiling on how many sessions start, so it is the one that caps spend. `0` means no ceiling. | `12` |
-| `max_seconds_per_run` | no | Wall-clock kill for one session, enforced by relay-cli. The only guard that catches a hung run — one spending nothing while holding the worker lock and the task's relay lease. `0` removes it. | `900` |
+| `max_runs_per_hour` | no | Maximum CLI launches per rolling hour — not polls. The only ceiling on how many sessions start, so it is the one that caps spend. A whole number; `0` means no ceiling. | `12` |
+| `max_seconds_per_run` | no | Wall-clock kill for one session, enforced by relay-cli. The only guard that catches a hung run — one spending nothing while holding the worker lock and the task's relay lease. A whole number of seconds, and at least `30` when set: a shorter kill ends every session before it can claim anything, and the run is still paid for. `0` removes it. | `900` |
 | `runtime_config` | depends | Settings the named runtime understands. Required when that runtime has a required key, which `claude` does. | — |
 
 ## `runtime_config` for `claude`
 
 | Key | Required | What it does | Default |
 | --- | --- | --- | --- |
-| `model` | **yes** | Passed to the CLI verbatim as `--model`: `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5`. Required rather than defaulted, because the CLI's own default moves between versions and an unattended worker should say what it runs. | — |
+| `model` | **yes** | Passed to the CLI verbatim as `--model`, so it is taken exactly as written: `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5`. Required rather than defaulted, because the CLI's own default moves between versions and an unattended worker should say what it runs. | — |
 | `max_usd_per_run` | no | Hard dollar cap inside one run, enforced by the CLI. It does not apply across runs — `max_runs_per_hour` is the only ceiling on how many there are. `0` removes it. | `5` |
 
 Two runs killed by the spend cap in a row pause the worker: retrying unchanged
@@ -208,9 +208,10 @@ runs count, so a merely slow agent never trips it.
 
 ## Gotchas
 
-- **Unknown keys at worker level are silently ignored**, so `max_runs_per_hr`
-  does nothing rather than failing. Inside `runtime_config` the opposite is
-  true: unknown keys are rejected, because that block is one CLI's vocabulary.
+- **Every key is checked by name, at every level of the file.** `max_runs_per_hr`
+  does not quietly do nothing — it fails, and the error names the key it was
+  probably meant to be. A key relay-cli does not read is a ceiling you believe is
+  in force and is not.
 - **Every problem is reported at once**, so fixing a half-written config is one
   sitting rather than a dozen edit-and-rerun rounds.
 - **The rolling-hour count resets on restart.** It is
@@ -223,16 +224,26 @@ runs count, so a merely slow agent never trips it.
 
 `relay run` and `relay check` refuse to start rather than failing hourly in a log
 nobody reads. Problems with the file are collected and reported together. It
-fails if there is no config, the JSON is invalid, `workers` is missing or empty,
-`poll_seconds` is not a number or is below `5`, an entry is missing a required
-field or still holds an `init` placeholder, `repo_dir` is not a directory, a
-`name` or `relay_mcp` repeats, a `name` is not a single path segment,
-`runtime_config` is missing or misspells a key its runtime declares, or the named
-runtime's CLI is unusable on this machine.
+fails if:
 
-A key this version does not accept is rejected **by name**, and the error says
-what to use instead — so a config written against an older release tells you what
-to change rather than doing something you did not ask for.
+- there is no config, or it is empty — run `relay init`
+- the JSON is invalid, or `workers` is missing or empty
+- **any key is one this version does not accept**, at the top level, in a worker,
+  or in `runtime_config`. The error names the key it was likely meant to be, or
+  where the setting actually belongs — a runtime's setting written beside
+  relay-cli's own fields, or `poll_seconds` written per worker
+- an entry is missing a required field, or still holds an `init` placeholder
+- a value cannot mean what it says: a field that should be a string is a number,
+  `relay_mcp` is not an `http(s)` URL, `repo_dir` is relative or is not a
+  directory, `poll_seconds` is below `5`, a ceiling is negative or fractional, a
+  `max_seconds_per_run` that is set is below `30`, or a `name` or a
+  `runtime_config` value has whitespace around it
+- a `name` or `relay_mcp` repeats, or a `name` is not a single path segment
+- the named runtime's CLI is unusable on this machine
+
+A key this version has **removed** is rejected by name with what to use instead,
+rather than with a spelling suggestion — so a config written against an older
+release tells you what changed rather than doing something you did not ask for.
 
 `relay check` then tests each credential against relay, launching nothing:
 

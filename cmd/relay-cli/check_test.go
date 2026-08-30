@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -147,5 +148,57 @@ func TestCheckSurfacesConfigErrors(t *testing.T) {
 	err := check(p, time.Second, &out)
 	if err == nil || !strings.Contains(err.Error(), "filesystem-safe") {
 		t.Fatalf("want the config validation error, got %v", err)
+	}
+}
+
+// Neither command may get as far as the network — or as far as launching a
+// session — with a config nobody has filled in yet. `relay init` writes two
+// placeholders, and both commands stop on them by name.
+func TestCommandsRefuseTheUntouchedInitConfig(t *testing.T) {
+	noRuntimeCheck(t)
+	dir := filepath.Join(t.TempDir(), relayDirName)
+	if err := initConfig(dir, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, configFileName)
+
+	var out bytes.Buffer
+	checkErr := check(path, time.Second, &out)
+	// port 0 and no-open: run must fail on the config long before it would
+	// listen on anything or start a worker.
+	runErr := run(path, 0, true, true, true)
+
+	for name, err := range map[string]error{"check": checkErr, "run": runErr} {
+		if err == nil {
+			t.Fatalf("%s accepted a config still holding the init placeholders", name)
+		}
+		for _, want := range []string{"relay_mcp", "placeholder", "issue_agent_credential"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: the error is missing %q:\n%v", name, want, err)
+			}
+		}
+	}
+	if out.Len() > 0 {
+		t.Errorf("check printed a report for a config it refused:\n%s", out.String())
+	}
+}
+
+// Every command that reads the config has to say the same thing when there
+// isn't one: run init. Finding out by way of a JSON parse error, or by a fleet
+// that starts with no workers, is how a first five minutes goes wrong.
+func TestCommandsWithNoConfigPointAtInit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), configFileName)
+
+	var out bytes.Buffer
+	for name, err := range map[string]error{
+		"check": check(path, time.Second, &out),
+		"run":   run(path, 0, true, true, true),
+	} {
+		if err == nil {
+			t.Fatalf("%s ran with no config at all", name)
+		}
+		if !strings.Contains(err.Error(), "relay init") {
+			t.Errorf("%s: the error does not name the command that fixes it:\n%v", name, err)
+		}
 	}
 }

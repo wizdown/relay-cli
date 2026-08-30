@@ -14,8 +14,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -48,6 +51,16 @@ const (
 // value: a fleet that polls at a rate its own config does not state is a fleet
 // nobody can reason about.
 const minPollSeconds = 5.0
+
+// The floor under a max_seconds_per_run that is actually set.
+//
+// This one protects the operator rather than relay. A kill measured in a few
+// seconds does not make a worker careful, it makes every session die before it
+// can claim anything — while still costing whatever the model spent getting
+// there. A worker that can never finish a cycle is a worse outcome than one
+// with no kill at all, so the value is rejected rather than allowed through as
+// a plausible-looking number. 0 still removes the kill deliberately.
+const minSecondsPerRun = 30
 
 // The two placeholders `relay init` writes, rejected BY NAME.
 //
@@ -122,12 +135,14 @@ type Config struct {
 // no longer exists.
 type rawWorker map[string]json.RawMessage
 
-// removedKeys are rejected BY NAME. Every other unknown key at worker level is
-// ignored (each optional field is read with a fallback), which is exactly why
-// these need saying out loud: a config still carrying system_prompt_file would
-// otherwise launch an agent with no standing instructions at all and look fine
-// doing it, and one carrying "model" at the top level would lose the model it
-// asked for to a silent default.
+// removedKeys are rejected with the migration, not merely as unknown.
+//
+// Every unknown key is refused (see workerKeys below), so these would fail
+// anyway — what this table adds is WHERE THE SETTING WENT. A config carrying
+// system_prompt_file is not a typo to correct, it is a version's worth of
+// behaviour that moved to relay, and "did you mean repo_dir?" would be a worse
+// answer than none. These errors are the whole migration path, which is why the
+// user docs describe only what this version accepts.
 var removedKeys = map[string]string{
 	"system_prompt":            "agent identity now lives in relay: set the agent's instructions_md (update_agent, or the relay agent console). It reaches a RUNNING agent, which a local file never could",
 	"system_prompt_file":       "agent identity now lives in relay: move the file's text into the agent's instructions_md (update_agent, or the relay agent console)",
@@ -140,6 +155,152 @@ var removedKeys = map[string]string{
 	"max_budget_usd":           "moved into \"runtime_config\" and renamed to \"max_usd_per_run\": only some runtimes can enforce a spend cap",
 	"run_timeout_seconds":      "renamed to \"max_seconds_per_run\"",
 	"poll_frequency_seconds":   "renamed to \"poll_seconds\", and moved to the TOP LEVEL of the config: one poll rate for the fleet",
+}
+
+// Every key this version accepts, by the level it belongs at.
+//
+// Unknown keys are REFUSED rather than ignored, at every level of the file. A
+// key relay-cli does not read is a setting the operator believes is in force —
+// `max_runs_per_hr` is not a config with a harmless extra line, it is a fleet
+// running at a ceiling nobody chose, and finding that out costs a week of runs.
+// The same reasoning already applied inside `runtime_config`; it applies just as
+// well to the fields relay-cli enforces itself.
+//
+// workerKeys is the json tags on Worker, and a test fails when the two drift —
+// so a new field is accepted by adding it to the struct, not by remembering to
+// add it here as well.
+var (
+	topLevelKeys = []string{"poll_seconds", "workers"}
+	workerKeys   = []string{
+		"name",
+		"relay_mcp",
+		"repo_dir",
+		"runtime",
+		"max_runs_per_hour",
+		"max_seconds_per_run",
+		"runtime_config",
+	}
+)
+
+// unknownKeys returns the keys of raw that are not in accepted, sorted so a
+// report reads the same way twice.
+func unknownKeys(raw map[string]json.RawMessage, accepted []string) []string {
+	known := map[string]bool{}
+	for _, k := range accepted {
+		known[k] = true
+	}
+	var out []string
+	for k := range raw {
+		if !known[k] {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// nearest returns the accepted key an unknown one was most likely meant to be,
+// or "" when nothing is close enough to guess.
+//
+// Refusing a key is only half an error message. Nearly every unknown key is a
+// typo of a real one, and "did you mean max_runs_per_hour?" turns a rejection
+// into the edit — which is the difference between a stricter parser helping and
+// merely being stricter.
+func nearest(key string, accepted []string) string {
+	// Two edits catches the realistic misspellings (a dropped letter, a
+	// transposition, a singular where the key is plural) without guessing wildly
+	// at a long key that happens to share a prefix.
+	best, bestDist := "", 3
+	for _, k := range accepted {
+		if d := editDistance(key, k); d < bestDist {
+			best, bestDist = k, d
+		}
+	}
+	return best
+}
+
+// editDistance is Levenshtein, two rows at a time. Config keys are short, so
+// the simple form is the right one.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	cur := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(b)]
+}
+
+// topLevelKeyHint explains where an unknown top-level key actually belongs.
+func topLevelKeyHint(key string) string {
+	if gone, ok := removedKeys[key]; ok {
+		return "\n      " + gone
+	}
+	for _, k := range workerKeys {
+		if k == key {
+			return "\n      it is a per-worker field — it belongs inside an entry in \"workers\""
+		}
+	}
+	if near := nearest(key, topLevelKeys); near != "" {
+		return fmt.Sprintf(" — did you mean %q?", near)
+	}
+	return ""
+}
+
+// workerKeyHint explains where an unknown worker-level key actually belongs.
+//
+// The two misplacements worth naming are the ones the file's own shape invites:
+// a runtime's setting written beside relay-cli's fields instead of inside
+// "runtime_config", and the fleet-wide poll rate written per worker. Both look
+// entirely reasonable while being read by nothing.
+func workerKeyHint(key string, fields []runtimeField) string {
+	for _, f := range fields {
+		if f.Key == key {
+			return "\n      it is a setting this worker's runtime understands — move it inside\n      \"runtime_config\""
+		}
+	}
+	if key == "poll_seconds" {
+		return "\n      the poll rate is fleet-wide — move it to the TOP LEVEL of the config"
+	}
+	if near := nearest(key, workerKeys); near != "" {
+		return fmt.Sprintf(" — did you mean %q?", near)
+	}
+	return ""
+}
+
+// quoted is the accepted-key list as it should read inside a sentence.
+func quoted(keys []string) []string {
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, strconv.Quote(k))
+	}
+	return out
+}
+
+// trimNum prints a config number back the way the file wrote it — 6.5 as "6.5"
+// and 6 as "6", not "6.000000". An error that misquotes the value it is
+// complaining about is an error someone searches their file for in vain.
+func trimNum(n float64) string { return strconv.FormatFloat(n, 'f', -1, 64) }
+
+// endpointProblem rejects a relay_mcp that cannot be a connector URL at all.
+//
+// The shape is checked here rather than left to the first probe: under `check`
+// a malformed URL costs a confusing transport error, and under `run` it fails
+// on every poll for as long as the fleet is up. The value itself is never
+// quoted back — it is the credential.
+func endpointProblem(endpoint string) bool {
+	u, err := url.Parse(endpoint)
+	return err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https")
 }
 
 // stripLineComments removes // comments from JSON, quote-aware.
@@ -233,22 +394,44 @@ func LoadConfig(path string) (*Config, error) {
 
 	stripped := stripLineComments(src)
 
-	var doc struct {
-		Workers json.RawMessage `json:"workers"`
-		// Raw rather than *float64 so that "30" as a string reports itself as
-		// the wrong TYPE for one field, instead of failing the whole document
-		// as malformed JSON somewhere unnamed.
-		PollSeconds json.RawMessage `json:"poll_seconds"`
+	// An empty file is a step half done, not a syntax error. `relay init` will
+	// not overwrite it either, so the fix has to say more than "run init".
+	if len(bytes.TrimSpace(stripped)) == 0 {
+		return nil, fmt.Errorf("%s has no configuration in it — it is empty once // comments are\n"+
+			"       stripped. Move it aside and run \"relay init\" to write a fresh starting\n"+
+			"       config; init refuses to overwrite a file that is already there.", path)
 	}
+
+	// A map rather than a struct: which keys the file actually uses is the thing
+	// a struct cannot report, and an unknown one at this level is refused. Values
+	// stay raw so that "30" as a string reports itself as the wrong TYPE for one
+	// field, instead of failing the whole document as malformed JSON somewhere
+	// unnamed.
+	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(stripped, &doc); err != nil {
 		return nil, fmt.Errorf("%s is not valid JSON.\n       (// comments are allowed and were stripped before parsing)\n       %v", path, err)
 	}
-	if len(doc.Workers) == 0 {
+
+	// Top-level unknowns are reported before anything else, and alone: when
+	// "workers" itself is the misspelled key there is no worker list to have an
+	// opinion about, and the suggestion IS the whole fix.
+	var topProblems []string
+	for _, k := range unknownKeys(doc, topLevelKeys) {
+		topProblems = append(topProblems, fmt.Sprintf("  top level: %q is not a key this version accepts%s", k, topLevelKeyHint(k)))
+	}
+	if len(topProblems) > 0 {
+		return nil, fmt.Errorf("%s uses %d top-level key(s) this version does not accept:\n%s\n\n"+
+			"       The top level takes %s, and nothing else — every\n"+
+			"       other setting belongs to one worker. See docs/configuration.md.",
+			path, len(topProblems), strings.Join(topProblems, "\n"), strings.Join(quoted(topLevelKeys), " and "))
+	}
+
+	if len(doc["workers"]) == 0 {
 		return nil, fmt.Errorf("%s must contain a top-level \"workers\" array", path)
 	}
 
 	var raws []rawWorker
-	if err := json.Unmarshal(doc.Workers, &raws); err != nil {
+	if err := json.Unmarshal(doc["workers"], &raws); err != nil {
 		return nil, fmt.Errorf("%s must contain a top-level \"workers\" array (%v)", path, err)
 	}
 	if len(raws) == 0 {
@@ -261,8 +444,8 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	pollSeconds := float64(defaultPollSeconds)
-	if len(doc.PollSeconds) > 0 {
-		if err := json.Unmarshal(doc.PollSeconds, &pollSeconds); err != nil {
+	if len(doc["poll_seconds"]) > 0 {
+		if err := json.Unmarshal(doc["poll_seconds"], &pollSeconds); err != nil {
 			return nil, fmt.Errorf("%s: \"poll_seconds\" must be a JSON number (30, not \"30\")", path)
 		}
 	}
@@ -315,28 +498,67 @@ func LoadConfig(path string) (*Config, error) {
 			MaxSecondsPerRun: int(rawFloat(raw, "max_seconds_per_run", defaultMaxSecondsPerRun)),
 		}
 
+		// Absent, wrong-typed and empty are three different mistakes with three
+		// different fixes, and reporting a `"name": 5` as a MISSING name sends
+		// someone to add a field that is already there.
 		for _, f := range []struct{ key, val, why string }{
 			{"name", w.Name, "unique, filesystem-safe — it becomes " + stateDirName + "/<name>/"},
 			{"relay_mcp", w.Endpoint, "the connector_url from relay's issue_agent_credential, secret included"},
 			{"repo_dir", w.RepoDir, "the checkout this worker's CLI runs in"},
 			{"runtime", w.Runtime, "which CLI drives this worker"},
 		} {
-			if f.val == "" {
+			if f.val != "" {
+				continue
+			}
+			v, present := raw[f.key]
+			switch {
+			case !present:
 				problems = append(problems, fmt.Sprintf("  %s: missing %q — %s", label, f.key, f.why))
+			case json.Unmarshal(v, &f.val) != nil:
+				problems = append(problems, fmt.Sprintf("  %s: %q must be a string — %s", label, f.key, f.why))
+			default:
+				problems = append(problems, fmt.Sprintf("  %s: %q is empty — %s", label, f.key, f.why))
 			}
 		}
 
-		if strings.Contains(w.Endpoint, endpointPlaceholder) {
+		// What this worker's runtime accepts, resolved once: the unknown-key
+		// check uses it to say where a misplaced setting belongs, and
+		// runtime_config is validated against it further down.
+		var fields []runtimeField
+		var runtimeErr error
+		if w.Runtime != "" {
+			fields, runtimeErr = runtimeFields(w.Runtime, cfg.RelayDir)
+		}
+
+		// Every key relay-cli itself reads, checked by name. Inside
+		// runtime_config the same rule is applied by the runtime's own table.
+		for _, k := range unknownKeys(raw, workerKeys) {
+			problems = append(problems, fmt.Sprintf("  %s: %q is not a key this version accepts%s", label, k, workerKeyHint(k, fields)))
+		}
+
+		switch {
+		case strings.Contains(w.Endpoint, endpointPlaceholder):
 			problems = append(problems, fmt.Sprintf("  %s: relay_mcp is still the placeholder from `relay init` — paste the whole\n"+
 				"      connector_url over it (relay: onboard_agent, then issue_agent_credential).\n"+
 				"      The secret is part of that URL and is shown exactly once", label))
+		case w.Endpoint != "" && endpointProblem(w.Endpoint):
+			// The value is never quoted back: it is the credential.
+			problems = append(problems, fmt.Sprintf("  %s: relay_mcp is not an http(s) URL — paste the whole connector_url relay\n"+
+				"      issued, scheme and secret included", label))
 		}
 
 		// A name becomes <state>/<name>/, so it has to be a single path segment.
 		// The shell poller this replaced only asked for that in a comment; a
 		// worker called "a/b" silently wrote its state somewhere else entirely.
-		if w.Name != "" && (strings.ContainsAny(w.Name, "/\\") || w.Name == "." || w.Name == "..") {
+		switch {
+		case w.Name != "" && (strings.ContainsAny(w.Name, "/\\") || w.Name == "." || w.Name == ".."):
 			problems = append(problems, fmt.Sprintf("  %s: name is not filesystem-safe — it becomes %s/<name>/, so it may not contain \"/\" or \"\\\"", label, stateDirName))
+		// A name is typed into `tail`, `rm` and a PAUSED path by hand. One that
+		// begins or ends in a space is a directory nobody can name from a shell
+		// without discovering why, long after the config was written.
+		case w.Name != strings.TrimSpace(w.Name):
+			problems = append(problems, fmt.Sprintf("  %s: name has leading or trailing whitespace — it becomes a directory you\n"+
+				"      have to type, so trim it to %q", label, strings.TrimSpace(w.Name)))
 		}
 		if w.Name != "" && seenNames[w.Name] {
 			problems = append(problems, fmt.Sprintf("  %s: duplicate name — every worker needs its own", label))
@@ -351,18 +573,37 @@ func LoadConfig(path string) (*Config, error) {
 		}
 		seenEndpoints[w.Endpoint] = true
 
+		// Both ceilings count whole things — runs, seconds — and both spell "no
+		// limit" as 0. Every other value is checked here rather than truncated
+		// quietly into an int: a worker capped at 6.9 runs is capped at 6, and
+		// nothing would ever have said so.
 		for _, f := range []struct {
-			key string
-			val int
+			key   string
+			unit  string
+			floor int // the smallest value that still means something, when set
+			why   string
 		}{
-			{"max_runs_per_hour", w.MaxRunsPerHour},
-			{"max_seconds_per_run", w.MaxSecondsPerRun},
+			{"max_runs_per_hour", "runs", 0, "no ceiling on how many sessions start"},
+			{"max_seconds_per_run", "seconds", minSecondsPerRun,
+				"no kill at all — only max_runs_per_hour would bound a hung session"},
 		} {
-			if v, ok := raw[f.key]; ok {
-				var n float64
-				if json.Unmarshal(v, &n) != nil || n < 0 {
-					problems = append(problems, fmt.Sprintf("  %s: %q must be a non-negative JSON number (30, not \"30\")", label, f.key))
-				}
+			v, present := raw[f.key]
+			if !present {
+				continue
+			}
+			var n float64
+			switch {
+			case json.Unmarshal(v, &n) != nil:
+				problems = append(problems, fmt.Sprintf("  %s: %q must be a JSON number (900, not \"900\")", label, f.key))
+			case n < 0:
+				problems = append(problems, fmt.Sprintf("  %s: %q is %s — a ceiling cannot be negative. Use 0 for %s,\n"+
+					"      or a positive number of %s", label, f.key, trimNum(n), f.why, f.unit))
+			case n != math.Trunc(n):
+				problems = append(problems, fmt.Sprintf("  %s: %q is %s — it counts whole %s", label, f.key, trimNum(n), f.unit))
+			case f.floor > 0 && n > 0 && n < float64(f.floor):
+				problems = append(problems, fmt.Sprintf("  %s: %q is %s, below the %d-second minimum — a kill that short ends\n"+
+					"      every session before it can claim a task, and the run is still paid for.\n"+
+					"      Use 0 for %s", label, f.key, trimNum(n), f.floor, f.why))
 			}
 		}
 
@@ -376,7 +617,15 @@ func LoadConfig(path string) (*Config, error) {
 		case w.RepoDir != "":
 			expanded := expandTilde(w.RepoDir)
 			info, err := os.Stat(expanded)
-			if err != nil || !info.IsDir() {
+			switch {
+			// A relative path resolves against whatever directory `relay run`
+			// happened to be started from, so the same config would drive a
+			// different checkout depending on where it was launched — and the
+			// wrong one would still look like it worked.
+			case !filepath.IsAbs(expanded):
+				problems = append(problems, fmt.Sprintf("  %s: repo_dir %q is a relative path — it would resolve against wherever\n"+
+					"      \"relay run\" was started from. Give the full path, or one starting with \"~/\"", label, w.RepoDir))
+			case err != nil || !info.IsDir():
 				problems = append(problems, fmt.Sprintf("  %s: repo_dir %q is not a directory", label, w.RepoDir))
 			}
 			w.RepoDir = expanded
@@ -386,9 +635,8 @@ func LoadConfig(path string) (*Config, error) {
 		// accepts, so an unsupported key is refused here instead of being
 		// silently ignored for the life of the fleet.
 		if w.Runtime != "" {
-			fields, err := runtimeFields(w.Runtime, cfg.RelayDir)
-			if err != nil {
-				problems = append(problems, fmt.Sprintf("  %s: %v", label, err))
+			if runtimeErr != nil {
+				problems = append(problems, fmt.Sprintf("  %s: %v", label, runtimeErr))
 			} else {
 				rc, rcProblems := validateRuntimeConfig(label, w.Runtime, raw, fields)
 				w.RuntimeConfig = rc
@@ -402,7 +650,9 @@ func LoadConfig(path string) (*Config, error) {
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("%s needs %d fix(es):\n%s\n\n"+
 			"       Every worker needs a name, a relay_mcp credential, a repo_dir and a\n"+
-			"       runtime. See docs/configuration.md for the full reference.",
+			"       runtime; every other key has to be one this version accepts, because a\n"+
+			"       key relay-cli does not read is a setting you would believe was in force.\n"+
+			"       See docs/configuration.md for the full reference.",
 			path, len(problems), strings.Join(problems, "\n"))
 	}
 
@@ -475,15 +725,30 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 		switch f.Kind {
 		case fieldNumber:
 			var n float64
-			if json.Unmarshal(v, &n) != nil || n < 0 {
-				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s must be a non-negative JSON number (5, not \"5\")", label, f.Key))
+			switch {
+			case json.Unmarshal(v, &n) != nil:
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s must be a JSON number (5, not \"5\") — %s", label, f.Key, f.Doc))
+				continue
+			case n < 0:
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s is %s — a cap cannot be negative. Use 0 to remove it", label, f.Key, trimNum(n)))
 				continue
 			}
-			out[f.Key] = strconv.FormatFloat(n, 'f', -1, 64)
+			out[f.Key] = trimNum(n)
 		default:
 			var s string
-			if json.Unmarshal(v, &s) != nil || s == "" {
-				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s must be a non-empty string", label, f.Key))
+			switch {
+			case json.Unmarshal(v, &s) != nil:
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s must be a string — %s", label, f.Key, f.Doc))
+				continue
+			case strings.TrimSpace(s) == "":
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s is empty — %s", label, f.Key, f.Doc))
+				continue
+			// This value is handed to a CLI as one argv word. Whitespace around
+			// it is invisible in the file and rejected by the CLI much later,
+			// inside a run that has already been paid for.
+			case s != strings.TrimSpace(s):
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s has leading or trailing whitespace — it is passed to the\n"+
+					"      runtime verbatim, so write it as %q", label, f.Key, strings.TrimSpace(s)))
 				continue
 			}
 			out[f.Key] = s

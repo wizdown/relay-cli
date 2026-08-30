@@ -215,9 +215,16 @@ THE CONFIG FILE
     }
 
   The fields outside "runtime_config" are enforced by relay-cli and mean the
-  same thing for every runtime. The ones inside are that CLI's own vocabulary,
-  and a key the runtime does not accept is refused when the config loads rather
-  than ignored for the life of the fleet.
+  same thing for every runtime. The ones inside are that CLI's own vocabulary.
+
+  EVERY key is checked by name, at every level of the file, and one this version
+  does not accept is refused when the config loads — with the key you probably
+  meant, or with where that setting belongs. A key relay-cli does not read is a
+  ceiling you believe is in force and is not, so it is not ignored for the life
+  of the fleet. Values are checked for sanity too: a ceiling counts whole
+  things and cannot be negative, "relay_mcp" has to be an http(s) URL, and
+  "repo_dir" has to be an absolute path that exists. Every problem in the file
+  is reported at once.
 
   Full reference, per runtime: docs/configuration.md
 

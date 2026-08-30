@@ -47,10 +47,12 @@ moment.
 **1. The code** — `config.go`:
 
 - Add the field to `Worker` with its `json:"…"` tag.
+- Add it to `workerKeys` in `config.go`. Unknown keys are refused at every level
+  of the file, so a field that is not on that list is a field nobody can set —
+  `TestWorkerKeysMatchTheStruct` fails until the two agree.
 - Add a `default…` constant if it has a default. Make it a **bound**, never
   "unlimited": the short config has to be the safe one.
-- Parse it in `LoadConfig` with a fallback. Unknown worker-level keys are ignored
-  by design, so a typo does nothing — that is exactly why documentation matters.
+- Parse it in `LoadConfig` with a fallback for when the key is absent.
 - Validate it if a wrong value would fail late, and **append to `problems`**
   rather than returning early. Every problem in a file is reported at once; a
   parser that stops at the first one turns a half-written config into a dozen
@@ -75,13 +77,16 @@ drifted from the first.
 
 ## Removing or renaming a field
 
-A removed key is **not** just a deleted field. A config still carrying it would
-otherwise be silently ignored — and for anything that changes what a worker does,
-silence is the wrong answer.
+A removed key is **not** just a deleted field. Dropping it from `workerKeys`
+would already make a config carrying it fail — but as an unknown key, offering
+the nearest spelling, which for a setting that genuinely moved is a worse answer
+than none.
 
-1. Add it to `removedKeys` in `config.go`, mapped to **what to do instead**, not
-   merely "removed". The map value is printed to a person whose fleet just
-   refused to start; it should end the problem, not name it.
+1. Delete it from the `Worker` struct and from `workerKeys`, then add it to
+   `removedKeys` in `config.go`, mapped to **what to do instead**, not merely
+   "removed". The map value is printed to a person whose fleet just refused to
+   start; it should end the problem, not name it — and it wins over the spelling
+   suggestion an unknown key would otherwise get.
 2. Delete it from the manual and from `docs/configuration.md` — every trace,
    including any sentence explaining what it used to do.
 

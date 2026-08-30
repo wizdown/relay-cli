@@ -102,9 +102,12 @@ runtime setting is added there and nowhere else — the parser, the bash-adapter
 environment and the docs test all read that one table.
 
 **Changing a config field is a loop, not an edit.** Adding, renaming, removing
-one or changing a default touches the struct or `ConfigFields()`, the field table
-in `docs/configuration.md` (default in the **last** column, backticked — a test
-parses that cell), and the `THE CONFIG FILE` block in `helpText`. A **removed**
+one or changing a default touches the struct or `ConfigFields()`, `workerKeys`
+in `config.go` (every key is checked by name at every level of the file, so a
+field missing from that list is one nobody can set — a test fails until the two
+agree), the field table in `docs/configuration.md` (default in the **last**
+column, backticked — a test parses that cell), and the `THE CONFIG FILE` block
+in `helpText`. A **removed**
 key is deleted from the docs entirely and added to `removedKeys` mapped to *what
 to do instead* — that error message is the whole migration path, and the user
 docs stay a description of what this version accepts. Step by step:

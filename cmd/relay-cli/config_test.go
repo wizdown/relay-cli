@@ -414,3 +414,248 @@ func TestRelayHomeIsUnderTheUsersHome(t *testing.T) {
 		t.Errorf("DefaultConfigPath() = %q, want %q", path, want)
 	}
 }
+
+// ── unknown keys ─────────────────────────────────────────────────────────────
+
+// workerKeys is what the parser accepts; the struct is what the rest of the
+// program reads. A field added to one and not the other is a setting the docs
+// describe and the config refuses, so the two are pinned together rather than
+// left to a checklist.
+func TestWorkerKeysMatchTheStruct(t *testing.T) {
+	accepted := map[string]bool{}
+	for _, k := range workerKeys {
+		accepted[k] = true
+	}
+	for _, field := range workerFields() {
+		if !accepted[field] {
+			t.Errorf("Worker has a %q field the config parser would reject — add it to workerKeys in config.go", field)
+		}
+		delete(accepted, field)
+	}
+	for k := range accepted {
+		t.Errorf("workerKeys accepts %q, which no field on Worker reads — remove it, or add the field", k)
+	}
+}
+
+// The whole point of the change: a key relay-cli does not read is a setting the
+// operator believes is in force. `max_run_per_hour` used to load clean and cap
+// nothing.
+func TestRejectsUnknownWorkerKey(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, configOf(t, worker(t, `, "max_run_per_hour": 6`))))
+	if err == nil {
+		t.Fatal("want an error for a misspelled worker key")
+	}
+	// Refusing is half an error message; naming the key it was meant to be is
+	// the other half.
+	for _, want := range []string{"max_run_per_hour", "did you mean", "max_runs_per_hour"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error is missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// Far enough from anything real that a guess would be noise. It still has to
+// fail — it just fails without inventing a suggestion.
+func TestRejectsUnknownWorkerKeyWithNoNearMiss(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, configOf(t, worker(t, `, "totally_bogus": true`))))
+	if err == nil || !strings.Contains(err.Error(), "totally_bogus") {
+		t.Fatalf("want a rejection naming the key, got %v", err)
+	}
+	if strings.Contains(err.Error(), "did you mean") {
+		t.Errorf("nothing is close to that key; the error should not guess:\n%v", err)
+	}
+}
+
+// The misplacement the file's own shape invites: a runtime's setting written
+// beside relay-cli's fields, where it reads perfectly and is read by nothing.
+func TestSaysWhereAMisplacedRuntimeSettingBelongs(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, configOf(t, worker(t, `, "max_usd_per_run": 5`))))
+	if err == nil || !strings.Contains(err.Error(), "runtime_config") {
+		t.Fatalf("want an error telling the user to move it into runtime_config, got %v", err)
+	}
+}
+
+// One poll rate for the fleet, so a per-worker one is not a smaller mistake
+// than a typo — it is a setting that would never apply.
+func TestSaysPollSecondsIsFleetWide(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, configOf(t, worker(t, `, "poll_seconds": 10`))))
+	if err == nil || !strings.Contains(err.Error(), "TOP LEVEL") {
+		t.Fatalf("want an error saying the poll rate is fleet-wide, got %v", err)
+	}
+}
+
+func TestRejectsUnknownTopLevelKey(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, `{"poll_secondz":30,"workers":[`+worker(t, "")+`]}`))
+	if err == nil {
+		t.Fatal("want an error for a misspelled top-level key")
+	}
+	for _, want := range []string{"poll_secondz", "did you mean", "poll_seconds"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error is missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// A worker field written at the top level is the other half of the same
+// mistake, and "workers is missing" would be a true but useless answer.
+func TestSaysAWorkerFieldAtTopLevelBelongsInAWorker(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, `{"runtime":"claude","workers":[`+worker(t, "")+`]}`))
+	if err == nil || !strings.Contains(err.Error(), "belongs inside an entry") {
+		t.Fatalf("want an error placing the key inside a worker, got %v", err)
+	}
+}
+
+// Strictness that rejected a legal config would be worse than the silence it
+// replaced, so the full accepted surface is exercised as one file.
+func TestAcceptsEveryKeyThisVersionDocuments(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, fmt.Sprintf(`{
+	  "poll_seconds": 15,
+	  "workers": [{
+	    "name": "w",
+	    "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_aaaaaaaa",
+	    "repo_dir": %q,
+	    "runtime": "claude",
+	    "max_runs_per_hour": 6,
+	    "max_seconds_per_run": 600,
+	    "runtime_config": {"model": "sonnet", "max_usd_per_run": 2.5}
+	  }]
+	}`, repoHere(t)))
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatalf("a config using every accepted key must load: %v", err)
+	}
+	w := cfg.Workers[0]
+	if cfg.PollSeconds != 15 || w.MaxRunsPerHour != 6 || w.MaxSecondsPerRun != 600 || w.RCFloat("max_usd_per_run") != 2.5 {
+		t.Errorf("a value was lost on the way through: %+v poll=%v", w, cfg.PollSeconds)
+	}
+}
+
+// ── value sanity ─────────────────────────────────────────────────────────────
+
+// Reported as MISSING, someone goes looking for a field that is already there.
+func TestRejectsWrongTypedRequiredField(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, configOf(t, strings.Replace(worker(t, ""), `"name": "w"`, `"name": 5`, 1)))
+	err := loadErr(p)
+	if err == nil || !strings.Contains(err.Error(), "must be a string") {
+		t.Fatalf("want a type error naming the field, got %v", err)
+	}
+	if strings.Contains(err.Error(), `missing "name"`) {
+		t.Errorf("a present-but-wrong-typed field is not a missing one:\n%v", err)
+	}
+}
+
+func TestRejectsEmptyRequiredField(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, configOf(t, strings.Replace(worker(t, ""), `"name": "w"`, `"name": ""`, 1)))
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "is empty") {
+		t.Fatalf("want an empty-field error, got %v", err)
+	}
+}
+
+// A name is typed into `tail`, `rm` and a PAUSED path by hand.
+func TestRejectsNameWithSurroundingWhitespace(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, configOf(t, strings.Replace(worker(t, ""), `"name": "w"`, `"name": " w "`, 1)))
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("want a whitespace error, got %v", err)
+	}
+}
+
+// Under `check` a malformed endpoint costs a confusing transport error; under
+// `run` it fails on every poll for as long as the fleet is up.
+func TestRejectsMalformedEndpoint(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, bad := range []string{"relay.example.com/c/wzh_a", "wzh_aaaaaaaa", "ftp://relay.example.com/c/wzh_a"} {
+		p := write(t, configOf(t, strings.Replace(worker(t, ""),
+			`"relay_mcp": "https://x/c/wzh_aaaaaaaa"`, `"relay_mcp": `+fmt.Sprintf("%q", bad), 1)))
+		err := loadErr(p)
+		if err == nil || !strings.Contains(err.Error(), "http(s) URL") {
+			t.Errorf("%q: want a URL-shape error, got %v", bad, err)
+		}
+		// The value is the credential and never belongs in an error.
+		if err != nil && strings.Contains(err.Error(), bad) {
+			t.Errorf("%q: the error quotes the endpoint back:\n%v", bad, err)
+		}
+	}
+}
+
+// The same config would drive a different checkout depending on where the
+// fleet was started from, and the wrong one would still look like it worked.
+func TestRejectsRelativeRepoDir(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_a","repo_dir":"./checkout",`+
+		`"runtime":"claude","runtime_config":{"model":"sonnet"}}]}`)
+	if err := loadErr(p); err == nil || !strings.Contains(err.Error(), "relative path") {
+		t.Fatalf("want a relative-path error, got %v", err)
+	}
+}
+
+// Truncating 6.9 into a ceiling of 6 is a limit nobody chose and nothing would
+// ever have mentioned.
+func TestRejectsUnsaneCeilings(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, tc := range []struct{ entry, want string }{
+		{`, "max_runs_per_hour": -1`, "cannot be negative"},
+		{`, "max_runs_per_hour": 6.5`, "whole runs"},
+		{`, "max_seconds_per_run": -30`, "cannot be negative"},
+		{`, "max_seconds_per_run": 5`, "minimum"},
+		{`, "max_seconds_per_run": "900"`, "must be a JSON number"},
+	} {
+		err := loadErr(write(t, configOf(t, worker(t, tc.entry))))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: want an error containing %q, got %v", tc.entry, tc.want, err)
+		}
+	}
+}
+
+// 0 is the operator removing a ceiling deliberately, which is not the same as
+// setting a nonsensical one.
+func TestAcceptsZeroCeilings(t *testing.T) {
+	noRuntimeCheck(t)
+	cfg, err := LoadConfig(write(t, configOf(t, worker(t, `, "max_runs_per_hour": 0, "max_seconds_per_run": 0`))))
+	if err != nil {
+		t.Fatalf("0 removes a ceiling deliberately and must be accepted: %v", err)
+	}
+	if w := cfg.Workers[0]; w.MaxRunsPerHour != 0 || w.MaxSecondsPerRun != 0 {
+		t.Errorf("a deliberate 0 was not preserved: %+v", w)
+	}
+}
+
+// The value is passed to the CLI verbatim, so " sonnet" is rejected inside a
+// run that has already been paid for.
+func TestRejectsUntrimmedRuntimeConfigValue(t *testing.T) {
+	noRuntimeCheck(t)
+	p := write(t, configOf(t, strings.Replace(worker(t, ""), `"model": "sonnet"`, `"model": " sonnet "`, 1)))
+	err := loadErr(p)
+	if err == nil || !strings.Contains(err.Error(), "whitespace") {
+		t.Fatalf("want a whitespace error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), `"sonnet"`) {
+		t.Errorf("the error should show what to write instead:\n%v", err)
+	}
+}
+
+// An empty file is a step half done. "not valid JSON" describes it correctly
+// and helps nobody, and `relay init` refuses to overwrite it — so the error has
+// to say more than "run init".
+func TestEmptyConfigSaysWhatToDo(t *testing.T) {
+	for _, body := range []string{"", "   \n\n", "// only a comment\n"} {
+		err := loadErr(write(t, body))
+		if err == nil {
+			t.Fatalf("%q: want an error for a config with nothing in it", body)
+		}
+		for _, want := range []string{"relay init", "overwrite"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%q: the error does not mention %q:\n%v", body, want, err)
+			}
+		}
+	}
+}
