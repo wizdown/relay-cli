@@ -7,10 +7,16 @@ Everything relay-cli owns lives beside it, and no flag moves it:
 
 ```text
 ~/.relay/
-  config      the worker list — 0600, every relay_mcp in it is a secret
-  state/      per-worker runtime state, removed on shutdown
-  logs/       archived sessions, written on shutdown
+  config           the worker list — 0600, every relay_mcp in it is a secret
+  state/           per-worker runtime state, removed on shutdown
+  logs/            archived sessions, written on shutdown
+  worker-rules.md  optional — replaces the harness contract every worker is given
 ```
+
+`relay init` writes `config` and nothing else. `worker-rules.md` is one you
+create yourself, and most fleets never do — what the contract says, and when
+replacing it is the right move, is in
+[The working directory](working-directory.md#step-0--an-empty-directory).
 
 ## The shape
 

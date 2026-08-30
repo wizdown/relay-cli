@@ -17,6 +17,8 @@ noise included, so "no output" is the healthy steady state.
 |---|---|
 | Nothing ever launches | `worker.log`. Queue genuinely empty (`relay check`)? Task delegated to *this* agent? `PAUSED` file present? Hourly ceiling hit? |
 | `FAIL … HTTP 401` from `check` | Credential revoked, or the wrong `relay_mcp`. Issue a new one in relay and replace the whole URL, secret included. |
+| `FAIL … HTTP` anything else from `check` | The host answered but not as a connector, so the host is right and the rest of the URL is not — usually a `connector_url` truncated on the way to the config. Paste the whole thing again. |
+| `Not logged in · Please run /login` in `worker.log` | Claude Code is installed but not signed in. A worker launches it as you, and `relay check` proves the CLI exists and is new enough, not that it can authenticate — that would cost a model call. Run `claude` once yourself, log in, then `relay run` again. |
 | `is not a key this version accepts` | Every key is checked by name. The error suggests the one you meant, or says where the setting belongs — a runtime's setting goes inside `runtime_config`, and `poll_seconds` at the top level. Full list: [Worker fields](configuration.md#worker-fields). |
 | A key is rejected with what to use *instead* | That key was removed in an earlier version; the message is the migration. The docs only describe what this version accepts. |
 | `no config at …` / `has no configuration in it` | Nothing has been set up here yet — run `relay init`. It refuses to overwrite an existing file, so move an empty one aside first. |

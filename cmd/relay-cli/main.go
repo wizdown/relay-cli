@@ -334,6 +334,13 @@ RUNTIMES — no CLI is bundled, install them yourself
   (streaming output, the MCP config, the spend cap); set
   RELAY_CLI_SKIP_RUNTIME_CHECK=1 to bypass that flag check.
 
+  SIGN IN TO THE CLI FIRST. A worker launches it as you, so it authenticates the
+  way your own sessions do — run it once yourself and log in. That is the one
+  prerequisite neither "check" nor startup can verify for you: proving a CLI can
+  authenticate costs a model call, and check spends nothing. A CLI that is
+  installed but not signed in starts, fails immediately, and says so in
+  state/<name>/worker.log.
+
 EVERYTHING COSTS WHAT IT SAYS
   Polls are free and runs are not, and every ceiling here counts runs. The
   defaults bound you before you configure anything: 12 runs an hour, $5 inside
@@ -487,15 +494,20 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 	}
 	wg.Wait()
 
-	failed, unauthorized := 0, false
+	failed, unauthorized, answered := 0, false, false
 	for _, r := range results {
 		if r.err != nil {
 			failed++
 			// Scrub: a probe error can quote the URL it failed on, and that URL
 			// is the credential.
 			msg := oneLine(Scrub(r.err.Error()), 160)
-			if strings.Contains(msg, "401") {
+			switch {
+			case strings.Contains(msg, "401"):
 				unauthorized = true
+			case strings.Contains(msg, "HTTP "):
+				// Something answered — so the host is right and reachable, and
+				// the part of the URL that is wrong is the rest of it.
+				answered = true
 			}
 			fmt.Fprintf(out, "  %-24s FAIL  %s\n", r.worker.Name, msg)
 			writeWorkdirLine(out, r.worker, cfg.RelayDir)
@@ -508,18 +520,25 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 	fmt.Fprintln(out)
 
 	if failed > 0 {
-		// The advice is conditional because the two failures have different
-		// fixes, and offering both makes each one less believable: a 401 is a
-		// credential to reissue, while a refused connection or a DNS miss is a
-		// host to correct.
+		// The advice is conditional because the failures have different fixes,
+		// and offering all of them makes each one less believable: a 401 is a
+		// credential to reissue, an answer that is not a 401 is a URL that
+		// reached the right host and the wrong endpoint — the shape a truncated
+		// paste makes — and neither is a refused connection or a DNS miss,
+		// which is a host to correct.
 		hint := "       The endpoint could not be reached at all — check the host in relay_mcp,\n" +
 			"       and that this machine can reach it."
-		if unauthorized {
+		switch {
+		case unauthorized:
 			hint = "       HTTP 401 means that worker's relay_mcp is wrong or its credential was\n" +
 				"       revoked — issue a new one in relay (issue_agent_credential) and replace\n" +
 				"       the whole URL, secret included."
+		case answered:
+			hint = "       The host answered, but not as a relay connector. It was reached, so the\n" +
+				"       host in relay_mcp is right and the rest of the URL is not — paste the\n" +
+				"       whole connector_url again, secret included, and check nothing was cut off."
 		}
-		return fmt.Errorf("%d of %d worker(s) could not reach relay.\n%s", failed, len(cfg.Workers), hint)
+		return fmt.Errorf("%d of %d worker(s) could not check in with relay.\n%s", failed, len(cfg.Workers), hint)
 	}
 
 	// A zero queue is the healthy answer here, and saying so is the point: it is
