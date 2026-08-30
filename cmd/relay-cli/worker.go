@@ -347,8 +347,8 @@ func (r *WorkerRunner) recordRun() {
 	fmt.Fprintf(fh, "%d\n", time.Now().Unix())
 }
 
-// runContext — the CLI starts inside repo_dir, so that repo's AGENTS.md /
-// CLAUDE.md, skills and tooling load exactly as they would for a human there.
+// runContext — the CLI starts inside repo_dir, so that directory's CLAUDE.md,
+// skills and tooling load exactly as they would for a human there.
 // That is what the field is FOR, which is why it is required: an agent pointed
 // somewhere arbitrary is an agent working without any of it.
 func (r *WorkerRunner) runContext() *RunContext {
@@ -359,7 +359,7 @@ func (r *WorkerRunner) runContext() *RunContext {
 		Prompt:     workerPrompt,
 		Rules:      r.rules,
 		RulesFile:  r.rulesFile,
-		AllowTools: relayAllowedTools,
+		AllowTools: workerAllowedTools,
 	}
 }
 

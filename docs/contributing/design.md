@@ -93,16 +93,16 @@ a copy of the playbook.
 ## Repo context
 
 A worker is one relay agent identity × one repo × one CLI. Set `repo_dir` and the
-CLI starts inside that checkout, so the repo's `AGENTS.md` / `CLAUDE.md`, skills
-and tooling load exactly as they would for you.
+CLI starts inside that checkout, so the repo's `CLAUDE.md`, skills and tooling
+load exactly as they would for you.
 
 That makes delegation the routing decision: the relay agent you hand a task to
 determines which repo it runs in and which CLI does the work. There's no mapping
 table to keep in sync, and a per-repo credential's queue can only ever contain
 that repo's tasks.
 
-`repo_dir` is required: it decides which repo's `AGENTS.md` / `CLAUDE.md`, skills
-and tooling the agent inherits, which is what the field is *for*. There is no
+`repo_dir` is required: it decides which repo's `CLAUDE.md`, skills and tooling
+the agent inherits, which is what the field is *for*. There is no
 default because there is no safe one — an agent pointed somewhere arbitrary is an
 agent working without any of it.
 

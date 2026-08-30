@@ -34,7 +34,7 @@ const (
 	// surface is still evolving, so a release may still change configuration or
 	// the worker contract. A 1.0 would be a claim that it will not, which is not
 	// a claim this can make yet — see the versioning note in the root readme.
-	version = "0.0.1"
+	version = "0.0.2"
 	channel = "beta"
 
 	// Everything relay-cli owns lives in ONE place:
@@ -133,10 +133,11 @@ GETTING STARTED
        then issue its credential (issue_agent_credential). Leave its
        capabilities off; a first worker needs none. The secret is embedded in
        the URL it returns and is shown EXACTLY ONCE.
-       "repo_dir" — the checkout this agent should work in. Its AGENTS.md,
-       CLAUDE.md, skills and tooling are what the agent gets, so this is the
-       choice that decides what the worker is actually able to do. Point it at
-       a checkout you are willing to have rewritten: a headless run is fully
+       "repo_dir" — the directory this agent should work in. Its CLAUDE.md,
+       skills and tooling are what the agent gets, so this is the choice that
+       decides what the worker is actually able to do. An empty directory is a
+       valid start; docs/working-directory.md is the ladder from there. Point
+       it somewhere you are willing to have rewritten: a headless run is fully
        autonomous and cannot answer an approval prompt.
 
     3. relay check
@@ -227,6 +228,7 @@ THE CONFIG FILE
   is reported at once.
 
   Full reference, per runtime: docs/configuration.md
+  Preparing a repo_dir:        docs/working-directory.md
 
   NEVER COMMIT IT: each relay_mcp is a live credential, and each is shown by
   relay exactly once.

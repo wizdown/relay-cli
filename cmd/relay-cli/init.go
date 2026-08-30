@@ -57,9 +57,10 @@ const initConfigTemplate = `{
       // issue_agent_credential. It is shown EXACTLY ONCE.
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
 
-      // REPLACE THIS. The checkout this agent works in — its AGENTS.md /
-      // CLAUDE.md, skills and tooling are what the agent gets, so this decides
-      // what the worker can actually do. "~" is expanded and it must exist.
+      // REPLACE THIS. The directory this agent works in — its CLAUDE.md,
+      // skills and tooling are what the agent gets, so this decides what the
+      // worker can actually do. "~" is expanded and it must exist.
+      // docs/working-directory.md is how to prepare one.
       //
       // A headless run is fully autonomous and cannot answer an approval
       // prompt, so point this at a checkout you are willing to have rewritten,
@@ -183,11 +184,11 @@ Two placeholders to replace, and it runs:
      none. The secret is embedded in the URL it returns and is shown EXACTLY
      ONCE — paste the whole URL over the placeholder.
 
-  2. "repo_dir" — the checkout this agent should work in. Its AGENTS.md /
-     CLAUDE.md, skills and tooling are what the agent gets, so this is the
-     choice that decides what the worker can actually do. A headless run is
-     fully autonomous and cannot answer an approval prompt, so point it at a
-     checkout you are willing to have rewritten.
+  2. "repo_dir" — the directory this agent should work in. Its CLAUDE.md,
+     skills and tooling are what the agent gets, so this is the choice that
+     decides what the worker can actually do; docs/working-directory.md is how
+     to prepare one. A headless run is fully autonomous and cannot answer an
+     approval prompt, so point it somewhere you are willing to have rewritten.
 
 Then:
 

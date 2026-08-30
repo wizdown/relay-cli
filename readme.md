@@ -84,11 +84,13 @@ That writes `~/.relay/config`. Replace its two placeholders:
 }
 ```
 
-`repo_dir` is the checkout the agent works in, so its `AGENTS.md` / `CLAUDE.md`,
-skills and tooling are what the agent gets. A headless run is fully autonomous
-and can never answer an approval prompt — pick a checkout you are willing to
-have rewritten. Everything else defaults, and every default is bounded:
-12 runs/hour, $5 per run, a 15-minute kill, a poll every 30s.
+`repo_dir` is the directory the agent works in, so its `CLAUDE.md`, skills and
+tooling are what the agent gets. An empty directory is a valid start;
+[The working directory](docs/working-directory.md) is the ladder from there to
+one that knows your project. A headless run is fully autonomous and can never
+answer an approval prompt — pick somewhere you are willing to have rewritten.
+Everything else defaults, and every default is bounded: 12 runs/hour, $5 per
+run, a 15-minute kill, a poll every 30s.
 [Configuration](docs/configuration.md) has the rest.
 
 ### 3. Check it, then run it

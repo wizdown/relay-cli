@@ -55,6 +55,28 @@ var workerPrompt = envOr("WORKER_PROMPT",
 // after it has been paid for.
 const relayAllowedTools = "mcp__relay__get_available_tasks mcp__relay__claim_task mcp__relay__heartbeat mcp__relay__get_task_context mcp__relay__update_task_context mcp__relay__add_comment mcp__relay__ask_question mcp__relay__request_review mcp__relay__release_task mcp__relay__get_task_document mcp__relay__update_task_document mcp__relay__attach_new_document_to_task mcp__relay__request_document_deletion mcp__relay__create_task mcp__relay__link_document_to_task mcp__relay__unlink_document_from_task mcp__relay__delegate_task_to_agent mcp__relay__undelegate_task mcp__relay__list_agents mcp__relay__get_subtask_handoff mcp__relay__get_subtask_document mcp__relay__answer_task mcp__relay__approve_task mcp__relay__request_changes"
 
+// The CLI's own tools a worker needs to do the work, named for the same reason
+// the relay tools are: a headless run has no prompt to approve anything on, so
+// `--permission-mode auto` denies whatever no rule matches. None of these is
+// pre-allowed by default. Without this list a worker can read its task, update
+// the Task Context and hand it back — and cannot touch a single file. The
+// denial is invisible while it happens: it reaches the operator only in the
+// run's permission_denials, after the session has been paid for.
+//
+// The list is whole-tool rather than pattern-scoped (`Bash`, not `Bash(git *)`)
+// on purpose. A worker is already an autonomous session inside a checkout the
+// operator chose and accepted might be rewritten; scoping here would only move
+// the same silent denial to the first command nobody predicted. What bounds a
+// run is repo_dir and the spend ceilings.
+//
+// Rules in the operator's own ~/.claude/settings.json still apply on top, and a
+// deny rule still wins: this is a floor, not a bypass.
+const coreAllowedTools = "Read Glob Grep Edit Write NotebookEdit Bash BashOutput KillShell Task TodoWrite Skill WebFetch WebSearch"
+
+// workerAllowedTools is what one run is launched with: relay's surface, plus the
+// tools that make it a coding session rather than a bookkeeping one.
+const workerAllowedTools = relayAllowedTools + " " + coreAllowedTools
+
 // RunContext is what an adapter is given to build one invocation. It mirrors the
 // environment a bash adapter is given, field for field — the contract
 // runtimes/_template.sh documents.

@@ -76,12 +76,16 @@ warning: could not run `claude --help` to verify this install supports the flags
 
 - **Your own MCP servers do not load.** The session runs with
   `--strict-mcp-config`, so it sees this worker's relay connector and nothing
-  else from your personal MCP config.
+  else — not your personal MCP config, and not an `.mcp.json` in the working
+  directory. What the session *does* pick up from that directory is in
+  [The working directory](working-directory.md).
 - **Anything not pre-allowed is denied, silently.** A headless run has no
-  terminal to answer an approval prompt on, so every relay tool is named up
-  front — relay access never rides on the model's judgement about an unfamiliar
-  tool. A refusal is named in `worker.log`, under "the CLI refused these tool
-  calls"; see [Troubleshooting](troubleshooting.md).
+  terminal to answer an approval prompt on, so the session is launched naming
+  every relay tool and the ordinary coding tools — reading and editing files,
+  running commands, searching the web. Neither relay access nor the ability to
+  do the work rides on the model's judgement about an unfamiliar tool. A refusal
+  is named in `worker.log`, under "the CLI refused these tool calls"; see
+  [Troubleshooting](troubleshooting.md).
 - **`model` and `max_usd_per_run` become flags**, and nothing else does. Every
   setting a runtime accepts is a declared `runtime_config` key.
 - **A finished run is reported in words, not an exit code.** The adapter reads

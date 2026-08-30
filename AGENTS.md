@@ -151,6 +151,7 @@ Docs drift because nobody decides where a sentence belongs. Here it is decided:
 | What does this config field do? | `docs/configuration.md`, the only field reference |
 | What commands and flags exist? | `docs/cli.md` |
 | How do I run several workers? | `docs/configuration.md` — the CLI side only |
+| What do I put in `repo_dir` — CLAUDE.md, skills, subagents, settings? | `docs/working-directory.md` |
 | Why isn't it working? | `docs/troubleshooting.md` |
 | How does relay work — tasks, agents, capabilities, delegation, leases? | **Not here.** Link <https://relay.bytecurio.com/> |
 | Why is it built this way? How do I change it? | `docs/contributing/` |
@@ -191,6 +192,7 @@ a reader will look and be wrong:
 | a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` **and** the one-paragraph summary in `readme.md` |
 | what the dashboard shows or serves | `docs/cli.md` |
 | a runtime's support status or its startup check | `docs/runtimes.md`, and the runtime table in this file |
+| what a session picks up from `repo_dir`, or what it is allowed to do there | `docs/working-directory.md`, and the claude-run list in `docs/runtimes.md` |
 | the adapter contract or its environment | `docs/contributing/adapters.md` |
 | an error message a user can hit | `docs/troubleshooting.md` — the symptom row should quote what they actually see |
 | where files live under `~/.relay/` | `docs/configuration.md`, and any command that names a path |
@@ -339,3 +341,4 @@ downloaded is superseded by a new version, not rewritten. Full walkthrough:
 | [docs/contributing/design.md](docs/contributing/design.md) | why the probe exists, what relay owns |
 | [docs/contributing/adapters.md](docs/contributing/adapters.md) | the adapter contract, and where codex stands |
 | [docs/configuration.md](docs/configuration.md) | every config field, for users |
+| [docs/working-directory.md](docs/working-directory.md) | what a worker session picks up from `repo_dir`, for users |

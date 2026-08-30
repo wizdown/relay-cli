@@ -116,7 +116,7 @@ reason a barely-configured worker is a safe worker.
 Required fields are for decisions relay-cli genuinely cannot make for anyone. The
 bar is not "important" — it is that **no default is safe**:
 
-- `repo_dir` decides which repo's `AGENTS.md`, skills and tooling the agent
+- `repo_dir` decides which repo's `CLAUDE.md`, skills and tooling the agent
   inherits, and which checkout it may rewrite.
 - `model` has a CLI default, but that default moves between CLI versions, so an
   unchanged config would silently change what a worker costs.

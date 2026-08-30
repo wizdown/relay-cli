@@ -477,9 +477,10 @@ func (c *claudeRuntime) ClassifyExit(rc *RunContext, status int, outPath string)
 	}
 	if len(denied) > 0 {
 		explanation = fmt.Sprintf(`the CLI refused these tool calls: %s
-  A relay tool here means this worker's allowlist is behind relay's agent surface
-  (relayAllowedTools in runtime.go). The agent could see the tool and called it;
-  its own CLI, not relay, said no.`, strings.Join(denied, ", "))
+  Anything here means this worker's allowlist is behind what the session can
+  reach (workerAllowedTools in runtime.go) — a relay tool means it is behind
+  relay's agent surface. The agent could see the tool and called it; its own
+  CLI, not relay, said no.`, strings.Join(denied, ", "))
 	}
 
 	if res.TerminalReason == "budget_exhausted" {
