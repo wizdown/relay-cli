@@ -44,7 +44,9 @@ import (
 // docs/ path resolves to nothing, and its reader may never have cloned anything.
 const initConfigTemplate = `{
   // ~/.relay/config — the workers ` + "`relay run`" + ` will launch.
-  // NEVER COMMIT THIS FILE: every relay_mcp below is a live credential.
+  // NEVER COMMIT THIS FILE: each relay_mcp below becomes a live credential.
+  // ` + "`relay check`" + ` validates it and tests every credential — launches
+  //   nothing, spends nothing, reports every problem at once.
   // Fields, defaults, safeguards:
   //   ` + docsBase + `configuration.md
   // (// comments are stripped before parsing — annotate freely.)
@@ -53,7 +55,7 @@ const initConfigTemplate = `{
 
   "workers": [
     {
-      "name": "my-repo-claude",   // unique; becomes ~/.relay/state/<name>/
+      "name": "worker-1",         // unique; becomes ~/.relay/state/<name>/
 
       // REPLACE — the connector_url relay issued, secret included.
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",
