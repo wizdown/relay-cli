@@ -84,14 +84,14 @@ That writes `~/.relay/config`. Replace its two placeholders:
 }
 ```
 
-`repo_dir` is the directory the agent works in, so its `CLAUDE.md`, skills and
-tooling are what the agent gets. An empty directory is a valid start;
-[The working directory](docs/working-directory.md) is the ladder from there to
-one that knows your project. A headless run is fully autonomous and can never
-answer an approval prompt — pick somewhere you are willing to have rewritten.
-Everything else defaults, and every default is bounded: 12 runs/hour, $5 per
-run, a 15-minute kill, a poll every 30s.
-[Configuration](docs/configuration.md) has the rest.
+- **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md`, skills
+  and tooling. An empty one is a valid start:
+  [The working directory](docs/working-directory.md) is the ladder from there.
+- **Point it somewhere you are willing to have rewritten** — a headless run is
+  autonomous and can never answer an approval prompt.
+- **Everything else defaults, and every default is bounded** — 12 runs/hour, $5
+  per run, a 15-minute kill, a poll every 30s.
+  [Configuration](docs/configuration.md) has the rest.
 
 ### 3. Check it, then run it
 
@@ -159,6 +159,7 @@ rm ~/.relay/state/hello-claude/PAUSED      # resume it
 | | |
 | --- | --- |
 | [Configuration](docs/configuration.md) | Every config field, per runtime, with defaults — and what changes with more than one worker |
+| [The working directory](docs/working-directory.md) | What a `repo_dir` gives the agent: `CLAUDE.md`, skills, subagents, settings |
 | [Commands & dashboard](docs/cli.md) | Commands, flags, and what the page shows |
 | [Runtimes](docs/runtimes.md) | Supported CLIs, and where codex stands |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → where to look |
