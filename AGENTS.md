@@ -211,7 +211,7 @@ a reader will look and be wrong:
 | a config field or its default | the tables in `docs/configuration.md`, the `THE CONFIG FILE` block in `helpText`, and `docs/contributing/config-fields.md` if the loop itself moved |
 | a field you **removed** | delete every mention from `docs/configuration.md` and `helpText`; add it to `removedKeys` with what to use instead — the error carries the migration, the docs do not |
 | a command or a flag | `helpText`, `docs/cli.md`, and the quickstart in `readme.md` if it appears there |
-| a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` **and** the one-paragraph summary in `readme.md` |
+| a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` **and** the summary list under `## Safeguards` in `readme.md` |
 | what the dashboard shows or serves | `docs/cli.md` |
 | a runtime's support status or its startup check | `docs/runtimes.md`, and the runtime table in this file |
 | what a session picks up from `repo_dir`, or what it is allowed to do there | `docs/working-directory.md`, and the claude-run list in `docs/runtimes.md` |

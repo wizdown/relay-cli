@@ -49,7 +49,23 @@ relay 0.1.0 (beta) — checking 2 worker(s) from /Users/you/.relay/config
 ```
 
 Two questions, one pass. The queue line proves the credential works and relay is
-reachable. The `repo` line proves the other half: that the `CLAUDE.md`, skills
+reachable.
+
+Those three counts are relay's answer to one poll — how much work it is holding
+for this agent, in the three buckets the loop acts on:
+
+| | |
+|---|---|
+| `resume` | a task this agent already holds and can pick back up |
+| `attention` | a task it is holding that has moved — a subtask finished, or asked it something |
+| `todo` | delegated work it has not started |
+
+**Any one of them above zero launches a session**, and all three at `0` is the
+healthy idle reading, not a fault. What puts a task in each bucket — delegation,
+leases, hand-backs — is relay's, and is in the
+[relay docs](https://relay.bytecurio.com/).
+
+The `repo` line proves the other half: that the `CLAUDE.md`, skills
 and subagents someone wrote are where the CLI will look for them — a file one
 directory up, or a skill in a folder that isn't `<name>/SKILL.md`, produces a
 worker that starts, spends and knows none of it.

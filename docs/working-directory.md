@@ -30,8 +30,17 @@ That is a complete, working setup. The agent arrives with:
   standing instructions for that agent;
 - **the ordinary tools** — read, write and edit files, run shell commands,
   search the web;
+- **the harness contract** — a few rules about the process it is running in,
+  which relay cannot know: one task per session, and stop rather than invent
+  work when the queue is empty. Same text for every worker and every runtime,
+  compiled into the binary so a downloaded `relay` carries it;
 - **nothing else**. It has never seen your codebase and holds no memory of the
   last run.
+
+A `worker-rules.md` in `~/.relay/` replaces that contract — for *every* worker
+on the machine, which is what makes it the wrong place for anything about one
+agent. That belongs on the relay agent, where it reaches a session already
+running.
 
 This is enough for self-contained work: drafting a document, doing research,
 or orchestrating subtasks it hands to other agents. An agent that never touches
@@ -216,6 +225,7 @@ in that line, the agent will not see it either.
 | delegate a step to a specialist | `.claude/agents/<name>.md` |
 | run with particular env vars, or hooks | `.claude/settings.json` |
 | reach another MCP server | not supported — see above |
+| follow different harness rules, fleet-wide | `~/.relay/worker-rules.md` — not in `repo_dir`; see [Step 0](#step-0--an-empty-directory) |
 
 Two workers may share one directory, but they share the working tree with it:
 keep their tasks on separate branches, or give each its own clone. See

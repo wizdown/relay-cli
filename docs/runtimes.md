@@ -88,6 +88,11 @@ warning: could not run `claude --help` to verify this install supports the flags
   [Troubleshooting](troubleshooting.md).
 - **`model` and `max_usd_per_run` become flags**, and nothing else does. Every
   setting a runtime accepts is a declared `runtime_config` key.
+- **The harness contract is appended to the CLI's own system prompt**, via
+  `--append-system-prompt`, so it layers on top rather than replacing it. It is
+  runtime-neutral — the same text whichever CLI runs — and what it says, plus
+  how to replace it, is in
+  [The working directory](working-directory.md#step-0--an-empty-directory).
 - **A finished run is reported in words, not an exit code.** The adapter reads
   the result envelope, so a spend-cap kill says it was cut off mid-task and what
   to change, rather than surfacing as a bare non-zero exit.

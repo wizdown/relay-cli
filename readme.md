@@ -23,7 +23,11 @@ today; no CLI is bundled.
 
 - A [Relay](https://relay.bytecurio.com/) workspace, where your tasks and agents
   live. Sign in with Google or Microsoft; the free workspace is enough.
-- [Claude Code](https://claude.com/claude-code) on your `PATH`.
+- [Claude Code](https://claude.com/claude-code) on your `PATH`, **and signed
+  in** — run `claude` once and log in. A worker launches it as you.
+  - `relay check` does not catch this: proving a CLI can authenticate costs a
+    model call, and `check` spends nothing.
+  - So an unauthenticated CLI fails on the first run, not before it.
 - Nothing else — one static binary. Go 1.22+ only to build it yourself.
 
 ## Install
@@ -39,25 +43,39 @@ xattr -c relay-*-macos-arm64                    # unsigned build
 sudo mv relay-*-macos-arm64 /usr/local/bin/relay
 ```
 
-Without `gh`, download both files from the
-[latest release](https://github.com/wizdown/relay-cli/releases/latest). If
-macOS still refuses the binary, allow it once in System Settings → Privacy &
-Security → **Open Anyway**.
+Without `gh` — it needs `gh auth login` even for a public repo — download both
+files from the
+[latest release](https://github.com/wizdown/relay-cli/releases/latest). If macOS
+still refuses the binary, allow it once in System Settings → Privacy & Security
+→ **Open Anyway**.
 
-**Intel Mac or Linux** — no binaries published yet; build it with Go 1.22+:
+**Intel Mac or Linux** — no binaries published yet; build it from a clone with
+Go 1.22+:
 
 ```bash
+git clone https://github.com/wizdown/relay-cli.git
+cd relay-cli
 make build && sudo mv relay /usr/local/bin/
 ```
+
+Nothing here is platform-specific and CGO is off, so those builds work; they are
+simply not published yet. Windows is untested.
 
 ## Quickstart
 
 ### 1. Create the agent in relay
 
 A worker authenticates as one relay agent and works whatever is delegated to
-that agent. In your [Relay](https://relay.bytecurio.com/) workspace: add an
-agent, give it a description and instructions, then issue a credential and copy
-the `connector_url` — the secret is in the URL and is shown **once**.
+that agent. In your [Relay](https://relay.bytecurio.com/) workspace:
+
+- **Add the agent** (`onboard_agent`) — a description and instructions.
+- **Issue its credential** (`issue_agent_credential`), and copy the
+  `connector_url`. The secret is in that URL, and it is shown **once**.
+- **Leave its capabilities off.** A first worker needs none.
+
+Both names are relay's own, and are what `relay init` and `relay check` name
+back at you when they want a credential. How you invoke them is relay's to
+document — see the [relay docs](https://relay.bytecurio.com/).
 
 Never point two workers at one connector URL. What an agent is *for* — its
 instructions, capabilities and claim limits — is configured in relay, not here.
@@ -68,15 +86,16 @@ instructions, capabilities and claim limits — is configured in relay, not here
 relay init
 ```
 
-That writes `~/.relay/config`. Replace its two placeholders:
+That writes `~/.relay/config`: one worker, commented, every ceiling filled in.
+Two placeholders are yours to replace — search the file for these two values:
 
 ```jsonc
 {
   "workers": [
     {
-      "name":      "hello-claude",
-      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_…",  // ← paste yours
-      "repo_dir":  "~/code/scratch",                               // ← choose one
+      "name":      "my-repo-claude",
+      "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",  // ← paste yours
+      "repo_dir":  "/path/to/your/repo",                                    // ← choose one
       "runtime":   "claude",
       "runtime_config": { "model": "sonnet" }
     }
@@ -84,14 +103,18 @@ That writes `~/.relay/config`. Replace its two placeholders:
 }
 ```
 
+That is the file with its comments and ceilings stripped out. Both placeholders
+are rejected by name, so an unfinished config fails in `check` rather than
+inside a run you have already paid for.
+
 - **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md`, skills
-  and tooling. An empty one is a valid start:
+  and tooling. An empty one is a valid start;
   [The working directory](docs/working-directory.md) is the ladder from there.
 - **Point it somewhere you are willing to have rewritten** — a headless run is
   autonomous and can never answer an approval prompt.
-- **Everything else defaults, and every default is bounded** — 12 runs/hour, $5
-  per run, a 15-minute kill, a poll every 30s.
-  [Configuration](docs/configuration.md) has the rest.
+- **The ceilings are written for you, and bounded** — 6 runs/hour, $5 per run, a
+  15-minute kill, a poll every 30s. Delete one and its default applies, bounded
+  too (12 runs/hour). [Configuration](docs/configuration.md) has the rest.
 
 ### 3. Check it, then run it
 
@@ -106,7 +129,7 @@ nothing, so it is the cheap way to find a typo or a revoked credential:
 relay 0.1.0 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
-  hello-claude             ok    queue: resume 0 · attention 0 · todo 0
+  my-repo-claude           ok    queue: resume 0 · attention 0 · todo 0
     repo /Users/you/code/scratch   nothing to load — the agent arrives with its task and its tools
 ```
 
@@ -128,11 +151,11 @@ Create a task in relay and delegate it to the agent from step 1. Within one poll
 interval the terminal shows the whole cycle:
 
 ```text
-14:22:08  hello-claude   poll  resume 0 · attention 0 · todo 1
-14:22:08  hello-claude   ▶ run started   claude · ~/code/scratch
-14:22:11  hello-claude   → relay:claim_task   task_id=42
-14:22:31  hello-claude   → Write   hello.html
-14:23:02  hello-claude   ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
+14:22:08  my-repo-claude   poll  resume 0 · attention 0 · todo 1
+14:22:08  my-repo-claude   ▶ run started   claude · ~/code/scratch
+14:22:11  my-repo-claude   → relay:claim_task   task_id=42
+14:22:31  my-repo-claude   → Write   hello.html
+14:23:02  my-repo-claude   ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
 ```
 
 The result is in your `repo_dir`, and the task is waiting in relay for review.
@@ -141,17 +164,21 @@ state, not a symptom.
 
 ## Safeguards
 
-Defaults are bounded without configuring anything: **12 runs/hour** (the ceiling
-that actually caps spend), **$5 per run**, a **15-minute** wall-clock kill, a
-fixed **60s** relaunch cooldown, and three circuit breakers that pause a worker
-rather than let it fail forever. [Safeguards in
-full](docs/configuration.md#safeguards).
+Defaults are bounded without configuring anything:
+
+- **12 runs/hour** — the ceiling that actually caps spend.
+- **$5 per run**, and a **15-minute** wall-clock kill.
+- **60s relaunch cooldown**, fixed — two launches never go back-to-back.
+- **Three circuit breakers**, which pause a worker rather than let it fail
+  forever.
+
+[Safeguards in full](docs/configuration.md#safeguards).
 
 The kill switch, worth knowing before you need it:
 
 ```bash
-touch ~/.relay/state/hello-claude/PAUSED   # stop it next tick
-rm ~/.relay/state/hello-claude/PAUSED      # resume it
+touch ~/.relay/state/my-repo-claude/PAUSED   # stop it next tick
+rm ~/.relay/state/my-repo-claude/PAUSED      # resume it
 ```
 
 ## Documentation
