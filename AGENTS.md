@@ -21,7 +21,7 @@ make fmt      # gofmt -w .
 make build    # build ./relay
 make dist     # release artifacts + SHA256SUMS
 make version  # print the version constant the release compares a tag against
-make hooks    # one-time per clone: install the pre-commit hook
+make hooks    # one-time per clone: install the git hooks
 
 make release VERSION=x.y.z   # cut a release — see Cutting a release below
 ```
@@ -70,6 +70,7 @@ Outside the binary:
 | `docs/` | user documentation — keep it about what the CLI does |
 | `docs/contributing/` | contributor detail behind this file |
 | `scripts/release.sh` | everything `make release` does — the checks, the two commits, the tag, the one atomic push |
+| `.githooks/` | `pre-commit` (scans the diff) and `commit-msg` (scans the message), sharing the connector shapes in `lib.sh`; installed by `make hooks` |
 | `.github/workflows/` | `ci.yml` (manual only) and `release.yml` (tags) |
 
 ## Running it
@@ -126,6 +127,20 @@ hook refuses it, and `ci.yml` scans tracked files for connector-shaped strings.
 In tests and docs use `relay.example.com` and `wzh_REPLACE_ME`. That rule is
 about example *connector URLs*; prose should still link the product itself, at
 <https://relay.bytecurio.com/>.
+
+**The same rule covers what you write around the code** — commit messages, PR
+titles and bodies, release notes. Pasting a failing `check` into a message is the
+natural thing to do, and its output quotes the connector URL, which *is* the
+credential. This repo is public, so that is the version of the mistake you cannot
+take back: a pushed message is world-readable at once, `master` refuses a
+force-push, and squashing does not help — a pull request's original commits stay
+fetchable at `refs/pull/N/head` for good. Redact the URL and describe the shape;
+"HTTP 401 from the configured endpoint" tells a reviewer everything the value
+would. The `commit-msg` hook scans a message for the same connector shapes, but
+**nothing can scan a PR title, a PR body or a release note** — those are read by
+you or by nobody. Public and permanent applies to the rest of what a message
+carries too: no internal hostnames, no absolute paths off your machine, nobody
+else's name or address.
 
 You cannot create a credential from here — it comes from relay
 (`issue_agent_credential`) and is shown exactly once. Without one, `relay check`
@@ -238,11 +253,13 @@ Two more rules that keep this cheap:
 
 ## Before you commit
 
-`make hooks` once per clone, and the hook does most of this for you: it refuses a
-staged config or a connector-shaped secret, runs gofmt on staged Go files, and
-runs the tests when Go *or* docs changed.
+`make hooks` once per clone, and the hooks do most of this for you: pre-commit
+refuses a staged config or a connector-shaped secret, runs gofmt on staged Go
+files, and runs the tests when Go *or* docs changed; commit-msg refuses the same
+secret shapes in the message.
 
-1. **No credentials.** No config file, no real `wzh_` secret.
+1. **No credentials.** No config file, no real `wzh_` secret — in the diff *and*
+   in the commit message. Same for a PR title and body, which no hook can see.
 2. `make check` passes.
 3. If you changed a config field → [the config loop](docs/contributing/config-fields.md).
 4. If you added a flag or command, `helpText` documents it — a test enforces it.

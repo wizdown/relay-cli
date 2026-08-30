@@ -42,8 +42,13 @@ jobs:
       # tags. Publishing one would ship artifacts called relay-0.2.0-SNAPSHOT-…
       # and a binary that admits it is unreleased.
       - name: tag must match the version constant
+        # Via env, never interpolated into the script body: a workflow_dispatch
+        # input is caller-supplied text, and "${{ }}" inside run: is pasted in
+        # before the shell parses it, so a crafted tag would run as code.
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="$TAG"
           constant="v$(make version)"
           echo "tag=$tag  constant=$constant"
           case "$constant" in
@@ -80,8 +85,9 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          tag="$TAG"
           notes=$(cat <<'NOTES'
           **macOS, Apple Silicon** (M1/M2/M3/M4). Other platforms are not
           published yet — they build from source with `make`.

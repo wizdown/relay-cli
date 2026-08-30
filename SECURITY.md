@@ -40,7 +40,10 @@ before the commit rather than after the revocation.
 fix; the whole URL changes.
 
 Use `relay.example.com` and an obvious placeholder (`wzh_REPLACE_ME`) in anything
-you commit, tests included.
+you commit, tests included — and in commit messages, pull request titles and
+bodies, and release notes. Those are as public as the code and outlive the branch
+they were written on, so redact the URL and describe the shape instead: "HTTP 401
+from the configured endpoint" says everything the value would.
 
 ## What a worker can do
 

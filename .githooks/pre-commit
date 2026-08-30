@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Pre-commit checks for relay-cli. Install with `make hooks`.
+# Pre-commit checks for relay-cli. Install with `make hooks`, which installs
+# every hook in this directory — commit-msg scans the message this one ignores.
 #
 # Ordered cheapest-first so a failure arrives fast. The credential check runs
 # before anything else because it is the only one here guarding against a
@@ -15,6 +16,9 @@ set -uo pipefail
 
 root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
+
+# The connector shapes, shared with commit-msg so the two cannot disagree.
+. "$root/.githooks/lib.sh"
 
 fail=0
 note() { printf '  %s\n' "$1"; }
@@ -39,8 +43,8 @@ fi
 # untouched file costs nothing to check. Placeholders are allowed by name.
 secrets=$(git diff --cached -U0 -- $(echo "$staged" | tr '\n' ' ') 2>/dev/null |
 	grep '^+' | grep -vE '^\+\+\+' |
-	grep -oE 'wzh_[A-Za-z0-9_-]{6,}' |
-	grep -viE '^wzh_(REPLACE_ME|REDACTED|secret_?value|supersecretvalue|longsecrettoken|someotherunknownsecret|abcdefghijkl|a{6,}|b{6,}|abc)' |
+	grep -oE "$CONNECTOR_RE" |
+	grep -viE "$PLACEHOLDER_RE" |
 	sort -u)
 if [ -n "$secrets" ]; then
 	note "REFUSING: a connector-shaped secret is being added:"
