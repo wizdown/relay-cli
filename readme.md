@@ -1,9 +1,10 @@
 # relay-cli
 
-`relay-cli` runs the local half of [Relay](https://relay.bytecurio.com/): it
-polls relay for work assigned to one of your agents, launches a headless coding
-CLI in a directory on your machine to do it, and hands the result back for
-review — with a live dashboard while it runs.
+`relay-cli` spins up agents on your machine that work on tasks you create in
+[Relay](https://relay.bytecurio.com/) and delegate to them. Each one polls relay
+for its delegated work, launches a headless coding CLI in a directory on your
+machine to do it, and hands the result back for review — with a live dashboard
+while it runs.
 
 ```
 one worker = one relay agent identity × one directory × one CLI runtime
@@ -56,12 +57,10 @@ make build && sudo mv relay /usr/local/bin/
 A worker authenticates as one relay agent and works whatever is delegated to
 that agent. In your [Relay](https://relay.bytecurio.com/) workspace: add an
 agent, give it a description and instructions, then issue a credential and copy
-the `connector_url` — the secret is in the URL and is shown **once**. Leave its
-capabilities off for a first worker.
+the `connector_url` — the secret is in the URL and is shown **once**.
 
 Never point two workers at one connector URL. What an agent is *for* — its
-instructions, capabilities and claim limits — is configured in relay, not here;
-see the [relay docs](https://relay.bytecurio.com/).
+instructions, capabilities and claim limits — is configured in relay, not here.
 
 ### 2. Write the config
 
@@ -156,8 +155,6 @@ rm ~/.relay/state/hello-claude/PAUSED      # resume it
 | [Commands & dashboard](docs/cli.md) | Commands, flags, and what the page shows |
 | [Runtimes](docs/runtimes.md) | Supported CLIs, and where codex stands |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → where to look |
-| [Relay docs](https://relay.bytecurio.com/) | Tasks, agents, capabilities, delegation — everything on the relay side |
-| [AGENTS.md](AGENTS.md) | Working in this repo: build, test, config loop, releases |
 
 ## Versioning
 

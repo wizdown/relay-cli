@@ -1,77 +1,92 @@
 # Runtimes
 
-A **runtime** is which coding CLI drives a worker. It is a required per-worker
-field:
+A **runtime** is which coding CLI drives a worker. It is required on every
+worker, alongside whatever that CLI needs in `runtime_config` — see
+[Configuration](configuration.md#worker-fields).
 
-```json
-{ "name": "wizhub-claude", "relay_mcp": "…", "repo_dir": "~/code/wizhub", "runtime": "claude", "runtime_config": { "model": "sonnet" } }
-```
+relay-cli contains no coding CLI. What it contains is an *adapter*: the code that
+builds an argv and reads what the CLI prints. The CLI itself is a separate
+program you install, resolved on `PATH` at startup and named in the banner, so
+"which `claude` is this using?" has an answer before the first run.
+
+## Which runtimes exist
 
 | `runtime` | Support | CLI you install |
 |---|---|---|
 | `claude` | **Supported** | [Claude Code](https://claude.com/claude-code) |
-| `codex` | **Coming soon** — refused at config load | — |
-| anything else | Not offered | — |
+| `codex` | **Coming soon** — refused when the config loads | — |
 
-`relay-cli` contains no coding CLI. What it contains is an *adapter*: the code
-that builds an argv and parses what the CLI prints. The CLI itself is a separate
-program you install, found on `PATH` at startup.
+`codex` is refused by name, and so is any other value: a runtime you cannot use
+should cost a startup error, not a session you have already paid for.
 
-`codex` is refused when the config **loads**, by name — a runtime you cannot use
-should cost a startup error, not a session you have already paid for. It has no
-per-run dollar cap yet, and a runtime that cannot be bounded is not one this
-ships quietly.
+The keys `claude` accepts in `runtime_config` — `model` and `max_usd_per_run` —
+are in [Configuration](configuration.md#runtime_config-for-claude).
 
-## What is checked before anything launches
+## The startup check
 
-A failure stops the whole start:
+`relay run` and `relay check` both prove the named CLI is usable on this machine
+before anything launches. A failure stops the whole start.
+
+### The CLI is not installed
 
 ```text
-error: worker "wizhub-claude" cannot run: runtime "claude" is unusable.
+error: the config is valid, but a runtime it names is not usable here:
+  worker "wizhub-claude" cannot run: runtime "claude" is unusable.
        claude not found on PATH — install Claude Code (https://claude.com/claude-code).
+       relay-cli does not bundle any CLI; each one is installed separately.
 ```
 
+### The CLI is too old
+
 For `claude` the check goes further than "is it there". The adapter depends on
-specific flags — streaming output, the MCP config, `--strict-mcp-config`, the
-spend cap — so it reads the installed CLI's own `--help` and names any that is
-missing:
+specific flags, so it reads the installed CLI's own `--help` and names every one
+that is missing, with what relay-cli needed it for:
 
 ```text
-error: worker "w" cannot run: runtime "claude" is unusable.
-       the installed claude (1.0.3 (Claude Code) at /usr/local/bin/claude) does not support what this poller needs.
+error: the config is valid, but a runtime it names is not usable here:
+  worker "wizhub-claude" cannot run: runtime "claude" is unusable.
+       the installed claude (1.0.3 (Claude Code) at /usr/local/bin/claude) does not support what relay-cli needs.
        Its --help does not offer:
-         --strict-mcp-config          keeping your personal MCP servers out of an unattended run
+         --strict-mcp-config          keeping the operator's personal MCP servers out of an unattended run
          --max-budget-usd             the per-run spend cap
-         --output-format stream-json  the live session feed
+         --output-format stream-json  the live session feed — the reason relay-cli exists
        Upgrade Claude Code (https://claude.com/claude-code), then try again.
+       To run anyway, set RELAY_CLI_SKIP_RUNTIME_CHECK=1 — each session will
+       then fail on the missing flag instead of failing here, once.
 ```
 
 It checks **capabilities rather than a version number** deliberately: the adapter
 depends on those flags, not on a release, and a version gate would block working
 installs whenever it guessed high.
 
-`RELAY_CLI_SKIP_RUNTIME_CHECK=1` bypasses the flag check (not the
-does-it-exist check) if a future CLI reshapes its help text. Each session then
-fails on the missing flag instead, once per run.
+`RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag check — not the
+does-it-exist check — if a future CLI reshapes its help text.
 
-## How the claude adapter runs a session
+### `--help` cannot be read
 
-`claude -p` with `--strict-mcp-config`, so an unattended run sees relay and
-nothing else from your personal MCP config.
+Unverifiable is not the same as unusable. If `claude --help` cannot be run at
+all, the start continues with a warning rather than refusing over it:
 
-Headless mode can never answer an approval prompt, so any tool not pre-allowed is
-silently denied. The run uses `--permission-mode auto`, and every relay tool is
-additionally named in `--allowedTools` — relay access never rides on the model's
-judgement about an unfamiliar tool.
+```text
+warning: could not run `claude --help` to verify this install supports the flags relay-cli needs (…).
+         Continuing anyway; a missing flag will surface on the first run.
+```
 
-The argv is deliberately not overridable: raw arguments could silently replace
-the flags a headless run depends on. Every setting a runtime accepts is a
-declared key in `runtime_config`.
+## What a claude run does
 
-It takes `runtime_config.model` (required) and `runtime_config.max_usd_per_run`
-— see [Configuration](configuration.md#runtime_config-for-claude) — and reads the
-result envelope so a budget kill or a permission denial is reported in plain
-words rather than as a bare exit code.
+- **Your own MCP servers do not load.** The session runs with
+  `--strict-mcp-config`, so it sees this worker's relay connector and nothing
+  else from your personal MCP config.
+- **Anything not pre-allowed is denied, silently.** A headless run has no
+  terminal to answer an approval prompt on, so every relay tool is named up
+  front — relay access never rides on the model's judgement about an unfamiliar
+  tool. A refusal is named in `worker.log`, under "the CLI refused these tool
+  calls"; see [Troubleshooting](troubleshooting.md).
+- **`model` and `max_usd_per_run` become flags**, and nothing else does. Every
+  setting a runtime accepts is a declared `runtime_config` key.
+- **A finished run is reported in words, not an exit code.** The adapter reads
+  the result envelope, so a spend-cap kill says it was cut off mid-task and what
+  to change, rather than surfacing as a bare non-zero exit.
 
 Adding a runtime is a contributor topic:
 [docs/contributing/adapters.md](contributing/adapters.md).

@@ -39,6 +39,11 @@ An adapter builds an argv array instead of running the command itself, so
 relay-cli can apply cwd and the timeout uniformly, and so you can inspect what a
 runtime *would* run without spending a token.
 
+That argv is not overridable from the config, deliberately: raw arguments could
+silently replace the flags a headless run depends on — `--strict-mcp-config`,
+the allowlist, the spend cap. Every setting a runtime accepts is a declared key
+in `ConfigFields()` instead.
+
 ### The adapter contract
 
 The adapter receives everything it needs as exported environment variables. The
