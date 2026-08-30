@@ -22,9 +22,9 @@ jobs:
     name: build and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.22'
           # There is no third-party dependency, so there is no go.sum and
@@ -56,7 +56,7 @@ jobs:
     name: no committed credentials
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Every relay connector URL is a live credential. Placeholders are fine;
       # anything that looks like a real secret is not. This is a backstop for
       # the .gitignore, not a replacement for it.
