@@ -13,6 +13,8 @@ make test     # tests only
 make fmt      # gofmt -w
 make build    # build ./relay
 make hooks    # one-time per clone: install the pre-commit hook
+
+make release VERSION=x.y.z   # cut a release — see below
 ```
 
 Everything runs from the repository root; there is no second module to enter.
@@ -72,6 +74,40 @@ It exists for the one check that is awkward by hand: whether the suite still
 passes on a machine with **no coding CLI installed**. It also runs `-race` and a
 scan for credential-shaped strings across tracked files.
 
+## Versions
+
+`master` always carries the **next** version with a `-SNAPSHOT` marker on it:
+
+```go
+version = "0.2.0-SNAPSHOT"
+channel = "beta"
+```
+
+**A PR never touches it.** `make release` clears the marker for exactly one
+commit — the one the tag points at — and puts it back on the next. So the
+constant is either a release, or an admission that this tree is not one.
+
+That matters because a release is a **batch** of merges. Dozens of commits share
+one version number between two tags, and a bare `0.2.0` on all of them would
+claim each is the release. `-SNAPSHOT` says otherwise in a form a user can read
+out of `relay version` and paste into an issue.
+
+*Which* unreleased tree is a separate question, answered by the build stamp:
+
+```text
+relay 0.2.0-SNAPSHOT (beta) [v0.1.0-4-g1aa22a3]
+```
+
+The Makefile stamps `main.build` with `git describe --tags --always --dirty`.
+It is empty when built outside a checkout — a source tarball — and suppressed
+when it would only repeat the tag, so a **released** binary prints exactly
+`relay 0.2.0 (beta)`, which is what the docs show.
+
+Stay on `0.x`. A test fails the build if the version leaves it, because 1.0 would
+be a claim that the interface is settled — see
+[Versioning](../../readme.md#versioning). If that is genuinely the intent, delete
+that test in the same commit, deliberately.
+
 ## Cutting a release
 
 Releases publish a `relay` binary for **macOS on Apple Silicon**, with a
@@ -86,67 +122,85 @@ Artifacts are named for the platform a user recognises (`macos-arm64`), not for
 `GOOS` (`darwin-arm64`). The build is unsigned and unnotarised, so Gatekeeper
 quarantines it on first run; the release notes carry the `xattr -d` line.
 
-**The version constant in `main.go` is the single source of truth.** The binary
-prints it, the artifacts are named from it, and the workflow refuses to publish
-a tag that disagrees with it.
-
-**1. Confirm the version.** Every PR already bumps the constant — see [Version
-on every PR](../../AGENTS.md#version-on-every-pr) — so a release tags what is
-on `master` rather than bumping again. Read it in
-`cmd/relay-cli/main.go`:
-
-```go
-version = "0.0.1"
-channel = "beta"
-```
-
-Bump it here only if `master` somehow carries an unreleased change that missed
-its bump; that is a gap in the PR rule, not a release step.
-
-Stay on `0.x`. A test fails the build if the version leaves it, because 1.0
-would be a claim that the interface is settled — see
-[Versioning](../../readme.md#versioning). If that is genuinely the intent, delete
-that test in the same commit, deliberately.
-
-**2. Verify the build locally.** From the repository root:
+One command does all of it:
 
 ```bash
-make version      # prints what the workflow will compare the tag against
-make dist         # every platform in PLATFORMS + dist/SHA256SUMS
+make release VERSION=0.2.0
 ```
 
-`make version` failing, or printing nothing, means the constant could not be
-read — fix that before tagging, or the release publishes artifacts named
-`relay--macos-arm64`, with the version missing.
-
-**3. Merge the bump to `master`.** Releases are cut from merged code.
-
-**4. Tag and push.** The tag must be `v` + the constant:
+**1. Choose the version.** It is mandatory, and nothing guesses it — not the
+Makefile, not an agent asked to cut a release. The number says whether the batch
+since the last tag was a fix or a feature, and only someone reading those commits
+knows. Run it bare to see them:
 
 ```bash
-git checkout master && git pull
-git tag v0.0.1
-git push origin v0.0.1
+make release
 ```
 
-Pushing the tag is what starts the release — it is the only workflow here that
-runs without being asked, because pushing a version tag *is* the request.
+That refuses, and prints the last tag, every commit since it, and the candidates:
 
-**5. Watch it.** The workflow re-checks the tag against the constant, runs
-gofmt/vet/`test -race`, builds every platform in `PLATFORMS`, and publishes a
-GitHub Release with `SHA256SUMS` attached.
+```text
+error: make release needs a version. It is never guessed.
+
+  last release   v0.1.0
+  master says    0.2.0-SNAPSHOT
+
+  commits since:
+    1aa22a3 Refuse a config this version cannot fully honour
+    970de16 Rewrite the runtimes page, and trim the readme
+
+  a fix, or docs only   make release VERSION=0.2.0
+  anything new          make release VERSION=0.3.0
+```
+
+The number already on `master` is a suggestion, not a default: it was chosen when
+the *last* release closed, before anyone knew what this batch would hold.
+
+**2. It checks before it touches anything.** Clean tree, on `master`, in sync
+with `origin/master`, and no such tag either locally or on origin. A version
+lower than the one `master` already claims is refused outright — a published
+number means one tree, forever.
+
+**3. It proves the tree it is about to publish.** The constant is written
+*first*, then `make check` and `make dist` run against the bumped tree — so the
+documentation tests are checking the release rather than the commit before it. If
+either fails, the constant is put back and nothing is committed.
+
+The documentation tests are part of that: a release cannot go out over a config
+field the reference does not document.
+
+**4. It asks.** The tag, the commit, the artifacts and the diff, then `[y/N]`.
+There is no unattended path: run without a terminal and it refuses.
+
+**5. Two commits, one tag, one push.**
+
+```text
+Release v0.2.0        ← the tag points here; constant is 0.2.0
+Start 0.2.1-SNAPSHOT  ← master carries the next version again
+```
+
+Both commits and the tag go up in a single `git push --atomic`. A branch push
+that lands without its tag would leave `master` claiming a release nobody
+published; atomic makes that state unreachable. If something merged to `master`
+while the checks were running, the push is rejected, **nothing is published**,
+and the script prints the two lines that undo it:
 
 ```bash
-gh run watch
+git tag -d v0.2.0 && git reset --hard origin/master
 ```
 
-Releases are marked **pre-release** while the project is `0.x`.
+**6. The workflow publishes.** Pushing the tag is what starts it — the only
+workflow here that runs without being asked, because pushing a version tag *is*
+the request. It re-checks the tag against the constant, refuses a `-SNAPSHOT`
+one, runs gofmt/vet/`test -race`, builds every platform in `PLATFORMS`, and
+publishes a **pre-release** with `SHA256SUMS` attached and the commits since the
+previous tag appended to the notes. `make release` runs `gh run watch` for you.
 
 **If publishing fails** after the tag is already pushed, fix the cause and re-run
 without moving the tag:
 
 ```bash
-gh workflow run release.yml -f tag=v0.0.1
+gh workflow run release.yml -f tag=v0.2.0
 ```
 
 Only move or delete a tag that never published. A tag someone may already have

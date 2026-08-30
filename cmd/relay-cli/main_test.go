@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -146,6 +147,44 @@ func TestVersionStaysOnZeroX(t *testing.T) {
 	}
 	if !strings.Contains(helpText, channel) {
 		t.Errorf("helpText should say it is %s", channel)
+	}
+}
+
+// The version constant is either a release (x.y.z) or the next one being worked
+// towards (x.y.z-SNAPSHOT). Nothing else parses: the Makefile names artifacts
+// from it, the release workflow compares a tag to it, and `make release` reads
+// the marker to decide whether master is mid-release.
+func TestVersionConstantIsWellFormed(t *testing.T) {
+	shape := regexp.MustCompile(`^\d+\.\d+\.\d+(-SNAPSHOT)?$`)
+	if !shape.MatchString(version) {
+		t.Errorf("version is %q — it must be x.y.z, optionally with -SNAPSHOT while "+
+			"master is between releases", version)
+	}
+	if got, want := baseVersion(), strings.TrimSuffix(version, "-SNAPSHOT"); got != want {
+		t.Errorf("baseVersion() = %q, want %q", got, want)
+	}
+}
+
+// The build stamp exists to distinguish the many unreleased trees that share one
+// version constant — so it says nothing at all when it would only repeat the
+// tag, and a released binary prints exactly what the docs show.
+func TestVersionLineShowsTheBuildOnlyWhenItAdds(t *testing.T) {
+	original := build
+	t.Cleanup(func() { build = original })
+
+	build = ""
+	if got := versionLine(); strings.Contains(got, "[") {
+		t.Errorf("with no build stamp, versionLine() = %q — it should be the version alone", got)
+	}
+
+	build = "v" + version
+	if got := versionLine(); strings.Contains(got, "[") {
+		t.Errorf("at the release tag, versionLine() = %q — the stamp only repeats the version", got)
+	}
+
+	build = "v0.0.9-4-gdeadbee"
+	if got := versionLine(); !strings.Contains(got, "[v0.0.9-4-gdeadbee]") {
+		t.Errorf("versionLine() = %q — a build between releases must name its commit", got)
 	}
 }
 

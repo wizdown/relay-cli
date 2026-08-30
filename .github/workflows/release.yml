@@ -37,11 +37,24 @@ jobs:
       # binary prints it. A tag that disagrees would publish artifacts whose
       # names and --version output contradict the release they are attached to,
       # so it fails here rather than shipping.
+      # A -SNAPSHOT constant means the tag points at a commit that was never
+      # released: `make release` clears the marker for exactly the commit it
+      # tags. Publishing one would ship artifacts called relay-0.2.0-SNAPSHOT-…
+      # and a binary that admits it is unreleased.
       - name: tag must match the version constant
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
           constant="v$(make version)"
           echo "tag=$tag  constant=$constant"
+          case "$constant" in
+            *-SNAPSHOT)
+              echo
+              echo "error: $tag points at a commit whose version is still $constant."
+              echo "Releases are cut with 'make release VERSION=x.y.z', which clears"
+              echo "the -SNAPSHOT marker on the commit it tags."
+              exit 1
+              ;;
+          esac
           if [ "$tag" != "$constant" ]; then
             echo
             echo "error: tag $tag does not match the version constant ($constant)."
@@ -95,8 +108,14 @@ jobs:
           NOTES
           )
           # --verify-tag: never invent a tag that isn't already on the commit.
+          #
+          # --generate-notes appends the commits and PRs since the previous tag.
+          # A release spans a batch of merges rather than one, so "what changed"
+          # is a real question — and answering it from the history costs nothing
+          # and cannot drift, which a hand-maintained changelog would.
           gh release create "$tag" dist/* \
             --title "relay-cli $tag" \
             --notes "$notes" \
+            --generate-notes \
             --verify-tag \
             --prerelease

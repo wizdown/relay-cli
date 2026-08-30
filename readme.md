@@ -172,6 +172,14 @@ the release notes, and a removed config key is rejected by name with its
 replacement rather than silently ignored. A 1.0 will mean the interface is
 settled, not that time has passed.
 
+A binary whose version ends in `-SNAPSHOT` was built from the repository between
+releases, not downloaded from one — it names the commit it came from, which is
+the thing worth quoting in a bug report:
+
+```text
+relay 0.1.0-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]
+```
+
 **Public contributions are not open yet.** The repo is public so you can read
 it, run it, and see what it does. Issues are welcome; pull requests will be once
 there is a version worth building on.

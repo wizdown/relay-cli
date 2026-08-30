@@ -12,8 +12,19 @@ PKG     := ./cmd/relay-cli
 # The version constant lives inside a const ( … ) block, so this matches the
 # indented form. It is the single source of truth: the release workflow refuses
 # to publish a tag that disagrees with it.
-VERSION := $(shell sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\(.*\)"$$/\1/p' cmd/relay-cli/main.go)
+#
+# Named CONSTANT, not VERSION, because VERSION is how a release is asked for —
+# `make release VERSION=0.2.0` — and a variable that is already set cannot also
+# mean "the user did not say".
+CONSTANT := $(shell sed -n 's/^[[:space:]]*version[[:space:]]*=[[:space:]]*"\(.*\)"$$/\1/p' cmd/relay-cli/main.go)
 DIST    := dist
+
+# The tree a binary came from, stamped into main.build. Empty outside a git
+# checkout (a source tarball), and `relay version` simply omits it then. At a
+# release tag it is the tag itself, which the binary suppresses — so a released
+# build prints exactly the version, and every other build says which commit.
+BUILD   := $(shell git describe --tags --always --dirty 2>/dev/null)
+LDFLAGS := -s -w -X main.build=$(BUILD)
 
 # Apple Silicon only for now. darwin/amd64, linux/amd64 and linux/arm64 all
 # build fine — CGO is off and there is nothing platform-specific in here — they
@@ -24,7 +35,7 @@ DIST    := dist
 # on a MacBook is looking for "macos-arm64", not "darwin-arm64".
 PLATFORMS := darwin/arm64
 
-.PHONY: help hooks all build test vet fmt check dist clean run version
+.PHONY: help hooks all build test vet fmt check dist clean run version release
 
 help:
 	@echo "make check   gofmt + vet + test — what to run before a PR"
@@ -33,7 +44,8 @@ help:
 	@echo "make fmt     gofmt -w ."
 	@echo "make hooks   install the pre-commit hook (one-time, per clone)"
 	@echo
-	@echo "Release: see docs/contributing/development.md"
+	@echo "make release VERSION=x.y.z   cut a release: checks, two commits, one tag"
+	@echo "make release                 refuses, and shows what to pass"
 
 # Git hooks are not versioned, so they have to be opted into per clone. This
 # points git at the tracked .githooks/ directory rather than copying anything,
@@ -46,7 +58,7 @@ hooks:
 all: check build
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o $(BINARY) $(PKG)
+	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY) $(PKG)
 
 test:
 	go test ./...
@@ -66,24 +78,24 @@ check:
 	@echo "ok"
 
 # Print the version the Makefile resolved. The release workflow reads this, so
-# a silently-empty VERSION becomes a failed release rather than an artifact
+# a silently-empty constant becomes a failed release rather than an artifact
 # called relay--macos-arm64.
 version:
-	@test -n "$(VERSION)" || { echo "error: could not read the version constant from cmd/relay-cli/main.go" >&2; exit 1; }
-	@echo $(VERSION)
+	@test -n "$(CONSTANT)" || { echo "error: could not read the version constant from cmd/relay-cli/main.go" >&2; exit 1; }
+	@echo $(CONSTANT)
 
 # One archive-free binary per platform, named so a release page reads clearly,
 # plus a checksum file so a download can be verified.
 dist: clean
-	@test -n "$(VERSION)" || { echo "error: could not read the version constant from cmd/relay-cli/main.go" >&2; exit 1; }
+	@test -n "$(CONSTANT)" || { echo "error: could not read the version constant from cmd/relay-cli/main.go" >&2; exit 1; }
 	@mkdir -p $(DIST)
 	@for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; \
 		label=$$os; [ "$$os" = "darwin" ] && label=macos; \
-		out=$(DIST)/$(BINARY)-$(VERSION)-$$label-$$arch; \
+		out=$(DIST)/$(BINARY)-$(CONSTANT)-$$label-$$arch; \
 		echo "  $$out"; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch \
-			go build -trimpath -ldflags="-s -w" -o $$out $(PKG) || exit 1; \
+			go build -trimpath -ldflags="$(LDFLAGS)" -o $$out $(PKG) || exit 1; \
 	done
 	@# sha256sum on Linux, shasum on macOS — the file is identical either way.
 	@cd $(DIST) && if command -v sha256sum >/dev/null; then \
@@ -91,7 +103,7 @@ dist: clean
 	else \
 		shasum -a 256 $(BINARY)-* > SHA256SUMS; \
 	fi
-	@echo "built $(BINARY) $(VERSION) for: $(PLATFORMS)"
+	@echo "built $(BINARY) $(CONSTANT) for: $(PLATFORMS)"
 	@echo "checksums: $(DIST)/SHA256SUMS"
 
 # Run against ~/.relay/config — the one place relay-cli reads. `make build`
@@ -101,3 +113,13 @@ run: build
 
 clean:
 	rm -rf $(DIST) $(BINARY)
+
+# Cut a release. VERSION is mandatory and is never guessed: the number says
+# whether the batch since the last tag was a fix or a feature, and only a person
+# reading it knows. Run bare to be told what the candidates are.
+#
+# Everything it does is in scripts/release.sh — this is 50 lines of shell with
+# prompts and a fetch, and inlining that here would make it unreadable in both
+# places.
+release:
+	@scripts/release.sh $(VERSION)

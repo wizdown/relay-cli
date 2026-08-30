@@ -22,6 +22,8 @@ make build    # build ./relay
 make dist     # release artifacts + SHA256SUMS
 make version  # print the version constant the release compares a tag against
 make hooks    # one-time per clone: install the pre-commit hook
+
+make release VERSION=x.y.z   # cut a release — see Cutting a release below
 ```
 
 Go 1.22+, no other dependencies, no network needed. **A fresh clone passes its
@@ -63,6 +65,7 @@ Outside the binary:
 | `worker-rules.md` | the harness contract given to every CLI — the editable copy; `cmd/relay-cli/assets/` holds the one compiled in |
 | `docs/` | user documentation — keep it about what the CLI does |
 | `docs/contributing/` | contributor detail behind this file |
+| `scripts/release.sh` | everything `make release` does — the checks, the two commits, the tag, the one atomic push |
 | `.github/workflows/` | `ci.yml` (manual only) and `release.yml` (tags) |
 
 ## Running it
@@ -233,31 +236,81 @@ runs the tests when Go *or* docs changed.
 3. If you changed a config field → [the config loop](docs/contributing/config-fields.md).
 4. If you added a flag or command, `helpText` documents it — a test enforces it.
 5. Docs updated in the same commit — walk [the table above](#documentation-is-part-of-the-change-not-a-follow-up).
-6. **The version constant is bumped** — [Version on every PR](#version-on-every-pr).
+6. **Do not touch the version constant** — [Versions](#versions-and-the-snapshot-marker).
 
 PR summary format: **[docs/contributing/development.md](docs/contributing/development.md)**.
 
-## Version on every PR
+## Versions and the SNAPSHOT marker
 
-**Every PR bumps `version` in `cmd/relay-cli/main.go`.** One PR, one bump. That
-constant is the single source of truth — the binary prints it, the release
-artifacts are named from it, and the tag must match it — so a merge that moves
-the code without moving the constant leaves `--version` lying about what is
-installed.
+**A PR does not bump the version.** `master` carries the *next* version with a
+`-SNAPSHOT` marker on it — `0.2.0-SNAPSHOT` — and only `make release` ever
+changes it. Leave it alone; a bump in a feature PR will be a merge conflict with
+the next release and nothing else.
 
-Read the constant as `MAJOR.MINOR.PATCH` and apply exactly one of these:
+The marker is what keeps the constant honest. A release is a batch of merges, so
+between two of them dozens of commits share one version number: printing a bare
+`0.1.0` on all of them would claim each is the release. `-SNAPSHOT` says
+*unreleased* in a form a user can read in `relay version` and paste into a bug
+report. Which unreleased tree it is comes from the build stamp beside it
+(`[v0.1.0-4-g1aa22a3]`, `git describe`, stamped by the Makefile) — empty outside
+a checkout, and suppressed at a release tag, so a published binary prints exactly
+what the docs show.
 
-1. **Major** — leave it alone. Increment it only when the PR was explicitly asked
-   to, and **never decrement it**. Everything here is `0.x`, and a test fails the
-   build if it leaves `0.` — see [Versioning](readme.md#versioning).
-2. **Minor** — increment for any new feature, and reset patch to `0`
-   (`0.1.4` → `0.2.0`).
-3. **Patch** — increment for a bug fix (`0.1.4` → `0.1.5`). Docs-only, refactor
-   and chore PRs take a patch too: the rule is one bump per PR, never none.
+Everything stays **0.x** until the interface settles; a test fails the build if
+the version leaves it — see [Versioning](readme.md#versioning).
 
-A PR carrying both a feature and a fix is a minor bump — the largest change wins.
-If `master` moved ahead of your branch, rebase and re-apply the bump from the
-constant on `master`, not from yours.
+## Cutting a release
+
+```bash
+make release VERSION=0.2.0
+```
+
+**The version is mandatory and is never guessed — including by you.** The number
+says whether the batch since the last tag was a fix or a feature, and that is a
+judgement about what the changes mean to a user. If you are asked to cut a
+release without one:
+
+```bash
+make release            # refuses, and prints what is needed to choose
+```
+
+It shows the last tag, every commit since it, and the patch and minor candidates.
+**Show that to whoever asked and use the number they give back.** Recommend one
+by all means — say which you would pick and why — but do not pass a version the
+user did not choose, and do not fall back to the number already on `master`: that
+was chosen before anyone knew what the batch would contain.
+
+What the command does, once it has a version:
+
+1. refuses unless `master` is clean, current, and has no such tag already —
+   locally *or* on origin
+2. writes the version, then runs `make check` and `make dist` **on the bumped
+   tree**, so the documentation tests are checking the release. If either fails
+   it puts the constant back and commits nothing
+3. asks for confirmation, showing the tag and the artifacts
+4. commits `Release v0.2.0`, tags it, commits `Start 0.2.1-SNAPSHOT`
+5. pushes both commits and the tag in **one `--atomic` push**
+
+Step 5 is one push on purpose: a branch that lands without its tag leaves
+`master` claiming a release nobody published. If the push is rejected — usually
+because something merged while the checks ran — nothing was published, and the
+script says how to undo and retry.
+
+Pushing the tag is what publishes. `release.yml` re-checks the tag against the
+constant, refuses a `-SNAPSHOT` one, runs gofmt/vet/`test -race`, builds every
+platform in `PLATFORMS`, and publishes a **pre-release** with `SHA256SUMS`
+attached and the commits since the last tag appended to the notes.
+
+**If publishing fails** after the tag is pushed, fix the cause and re-run without
+moving the tag:
+
+```bash
+gh workflow run release.yml -f tag=v0.2.0
+```
+
+Only move or delete a tag that never published. A tag someone may already have
+downloaded is superseded by a new version, not rewritten. Full walkthrough:
+[docs/contributing/development.md](docs/contributing/development.md).
 
 ## CI: manual only
 
@@ -275,41 +328,14 @@ gh run watch
 It runs gofmt, `go vet`, `go test -race`, a build, and a scan for
 credential-shaped strings across tracked files.
 
-## Cutting a release
+## What a release publishes
 
-Releases publish a `relay` binary for **macOS on Apple Silicon** plus
-`SHA256SUMS`, built by `.github/workflows/release.yml`. Other platforms build
-fine — CGO is off and nothing here is platform-specific — they are simply not
-published; adding one is a line in `PLATFORMS` in the `Makefile`. Artifacts are
-named for the platform a user recognises (`macos-arm64`), not for `GOOS`.
-
-**Pushing a matching tag is what publishes.** It is the only workflow here that
-runs unasked, because pushing `v0.0.1` *is* the request.
-
-```bash
-make version                       # what the workflow compares the tag against
-make dist                          # prove the build locally first
-git checkout master && git pull    # releases are cut from merged code
-git tag v0.0.1                     # must be "v" + the constant, exactly
-git push origin v0.0.1
-gh run watch
-```
-
-The workflow re-checks the tag against the constant, runs gofmt/vet/`test -race`,
-builds every platform in `PLATFORMS`, and publishes a **pre-release** with
-`SHA256SUMS` attached. The version is not bumped at release time — every PR
-already bumped it, so a release tags what is on `master`.
-
-If publishing fails after the tag is pushed, fix the cause and re-run **without
-moving the tag**:
-
-```bash
-gh workflow run release.yml -f tag=v0.0.1
-```
-
-Only move or delete a tag that never published. A tag someone may already have
-downloaded is superseded by a new version, not rewritten. Full walkthrough:
-[docs/contributing/development.md](docs/contributing/development.md).
+A `relay` binary for **macOS on Apple Silicon** plus `SHA256SUMS`, built by
+`.github/workflows/release.yml`. Other platforms build fine — CGO is off and
+nothing here is platform-specific — they are simply not published; adding one is
+a line in `PLATFORMS` in the `Makefile`. Artifacts are named for the platform a
+user recognises (`macos-arm64`), not for `GOOS`. Releases are marked
+**pre-release** while the project is `0.x`.
 
 ## Conventions
 

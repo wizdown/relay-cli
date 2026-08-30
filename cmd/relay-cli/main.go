@@ -34,8 +34,16 @@ const (
 	// surface is still evolving, so a release may still change configuration or
 	// the worker contract. A 1.0 would be a claim that it will not, which is not
 	// a claim this can make yet — see the versioning note in the root readme.
-	version = "0.1.0"
+	// The `-SNAPSHOT` marker is what makes this constant honest between
+	// releases. `master` always carries the *next* version with the marker on
+	// it; `make release` takes it off for exactly one commit — the one the tag
+	// points at — and puts it back on the next. So a binary that prints
+	// `-SNAPSHOT` was built from a tree nobody published, which is a thing a
+	// bug report needs to say and a bare number cannot.
+	version = "0.1.0-SNAPSHOT"
 	channel = "beta"
+
+	snapshotSuffix = "-SNAPSHOT"
 
 	// Everything relay-cli owns lives in ONE place:
 	//
@@ -92,6 +100,34 @@ func (s *Supervisor) Statuses() []WorkerStatus {
 	}
 	return out
 }
+
+// build is the tree this binary came from — `git describe --tags --always
+// --dirty`, stamped by the Makefile. Empty when built outside a checkout, which
+// is why nothing may depend on it being set.
+//
+// It exists because `-SNAPSHOT` says a build is unreleased without saying which
+// build it is: every commit between two releases prints the same constant. This
+// names the commit. A binary built from a release tag repeats the tag and is
+// suppressed, so released output is exactly what the docs show.
+var build string
+
+// versionLine is what `relay version` prints, and what belongs in a bug report.
+func versionLine() string {
+	line := "relay " + version + " (" + channel + ")"
+	if build != "" && build != "v"+version {
+		line += " [" + build + "]"
+	}
+	return line
+}
+
+// baseVersion is the version this tree would be released as: the constant with
+// its `-SNAPSHOT` marker removed. `make release` is what removes it for real.
+func baseVersion() string { return strings.TrimSuffix(version, snapshotSuffix) }
+
+// commands is the command list, in one place: the switch in main dispatches
+// them, the unknown-command error names them, and tests hold both the manual
+// and docs/cli.md to it.
+var commands = []string{"init", "check", "run", "version", "help"}
 
 // helpText is the whole manual. It is long on purpose.
 //
@@ -340,7 +376,7 @@ func main() {
 		usage(os.Stdout)
 		return
 	case "version", "-v", "--version":
-		fmt.Println("relay " + version + " (" + channel + ")")
+		fmt.Println(versionLine())
 		return
 	case "run":
 		runCommand(os.Args[2:])
@@ -360,7 +396,7 @@ func main() {
 			os.Args[1], strings.Join(os.Args[1:], " "))
 		os.Exit(2)
 	}
-	fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: init, check, run, version, help.\n", os.Args[1])
+	fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: %s.\n", os.Args[1], strings.Join(commands, ", "))
 	os.Exit(2)
 }
 
