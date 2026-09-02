@@ -67,7 +67,8 @@ func (c *codexRuntime) ConfigFields() []runtimeField {
 	return []runtimeField{
 		{
 			Key: "model", Kind: fieldString, Required: true,
-			Doc: "which model to run, passed to the CLI verbatim — `codex --help` is the authority on what it accepts",
+			Enum: codexModels, Aliases: codexModelAliases, EnumMoves: true,
+			Doc: "which model to run: gpt-5.6-sol, gpt-5.6-terra or gpt-5.6-luna, or the alias sol, terra or luna",
 		},
 		{
 			Key: "reasoning_effort", Kind: fieldString, Default: "medium",
@@ -88,6 +89,36 @@ func (c *codexRuntime) ConfigFields() []runtimeField {
 			Doc: "whether the agent may search the web, as a claude worker can",
 		},
 	}
+}
+
+// codexModels is every model a codex worker may name, in the order they cost.
+//
+// The list exists because `--model` is the one codex setting a typo survives:
+// the CLI takes whatever it is handed, and a wrong name is not an error until
+// the model call inside a session that has already started. A fleet spends its
+// whole hour that way. `sandbox` and `reasoning_effort` have had a declared set
+// since they were added, and this closes the last hole in the block.
+//
+// Unlike those two, this set is a SNAPSHOT — see EnumMoves. Codex has no
+// command that enumerates its models, so there is nothing to read at startup:
+// the names come from OpenAI's own Codex reference, and a model shipped after
+// this build is unlisted here while being perfectly valid there. That is what
+// modelCheckEnv is for, and why the error naming it is part of the check rather
+// than an afterthought.
+var codexModels = []string{
+	"gpt-5.6-sol",   // flagship: ambiguous, high-value work that needs judgement
+	"gpt-5.6-terra", // the balanced one — capable, and cheaper per run
+	"gpt-5.6-luna",  // fastest and cheapest, for narrow well-specified work
+}
+
+// codexModelAliases let a codex worker be written by tier, the way a claude one
+// is written by family. codex has no aliases of its own — `--model` takes a
+// full slug and nothing else — so these are resolved here and the CLI is handed
+// the slug, which is what makes the shorthand work at all.
+var codexModelAliases = map[string]string{
+	"sol":   "gpt-5.6-sol",
+	"terra": "gpt-5.6-terra",
+	"luna":  "gpt-5.6-luna",
 }
 
 // requiredCodexFlags is what this adapter actually depends on, each with the

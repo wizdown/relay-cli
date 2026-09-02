@@ -447,3 +447,59 @@ func TestLoadWorkerRulesReadsBesideTheConfig(t *testing.T) {
 		t.Errorf("the rules path should be the on-disk one, got %q", path)
 	}
 }
+
+// The claude model list, and the alias behaviour both runtimes share.
+
+// An alias is resolved when the config loads, not handed on. Everything
+// downstream — the argv, worker.log, the dashboard — then names the model that
+// actually ran, and the same config keeps running it after the CLI's own
+// "latest sonnet" has moved on.
+func TestModelAliasesResolveToAPinnedID(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, c := range []struct{ runtime, alias, want string }{
+		{"claude", "opus", "claude-opus-5"},
+		{"claude", "sonnet", "claude-sonnet-5"},
+		{"claude", "haiku", "claude-haiku-4-5"},
+		{"codex", "sol", "gpt-5.6-sol"},
+		{"codex", "terra", "gpt-5.6-terra"},
+		{"codex", "luna", "gpt-5.6-luna"},
+	} {
+		t.Run(c.runtime+"/"+c.alias, func(t *testing.T) {
+			body := `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_aaaaaaaa",` +
+				`"repo_dir":"` + repoHere(t) + `","runtime":"` + c.runtime + `",` +
+				`"runtime_config":{"model":"` + c.alias + `"}}]}`
+			cfg, err := LoadConfig(write(t, body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Workers[0].RCString("model"); got != c.want {
+				t.Errorf("model = %q, want the pinned %q — an alias that reaches the CLI "+
+					"is one whose meaning moves when the CLI's does", got, c.want)
+			}
+		})
+	}
+}
+
+// claude's model is checked for the same reason codex's is: the CLI takes
+// whatever --model it is handed, so a name nobody validated fails inside a run
+// that has already been paid for.
+func TestUnknownClaudeModelIsRefusedAtLoad(t *testing.T) {
+	noRuntimeCheck(t)
+	body := `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_aaaaaaaa",` +
+		`"repo_dir":"` + repoHere(t) + `","runtime":"claude",` +
+		`"runtime_config":{"model":"claude-opus-4-5"}}]}`
+
+	err := loadErr(write(t, body))
+	if err == nil {
+		t.Fatal("a model this build does not know should refuse the start")
+	}
+	for _, want := range []string{
+		"it takes one of: claude-opus-5, claude-sonnet-5, claude-haiku-4-5",
+		"opus (claude-opus-5)", // the aliases, and what each one pins to
+		"RELAY_CLI_SKIP_MODEL_CHECK",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q:\n%v", want, err)
+		}
+	}
+}

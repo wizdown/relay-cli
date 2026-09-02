@@ -125,6 +125,30 @@ type runtimeField struct {
 	// a run that has already been paid for — which is the whole reason this
 	// table exists.
 	Enum []string
+	// EnumMoves marks an Enum this repo does not own: a SNAPSHOT of a list that
+	// changes on someone else's release schedule, which model names do and
+	// sandbox modes do not. A sandbox mode is printed in the CLI's own --help
+	// and moves only when the CLI does, so a value outside that set is simply
+	// wrong. A model name can be right on the morning a provider ships it and
+	// still be absent from a relay-cli built the week before.
+	//
+	// It does not soften the check — an unlisted value still refuses the start,
+	// because a typo is far likelier than a launch and the cost of guessing
+	// wrong is a paid run per cycle. What it changes is that the error names the
+	// way past it, and modelCheckEnv lets an operator who knows better say so.
+	EnumMoves bool
+	// Aliases are short names accepted for a value in Enum, and RESOLVED when
+	// the config loads: what reaches the CLI, the argv, the log and the
+	// dashboard is always the value they map to, never the alias.
+	//
+	// Resolving rather than passing through is the whole point. Both CLIs spell
+	// an alias as "the LATEST model in that family", so a worker configured as
+	// `sonnet` would change what it runs — and what it costs — the next time one
+	// shipped, from a config nobody edited. That is the drift `model` is
+	// required to prevent, so an alias here is a shorthand for one pinned model
+	// and stays that until this table says otherwise. It also means an alias
+	// works for a CLI that has none of its own: codex takes full slugs only.
+	Aliases map[string]string
 	// Doc is one line, used in the error a missing required field produces and
 	// in the generated reference table.
 	Doc string

@@ -152,8 +152,20 @@ is still the right way to prove a config parses.
 
 | | |
 |---|---|
-| `claude` | **Supported**, adapter compiled in and native. `runtime_config.model` is REQUIRED — `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`, which the CLI enforces itself. |
-| `codex` | **Supported**, adapter compiled in and native. Takes `model` (REQUIRED, same reason), `reasoning_effort`, `sandbox`, `network_access`, `web_search`. **It has no per-run spend cap** — none exists in the CLI — so `max_usd_per_run` is claude's alone and a codex worker is bounded by `max_seconds_per_run`, `max_runs_per_hour` and its account's plan limits. Say that plainly wherever the runtimes are compared; it is the one thing someone choosing between them needs. |
+| `claude` | **Supported**, adapter compiled in and native. `runtime_config.model` is REQUIRED — `claude-opus-5`, `claude-sonnet-5` or `claude-haiku-4-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`, which the CLI enforces itself. |
+| `codex` | **Supported**, adapter compiled in and native. Takes `model` (REQUIRED, same reason — `gpt-5.6-sol`, `gpt-5.6-terra` or `gpt-5.6-luna`), `reasoning_effort`, `sandbox`, `network_access`, `web_search`. **It has no per-run spend cap** — none exists in the CLI — so `max_usd_per_run` is claude's alone and a codex worker is bounded by `max_seconds_per_run`, `max_runs_per_hour` and its account's plan limits. Say that plainly wherever the runtimes are compared; it is the one thing someone choosing between them needs. |
+
+**`model` is validated against a declared list on both**, with each CLI's short
+names accepted as aliases *pinned* to one id (`sonnet` → `claude-sonnet-5`,
+`sol` → `gpt-5.6-sol`) and resolved when the config loads, so an argv, a log
+line and the dashboard all name the model that ran. Both CLIs read a bare
+`sonnet` as "the latest Sonnet", which is the drift `model` is required to
+prevent — an alias whose meaning moves is the field defaulting itself. Both
+lists are SNAPSHOTS, since neither CLI can be asked what it accepts, so
+`RELAY_CLI_SKIP_MODEL_CHECK=1` passes an unlisted name through with a warning:
+without it a check meant to save one paid run would cost every run until someone
+cut a release. Adding a model is `claudeModels` / `codexModels` plus the field
+table in `docs/configuration.md` — the same loop as any other config change.
 
 No CLI is bundled. The adapter ships; the CLI is installed separately, found on
 `PATH`, and proves itself at startup by its `--help` rather than by a version.

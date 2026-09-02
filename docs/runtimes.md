@@ -22,7 +22,13 @@ cost a startup error, not a session you have already paid for.
 What each accepts in `runtime_config` is in Configuration —
 [claude](configuration.md#runtime_config-for-claude) takes `model` and
 `max_usd_per_run`, [codex](configuration.md#runtime_config-for-codex) takes
-`model`, `reasoning_effort`, `sandbox`, `network_access` and `web_search`.
+`model`, `reasoning_effort`, `sandbox`, `network_access` and `web_search`. Every
+one of those keys has a declared set of values or a type, checked when the config
+loads — neither CLI rejects a bad setting until it is already inside a run you
+have paid for. `model` is the sharp end of that, and it works the same for both:
+a list this build knows, short [aliases pinned to one id each](configuration.md#aliases-are-pinned-not-tracked),
+and an [escape hatch](configuration.md#a-model-this-build-has-not-heard-of) for a
+model newer than your relay-cli.
 
 **Read the spend column before choosing.** A claude run can be cut off at a
 dollar figure by the CLI itself. A codex run cannot — there is no such flag — so
@@ -70,7 +76,11 @@ installs whenever it guessed high.
 
 `RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag and sign-in checks — not the
 does-it-exist check — if a future CLI reshapes its help text or its status
-output.
+output. It also covers the model-name check on either runtime's config, which is
+the same problem one layer up: a list this build knows and a CLI that has moved
+past it.
+That one has its own switch,
+[`RELAY_CLI_SKIP_MODEL_CHECK`](configuration.md#a-model-this-build-has-not-heard-of).
 
 ### The CLI is not signed in
 

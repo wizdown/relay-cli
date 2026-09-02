@@ -261,7 +261,7 @@ THE CONFIG FILE
           "max_seconds_per_run": 900,  // default 900 — kill for one session
 
           "runtime_config": {          // settings the RUNTIME understands
-            "model": "sonnet",         // REQUIRED for claude
+            "model": "claude-sonnet-5", // REQUIRED for claude
             "max_usd_per_run": 5       // default 5 — cap inside one run
           }
         }
@@ -273,7 +273,7 @@ THE CONFIG FILE
   so they differ per runtime. A codex worker's block reads:
 
           "runtime_config": {
-            "model": "gpt-5.1-codex",       // REQUIRED for codex
+            "model": "gpt-5.6-terra",       // REQUIRED for codex
             "reasoning_effort": "medium",   // default medium
             "sandbox": "workspace-write",   // default workspace-write
             "network_access": true,         // default true
@@ -302,28 +302,41 @@ THE CONFIG FILE
   relay exactly once.
 
 CHOOSING A MODEL
-  For claude, "runtime_config"."model" takes opus, sonnet or haiku — each alias
-  tracks the latest model in that family — or a full id like claude-opus-5 to
-  pin an exact version.
+  "runtime_config"."model" is required for both runtimes, and both are checked
+  against the models this build knows. For claude:
 
-    opus     open-ended briefs, wide blast radius, work you would review closely
-    sonnet   the usual default — capable, and cheaper per run
-    haiku    mechanical, well-specified work where turnaround is the win
+    claude-opus-5      open-ended briefs, wide blast radius, work you review
+    claude-sonnet-5    the usual default — capable, and cheaper per run
+    claude-haiku-4-5   mechanical, well-specified work where turnaround wins
 
-  It is required rather than defaulted on purpose. The CLI has its own default,
-  but that default moves between CLI versions — so an unchanged config would
-  quietly change what a worker costs the next time you upgraded claude. An
-  unattended process that spends money should say what it runs.
+  and for codex:
 
-  Pair a bigger model with a tighter max_runs_per_hour and a lower
-  max_usd_per_run. A wrong model name fails inside the run, not at startup, so
-  "claude --help" is the authority on what is currently accepted.
+    gpt-5.6-sol     ambiguous, high-value work that needs judgement
+    gpt-5.6-terra   the balanced one — capable, and cheaper per run
+    gpt-5.6-luna    narrow, repeatable, well-specified work
 
-  For codex, "model" is required for the same reason and passed through the same
-  way, with "codex --help" as the authority. The dial beside it is
-  "reasoning_effort" — minimal, low, medium, high or xhigh. It is the largest
-  influence on what a codex run costs, and since codex enforces no spend cap,
-  effort and max_runs_per_hour are the two knobs you have.
+  The short names are accepted too — opus, sonnet, haiku, sol, terra, luna —
+  and relay-cli PINS each one to the id above it. The CLIs read a bare "sonnet"
+  as the latest model in that family, which would change what a worker runs and
+  costs from a config nobody edited; here it changes only when a release of
+  relay-cli changes it. What the logs and the dashboard show is the resolved id.
+
+  A name that is neither is refused when the config loads. Both CLIs take
+  whatever they are handed, so an unchecked typo fails inside a session you have
+  already paid for, once a cycle. The lists are a snapshot — neither CLI can be
+  asked what it accepts — so if your model is newer than this build, set
+  RELAY_CLI_SKIP_MODEL_CHECK=1 and it is passed through with a warning naming
+  the worker it let past.
+
+  Required rather than defaulted on purpose: each CLI has its own default, and
+  that default moves between versions, so an unchanged config would quietly
+  change what a worker costs the next time you upgraded. An unattended process
+  that spends money should say what it runs.
+
+  Pair a bigger model with a tighter max_runs_per_hour, and for claude a lower
+  max_usd_per_run. codex has no such cap; its dial is "reasoning_effort" —
+  minimal, low, medium, high or xhigh — which is the largest influence on what
+  one of its runs costs.
 
 TWO CLOCKS
   A POLL is curl-equivalent: it asks relay "do I have a task?" and runs no
@@ -369,7 +382,8 @@ RUNTIMES — no CLI is bundled, install them yourself
   by name, rather than failing on every cycle in a background log. Each adapter
   also checks that the installed build accepts the flags it needs (streaming
   output, the MCP wiring, the sandbox or the spend cap); set
-  RELAY_CLI_SKIP_RUNTIME_CHECK=1 to bypass that flag check.
+  RELAY_CLI_SKIP_RUNTIME_CHECK=1 to bypass that flag check, and
+  RELAY_CLI_SKIP_MODEL_CHECK=1 to bypass the model-name check on a config.
 
   SIGN IN TO THE CLI FIRST. A worker launches it as you, so it authenticates the
   way your own sessions do — "claude auth login", or "codex login" with your

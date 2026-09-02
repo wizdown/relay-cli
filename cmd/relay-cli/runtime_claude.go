@@ -55,13 +55,42 @@ func (c *claudeRuntime) ConfigFields() []runtimeField {
 	return []runtimeField{
 		{
 			Key: "model", Kind: fieldString, Required: true,
-			Doc: "which model to run: opus, sonnet or haiku, or a full id like claude-opus-5 to pin one",
+			Enum: claudeModels, Aliases: claudeModelAliases, EnumMoves: true,
+			Doc: "which model to run: claude-opus-5, claude-sonnet-5 or claude-haiku-4-5, or the alias opus, sonnet or haiku",
 		},
 		{
 			Key: "max_usd_per_run", Kind: fieldNumber, Default: "5",
 			Doc: "hard dollar cap INSIDE one run, enforced by the CLI. 0 removes it",
 		},
 	}
+}
+
+// claudeModels is every model a claude worker may run, most capable first.
+//
+// Checked when the config loads for the same reason codex's list is: the CLI
+// takes whatever --model it is handed and a wrong name is not an error until
+// the model call inside a session that has already started, so a fleet spends
+// its hour finding out. This one is a SNAPSHOT too — see EnumMoves — and
+// modelCheckEnv is how an operator runs a model newer than their relay-cli.
+var claudeModels = []string{
+	"claude-opus-5",    // open-ended briefs, wide blast radius, work you review closely
+	"claude-sonnet-5",  // the usual default — capable, and cheaper per run
+	"claude-haiku-4-5", // mechanical, well-specified work where turnaround is the win
+}
+
+// claudeModelAliases are the short names the CLI itself offers, kept because
+// they are what everyone writes — and PINNED, which the CLI's own are not.
+//
+// `claude --model sonnet` means "the latest Sonnet", so a config saying sonnet
+// runs a different model the week after one ships, with nothing in the file
+// changed. That is precisely the drift that makes "model" a required field
+// here, so relay-cli resolves an alias to the id below before the CLI sees it:
+// the argv, the log and the dashboard all name the model that actually ran.
+// Moving one of these to a new release is a decision this table records.
+var claudeModelAliases = map[string]string{
+	"opus":   "claude-opus-5",
+	"sonnet": "claude-sonnet-5",
+	"haiku":  "claude-haiku-4-5",
 }
 
 // requiredFlags is what this adapter actually depends on, each with the reason

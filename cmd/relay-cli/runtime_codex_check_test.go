@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -100,24 +101,20 @@ func TestCodexLoginErrorNamesTheFix(t *testing.T) {
 // CLI would reject inside a paid run is refused when the config loads.
 func TestCodexConfigIsValidatedAtLoad(t *testing.T) {
 	noRuntimeCheck(t)
-	base := `{
-	  "name": "w",
-	  "relay_mcp": "https://x/c/wzh_aaaaaaaa",
-	  "repo_dir": %q,
-	  "runtime": "codex",
-	  "runtime_config": %s
-	}`
-
 	cases := []struct{ name, block, want string }{
 		{"missing model", `{}`, `missing "model"`},
-		{"bad effort", `{"model":"m","reasoning_effort":"maximum"}`, "it takes one of: minimal, low, medium, high, xhigh"},
-		{"bad sandbox", `{"model":"m","sandbox":"workspace_write"}`, "it takes one of: read-only, workspace-write, danger-full-access"},
-		{"quoted bool", `{"model":"m","network_access":"true"}`, "must be true or false, unquoted"},
-		{"claude's cap", `{"model":"m","max_usd_per_run":5}`, `is not a setting runtime "codex" accepts`},
+		{"bad effort", `{"model":"gpt-5.6-terra","reasoning_effort":"maximum"}`, "it takes one of: minimal, low, medium, high, xhigh"},
+		{"bad sandbox", `{"model":"gpt-5.6-terra","sandbox":"workspace_write"}`, "it takes one of: read-only, workspace-write, danger-full-access"},
+		{"quoted bool", `{"model":"gpt-5.6-terra","network_access":"true"}`, "must be true or false, unquoted"},
+		{"claude's cap", `{"model":"gpt-5.6-terra","max_usd_per_run":5}`, `is not a setting runtime "codex" accepts`},
+		// The one codex setting a typo used to survive: the CLI takes whatever it
+		// is handed, so an unchecked name fails inside a paid session instead.
+		{"bad model", `{"model":"gpt-5.6-solar"}`, "it takes one of: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna"},
+		{"plausible typo", `{"model":"gpt-5.6"}`, `runtime_config.model is "gpt-5.6"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			body := `{"workers":[` + fmtWorker(t, base, c.block) + `]}`
+			body := `{"workers":[` + fmtWorker(t, codexWorkerTemplate, c.block) + `]}`
 			err := loadErr(write(t, body))
 			if err == nil {
 				t.Fatalf("%s should be refused when the config loads", c.name)
@@ -133,15 +130,7 @@ func TestCodexConfigIsValidatedAtLoad(t *testing.T) {
 // states only its model is still a bounded one.
 func TestCodexDefaultsResolve(t *testing.T) {
 	noRuntimeCheck(t)
-	body := `{"workers":[` + fmtWorker(t, `{
-	  "name": "w",
-	  "relay_mcp": "https://x/c/wzh_aaaaaaaa",
-	  "repo_dir": %q,
-	  "runtime": "codex",
-	  "runtime_config": %s
-	}`, `{"model":"gpt-5.1-codex"}`) + `]}`
-
-	cfg, err := LoadConfig(write(t, body))
+	cfg, err := LoadConfig(write(t, codexConfigWithModel(t, "gpt-5.6-terra")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,4 +152,82 @@ func TestCodexDefaultsResolve(t *testing.T) {
 func fmtWorker(t *testing.T, tmpl, block string) string {
 	t.Helper()
 	return fmt.Sprintf(tmpl, repoHere(t), block)
+}
+
+// The model list is a SNAPSHOT of a list this repo does not own, so the error
+// has to carry the way past it. Without that line an operator with a model
+// newer than their relay-cli has a fleet that will not start and no way to find
+// out why short of reading the source.
+func TestUnknownCodexModelNamesTheEscapeHatch(t *testing.T) {
+	noRuntimeCheck(t)
+	err := loadErr(write(t, codexConfigWithModel(t, "gpt-5.7-sol")))
+	if err == nil {
+		t.Fatal("a model this build does not know should refuse the start")
+	}
+	for _, want := range []string{"RELAY_CLI_SKIP_MODEL_CHECK", "newer than this build"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q:\n%v", want, err)
+		}
+	}
+}
+
+// Standing the check down is the half that keeps it from causing the outage it
+// exists to prevent — and it is NOT silent, for the same reason the sign-in
+// stand-down is not: relay-cli is passing through a value it cannot verify, and
+// a typo let past this way fails once a cycle rather than once at startup.
+func TestSkippingTheModelCheckPassesTheNameThroughLoudly(t *testing.T) {
+	for _, env := range []string{"RELAY_CLI_SKIP_MODEL_CHECK", "RELAY_CLI_SKIP_RUNTIME_CHECK"} {
+		t.Run(env, func(t *testing.T) {
+			noRuntimeCheck(t)
+			t.Setenv(env, "1")
+			var warnings bytes.Buffer
+			old := warnOut
+			warnOut = &warnings
+			defer func() { warnOut = old }()
+
+			cfg, err := LoadConfig(write(t, codexConfigWithModel(t, "gpt-5.7-sol")))
+			if err != nil {
+				t.Fatalf("%s should let an unlisted model through: %v", env, err)
+			}
+			if got := cfg.Workers[0].RCString("model"); got != "gpt-5.7-sol" {
+				t.Errorf("model = %q, want the name as written", got)
+			}
+			for _, want := range []string{"gpt-5.7-sol", env, "typo"} {
+				if !strings.Contains(warnings.String(), want) {
+					t.Errorf("the stand-down warning should mention %q:\n%s", want, warnings.String())
+				}
+			}
+		})
+	}
+}
+
+// A list that moves is codex's model names and nothing else. sandbox modes are
+// printed in the CLI's own --help and move only when the CLI does, so no
+// environment variable excuses one: relaxing that would turn a switch for
+// "my CLI is newer" into a switch for "stop checking my config".
+func TestSkippingTheModelCheckDoesNotRelaxTheOtherEnums(t *testing.T) {
+	noRuntimeCheck(t)
+	t.Setenv("RELAY_CLI_SKIP_MODEL_CHECK", "1")
+	body := `{"workers":[` + fmtWorker(t, codexWorkerTemplate,
+		`{"model":"gpt-5.6-terra","sandbox":"workspace_write"}`) + `]}`
+
+	err := loadErr(write(t, body))
+	if err == nil || !strings.Contains(err.Error(), "it takes one of: read-only") {
+		t.Fatalf("sandbox is a closed set whatever the model check does: %v", err)
+	}
+}
+
+// codexWorkerTemplate is the minimal valid codex worker, with repo_dir and the
+// runtime_config block left for fmtWorker to fill.
+const codexWorkerTemplate = `{
+	  "name": "w",
+	  "relay_mcp": "https://x/c/wzh_aaaaaaaa",
+	  "repo_dir": %q,
+	  "runtime": "codex",
+	  "runtime_config": %s
+	}`
+
+func codexConfigWithModel(t *testing.T, model string) string {
+	t.Helper()
+	return `{"workers":[` + fmtWorker(t, codexWorkerTemplate, `{"model":"`+model+`"}`) + `]}`
 }

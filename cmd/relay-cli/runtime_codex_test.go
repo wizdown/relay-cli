@@ -193,7 +193,7 @@ func TestCodexClassifiesSignedOutAndRelayFailures(t *testing.T) {
 // relay in every other line. A classifier matching the word would report an MCP
 // failure for every run that exited non-zero.
 func TestCodexDoesNotBlameRelayForTheEchoedPrompt(t *testing.T) {
-	header := "workdir: /repo\nmodel: gpt-5.1-codex\nprompt: Poll relay for one available task, claim it, and work it to completion."
+	header := "workdir: /repo\nmodel: gpt-5.6-terra\nprompt: Poll relay for one available task, claim it, and work it to completion."
 	_, expl := (&codexRuntime{}).ClassifyExit(
 		&RunContext{Worker: &Worker{}}, 1, codexRun(t, header, cxThread, cxMsg))
 	if strings.Contains(expl, "RELAY MCP SERVER") {
@@ -225,7 +225,7 @@ func codexContext(t *testing.T, rcfg map[string]string) *RunContext {
 
 func TestCodexBuildCmdStreamsAndIsolates(t *testing.T) {
 	rc := codexContext(t, map[string]string{
-		"model": "gpt-5.1-codex", "reasoning_effort": "high",
+		"model": "gpt-5.6-terra", "reasoning_effort": "high",
 		"sandbox": "workspace-write", "network_access": "true", "web_search": "true",
 	})
 	argv, err := (&codexRuntime{}).BuildCmd(rc)
@@ -235,7 +235,7 @@ func TestCodexBuildCmdStreamsAndIsolates(t *testing.T) {
 	joined := strings.Join(argv, " ")
 	for _, want := range []string{
 		"codex exec", "--json", "--ignore-user-config", "--skip-git-repo-check",
-		"--ephemeral", "--model gpt-5.1-codex", "--sandbox workspace-write",
+		"--ephemeral", "--model gpt-5.6-terra", "--sandbox workspace-write",
 		"model_reasoning_effort=high", "sandbox_workspace_write.network_access=true",
 		"web_search=live", "approval_policy=never",
 		"mcp_servers.relay.url=https://r.example/relay/mcp/c/wzh_secretvalue",
@@ -259,7 +259,7 @@ func TestCodexBuildCmdStreamsAndIsolates(t *testing.T) {
 
 func TestCodexBuildCmdHonoursTheBoundedSettings(t *testing.T) {
 	rc := codexContext(t, map[string]string{
-		"model": "gpt-5.1-codex", "reasoning_effort": "low",
+		"model": "gpt-5.6-terra", "reasoning_effort": "low",
 		"sandbox": "read-only", "network_access": "false", "web_search": "false",
 	})
 	argv, err := (&codexRuntime{}).BuildCmd(rc)
