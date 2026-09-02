@@ -18,7 +18,7 @@ relay help            # the full manual
 
 | Command | |
 |---|---|
-| `init` | write a starting config. Takes no flags. |
+| `init` | write a starting config — one worker per coding CLI found on `PATH`, the rest commented out. Takes no flags. |
 | `check` | validate the config, probe every credential and report what each `repo_dir` holds, launching nothing and spending nothing |
 | `run` | start every worker in the config and open the dashboard |
 | `version` | print the version |

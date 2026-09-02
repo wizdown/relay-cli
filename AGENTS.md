@@ -28,9 +28,12 @@ make release VERSION=x.y.z   # cut a release — see Cutting a release below
 
 Go 1.22+, no other dependencies, no network needed. **A fresh clone passes its
 tests with no coding CLI installed** — that is a property to protect, not an
-accident. The seam is `checkRuntime` in `config.go`, a package variable the
-parsing tests stub via `noRuntimeCheck(t)`. A test that genuinely needs a CLI
-gates on it being present. To verify you haven't broken it:
+accident. There are two seams, both package variables: `checkRuntime` in
+`config.go`, stubbed by the parsing tests via `noRuntimeCheck(t)`, and
+`installedRuntimes` in `init.go`, which decides which workers `relay init`
+writes live and is stubbed via `withInstalledRuntimes(t, …)` — an init test
+describes a machine rather than the one it runs on. A test that genuinely needs
+a CLI gates on it being present. To verify you haven't broken it:
 
 ```bash
 env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
@@ -50,7 +53,7 @@ the suite — and the pre-commit hook knows it.
 | File | Owns |
 |---|---|
 | `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, the `version` constant, `shortHelp` (the one-screen summary a bare `relay` prints) and `helpText` (the full manual) |
-| `init.go` | `relay init` and the short starting config it writes |
+| `init.go` | `relay init`, the short starting config it writes, and the PATH check that decides which workers in it are live |
 | `config.go` | config parse, defaults, and every validation done before launch — problems are accumulated and reported together |
 | `probe.go` | MCP JSON-RPC over `net/http` — the token-free gate, no model anywhere |
 | `worker.go` | the poll loop: ceilings, the three circuit breakers, locking, timeouts |
@@ -78,6 +81,8 @@ Outside the binary:
 
 ```bash
 relay init     # creates ~/.relay/config (never overwrites an existing one)
+               # one live worker per CLI on PATH, the rest commented out;
+               # refuses outright when neither CLI is installed
 relay check    # validate config + test every credential — launches nothing, spends nothing
 relay run      # start the fleet, open the dashboard on 127.0.0.1:7717
 ```
@@ -183,6 +188,13 @@ Both paths WARN rather than pass silently: the second one is relay-cli trusting 
 variable it cannot validate, and a stale key hiding a signed-out CLI is exactly
 what the check was added to catch. A healthy start stays silent — a warning
 printed every time is one nobody reads on the start that matters.
+
+`relay init` asks a third question, weaker than either of those: is the CLI on
+`PATH` at all (`cliLocator`)? That decides whether a runtime's worker is written
+live or commented out in the starting config, and it is deliberately not
+`Check()` — a signed-out or outdated CLI is installed, and telling someone to
+install what they already have would be the wrong fix. With neither CLI present
+`init` writes nothing: a worker is a coding CLI.
 
 Two codex-specific trades are deliberate and documented in
 [docs/runtimes.md](docs/runtimes.md); don't quietly reverse either:

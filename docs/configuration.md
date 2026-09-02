@@ -3,6 +3,14 @@
 `~/.relay/config` is one JSON file listing your workers. `//` comments are
 allowed and are stripped before parsing. `relay init` writes a starting copy.
 
+It writes one worker per coding CLI it finds on `PATH`, and a worker for each
+one it does not find **commented out**, above a line naming the CLI to install.
+So the file that lands is one that runs here — a worker naming a runtime this
+machine has no CLI for refuses the start — and the other runtime is still in
+front of you, four characters a line away from being on. With neither CLI
+installed `init` writes nothing and says so: a worker is a coding CLI, and there
+is no useful config for a machine with none.
+
 Everything relay-cli owns lives beside it, and no flag moves it:
 
 ```text

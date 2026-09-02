@@ -201,6 +201,19 @@ const (
 	outcomeBudget  = "budget_exhausted"
 )
 
+// cliLocator is implemented by a runtime that can say whether its CLI is
+// present on this machine, without deciding whether it is usable.
+//
+// A weaker question than Check(), deliberately. `relay init` asks this one to
+// choose which workers to write live, and a signed-out or outdated CLI is
+// installed — telling someone to install what they already have would be the
+// wrong fix, and Check()'s answer is the right one everywhere else. A runtime
+// that cannot answer is simply not offered in a starting config; only a
+// runtime that says yes is written as a worker that runs.
+type cliLocator interface {
+	Installed() bool
+}
+
 // versioned is implemented by adapters that can report which CLI they found.
 // Optional: a bash adapter contributes an argv and nothing else, so it has no
 // way to answer this.

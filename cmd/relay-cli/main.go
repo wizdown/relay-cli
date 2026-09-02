@@ -247,7 +247,8 @@ GETTING STARTED ─────────────────────�
   https://relay.bytecurio.com/ — sign in with Google or Microsoft; the free
   demo workspace is enough. No coding CLI is installed from here. See RUNTIMES.
 
-  1  relay init       creates ~/` + relayDirName + `/ and a config with two placeholders
+  1  relay init       creates ~/` + relayDirName + `/ and a config: one worker per
+                   coding CLI found on PATH, two placeholders in each
   2  fill them in     relay_mcp and repo_dir — see the next section
   3  relay check      proves every credential and repo. Costs nothing
   4  relay run        starts the workers and opens the dashboard

@@ -122,6 +122,13 @@ func (c *claudeRuntime) Check() error {
 	return c.err
 }
 
+// Installed reports whether the CLI is on PATH — "is it here", not Check()'s
+// "will it run". `relay init` writes a worker for a runtime that answers yes.
+func (c *claudeRuntime) Installed() bool {
+	_, err := exec.LookPath("claude")
+	return err == nil
+}
+
 // Version is the installed CLI's version, for diagnostics. Empty if unknown.
 func (c *claudeRuntime) Version() string { return c.version }
 
