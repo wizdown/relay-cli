@@ -10,6 +10,7 @@ From the repository root:
 ```bash
 make check    # gofmt + vet + test. The pre-PR command
 make test     # tests only
+make lint-docs  # only the tests that hold the docs to the code
 make fmt      # gofmt -w
 make build    # build ./relay
 make hooks    # once per clone: install the git hooks

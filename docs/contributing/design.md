@@ -149,6 +149,7 @@ relay-cli/
     docs_test.go                 the config reference is held to the code
     docs_pages_test.go           links resolve, cli.md is complete, versions exist, pages stay short
     doclinks_test.go             every doc link the binary prints is a full URL
+    docs_lint_test.go            the prose is held to the rules in AGENTS.md
 ```
 
 And `~/.relay/`, the only place relay-cli keeps anything:

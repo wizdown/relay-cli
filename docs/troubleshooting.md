@@ -17,7 +17,7 @@ An idle worker prints nothing. "No output" is the healthy steady state.
 | `FAIL … HTTP 401` | The credential was revoked, or `relay_mcp` is wrong. Issue a new one in Relay and paste the whole URL. |
 | `FAIL … HTTP` anything else | The host answered but not as a connector. Usually the URL was truncated on the way into the config. Paste it again. |
 | `no config at …` / `has no configuration in it` | Run `relay init`. It will not overwrite an existing file, so move an empty one aside first. |
-| `still the placeholder from relay init` | Replace `relay_mcp` with the connector URL and `repo_dir` with the directory the agent works in. |
+| `is still the placeholder from …` | Replace `relay_mcp` with the connector URL and `repo_dir` with the directory the agent works in. |
 | `is not a key this version accepts` | Every key is checked by name. The error names the key you meant, or where the setting belongs (a runtime's setting inside `runtime_config`; `poll_seconds` at the top level). See [Worker fields](configuration.md#worker-fields). |
 | A key is rejected with what to use *instead* | That key was removed in an earlier version. The message is the migration. |
 | `runtime_config.model is "…" — it takes one of` | Fix the typo or use a listed alias. If the model is newer than this relay-cli, set `RELAY_CLI_SKIP_MODEL_CHECK=1`. See [Model names](configuration.md#model-names). |
@@ -43,7 +43,7 @@ An idle worker prints nothing. "No output" is the healthy steady state.
 |---|---|
 | Nothing ever launches | Check `worker.log`. Is the queue empty (`relay check`)? Is the task delegated to *this* agent? Is there a `PAUSED` file? Is the hourly ceiling reached? |
 | A config change had no effect | Restart `relay run`. `state/` is rebuilt on start. |
-| `Not logged in · Please run /login` or `THE CLI IS NOT SIGNED IN` in `worker.log` | The sign-in lapsed after startup. Sign in again and restart. |
+| `THE CLI IS NOT SIGNED IN` in `worker.log` | The sign-in lapsed after startup. Sign in again and restart. |
 | `THE RELAY MCP SERVER DID NOT COME UP` (codex) | The session had no Relay tools. If `relay check` passes, the installed codex cannot connect to a streamable-HTTP MCP server. Upgrade it. |
 | `PAUSED — N consecutive runs were cut off by a spend or usage limit` | claude: raise `runtime_config.max_usd_per_run`. codex: the account's plan window is spent, so wait for it to reset, or lower `max_runs_per_hour` or `reasoning_effort`. Then remove the `PAUSED` file. |
 | `PAUSED — task(s) N have needed this agent's attention` | The same task came back needing attention on 3 completed runs in a row, usually because its capability was revoked or the parent was re-delegated. Resolve it in Relay, then remove the `PAUSED` file. |

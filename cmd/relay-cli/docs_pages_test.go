@@ -231,17 +231,20 @@ func TestCLIDocDocumentsEveryCommandAndFlag(t *testing.T) {
 // page is still twice as long as anyone reads. Each ceiling is the page's size
 // when it was last rewritten plus some headroom. Raise one only after cutting a
 // duplicate or moving a rationale to docs/contributing/, which has no ceiling.
+// userPageCeilings is every user page and its word ceiling. It is also the
+// list of pages the docs lint treats as user-facing.
+var userPageCeilings = map[string]int{
+	"readme.md":                 700,
+	"SECURITY.md":               450,
+	"docs/cli.md":               1000,
+	"docs/configuration.md":     1700,
+	"docs/runtimes.md":          700,
+	"docs/troubleshooting.md":   1100,
+	"docs/working-directory.md": 1150,
+}
+
 func TestUserPagesStayShort(t *testing.T) {
-	ceilings := map[string]int{
-		"readme.md":                 700,
-		"SECURITY.md":               450,
-		"docs/cli.md":               1000,
-		"docs/configuration.md":     1700,
-		"docs/runtimes.md":          700,
-		"docs/troubleshooting.md":   1100,
-		"docs/working-directory.md": 1150,
-	}
-	for page, ceiling := range ceilings {
+	for page, ceiling := range userPageCeilings {
 		body, err := os.ReadFile(filepath.Join(repoRoot, page))
 		if err != nil {
 			t.Fatalf("cannot read %s: %v", page, err)

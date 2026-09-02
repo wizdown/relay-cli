@@ -13,6 +13,7 @@ Run from the repository root:
 ```bash
 make check    # gofmt + vet + test. Run before any PR
 make test     # tests only
+make lint-docs  # only the tests that hold the docs to the code
 make fmt      # gofmt -w .
 make build    # build ./relay
 make hooks    # once per clone: install the git hooks
@@ -191,13 +192,26 @@ table for what you touched:
 | a file's job or name | `docs/contributing/design.md` |
 | anything a user notices | `CHANGELOG.md`, under Unreleased |
 
-What the tests enforce: every field, default and `runtime_config` key is in
-`docs/configuration.md` and `helpText`; every command and flag is in
-`shortHelp`, `helpText` and `docs/cli.md`; every link between markdown files
-resolves; sample output quotes one version, never ahead of the constant; user
-pages stay under their ceilings. The pre-commit hook runs the suite when docs
-change. Nothing checks what a sentence means, so re-read the pages your change
-touches before you open the PR.
+What the tests enforce (`make lint-docs` runs only these):
+
+- `docs_test.go`: every field, default and `runtime_config` key is in
+  `docs/configuration.md` and `helpText`; the example config loads.
+- `docs_pages_test.go`: every link between markdown files resolves; every
+  command and flag is in `docs/cli.md`; sample output quotes one version,
+  never ahead of the constant; user pages stay under their ceilings.
+- `docs_lint_test.go`: a message quoted in `docs/troubleshooting.md` is one
+  the binary prints; no user page names a removed key; the alias table and
+  the manual match the adapters; every `RELAY_CLI_*` variable, breaker
+  threshold and worker state is documented; every page is on the map in the
+  readme, this file and the ceilings; user pages carry no rationale words,
+  no paragraph has two em-dashes, no heading has one; `CHANGELOG.md` has an
+  Unreleased section and a heading for the release the docs quote.
+- `main_test.go`: `shortHelp` and `helpText` name every command, flag and
+  default, and `shortHelp` fits one screen.
+
+The pre-commit hook runs the suite when docs change. Nothing checks what a
+sentence means, so re-read the pages your change touches before you open the
+PR.
 
 ## Before you commit
 
