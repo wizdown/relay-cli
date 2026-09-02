@@ -123,15 +123,17 @@ func (c *claudeRuntime) probe() {
 		return
 	}
 
-	missing := missingClaudeFlags(help)
-	if len(missing) > 0 {
+	if missing := missingClaudeFlags(help); len(missing) > 0 {
 		c.err = fmt.Errorf("the installed claude (%s at %s) does not support what relay-cli needs.\n"+
 			"       Its --help does not offer:\n%s\n"+
 			"       Upgrade Claude Code (https://claude.com/claude-code), then try again.\n"+
 			"       To run anyway, set RELAY_CLI_SKIP_RUNTIME_CHECK=1 — each session will\n"+
 			"       then fail on the missing flag instead of failing here, once.",
 			orDefault(c.version, "version unknown"), path, strings.Join(missing, "\n"))
+		return
 	}
+
+	c.err = claudeLoginError()
 }
 
 // missingClaudeFlags reports which of this adapter's requirements the installed
@@ -151,6 +153,64 @@ func missingClaudeFlags(help []byte) []string {
 		missing = append(missing, fmt.Sprintf("         %-28s %s", "--output-format stream-json", "the live session feed — the reason relay-cli exists"))
 	}
 	return missing
+}
+
+// claudeLoginError asks the CLI whether it is signed in.
+//
+// `claude auth status --json` reads the local credentials and prints
+// {"loggedIn":true,…} without calling the API, so this costs nothing. It is the
+// reason the manual no longer says a claude sign-in cannot be verified: it can,
+// and a fleet whose CLI is signed out should not start. Signed out, every worker
+// launches a session that fails in the same second and costs the setup, once a
+// cycle, in a log nobody is watching.
+//
+// Three answers, not two. Signed in passes; signed out fails the start; and
+// "cannot tell" — an older build with no `auth status`, or one that will not run
+// here — warns and continues, because unverifiable is not the same as unusable.
+func claudeLoginError() error {
+	out, err := exec.Command("claude", "auth", "status", "--json").CombinedOutput()
+
+	var status struct {
+		LoggedIn   *bool  `json:"loggedIn"`
+		AuthMethod string `json:"authMethod"`
+	}
+	if json.Unmarshal(jsonObject(out), &status) != nil || status.LoggedIn == nil {
+		warnUnverifiedSignIn("claude", orDefault(errText(err), "its auth status could not be read"))
+		return nil
+	}
+	if *status.LoggedIn {
+		return nil
+	}
+	// A key in the environment authenticates a run whatever the cached sign-in
+	// says, and refusing to start a fleet that would have worked is the worse
+	// failure. Third-party providers carry their own credentials the same way.
+	if envCredentialSet("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX") {
+		return nil
+	}
+	return fmt.Errorf("the installed claude is not signed in.\n" +
+		"       Run `claude auth login` as the user this fleet runs as — a worker\n" +
+		"       launches the CLI as you, so it authenticates the way your own sessions\n" +
+		"       do. relay-cli never writes or moves those credentials.")
+}
+
+// jsonObject picks the JSON object out of a command's output, since a CLI may
+// print a notice or an update banner around it. Empty when there is none, which
+// unmarshals as a failure and reads as "cannot tell".
+func jsonObject(out []byte) []byte {
+	start := bytes.IndexByte(out, '{')
+	end := bytes.LastIndexByte(out, '}')
+	if start < 0 || end < start {
+		return nil
+	}
+	return out[start : end+1]
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // claudeVersion is best effort: it is shown in the startup banner and in error

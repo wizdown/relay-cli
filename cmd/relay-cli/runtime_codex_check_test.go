@@ -71,6 +71,7 @@ func TestCodexSkipDoesNotSuppressAMissingCLI(t *testing.T) {
 // adapter can answer a question the claude one cannot. A signed-out CLI has to
 // fail the check with the command that fixes it.
 func TestCodexLoginErrorNamesTheFix(t *testing.T) {
+	noEnvCredentials(t)
 	dir := t.TempDir()
 	// A stub CLI that reports "not logged in" the way the real one does.
 	script := "#!/bin/sh\nif [ \"$1\" = login ]; then echo 'Not logged in'; exit 1; fi\nexit 0\n"

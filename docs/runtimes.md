@@ -69,16 +69,21 @@ depends on those flags, not on a release, and a version gate would block working
 installs whenever it guessed high.
 
 `RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag and sign-in checks — not the
-does-it-exist check — if a future CLI reshapes its help text.
+does-it-exist check — if a future CLI reshapes its help text or its status
+output.
 
-### `codex` is not signed in
+### The CLI is not signed in
 
 A worker launches the CLI as you, so it authenticates the way your own sessions
-do: run `codex login` once and sign in with your ChatGPT account. relay-cli never
-writes, moves or copies those credentials, and it sets no API key.
+do — `claude auth login`, or `codex login` with your ChatGPT account. relay-cli
+never writes, moves or copies those credentials, and it sets no API key.
 
-Unlike claude, codex can be asked whether it is signed in without spending
-anything, so `relay check` asks:
+**A signed-out CLI stops the start.** Both can be asked from their own stored
+credentials without spending anything (`claude auth status --json`,
+`codex login status`), so this is a startup error rather than something every
+cycle rediscovers: a fleet whose CLI is signed out would launch a session per
+worker per cycle, fail in the same second each time, and say so only in
+`worker.log`.
 
 ```text
 error: the config is valid, but a runtime it names is not usable here:
@@ -88,6 +93,20 @@ error: the config is valid, but a runtime it names is not usable here:
        account; workers then run as you, with no API key to configure.
        relay-cli never writes or moves those credentials.
 ```
+
+Only workers that name that runtime are affected: a fleet of claude workers does
+not care whether codex is signed in, and the check is only run for a runtime some
+worker asks for.
+
+Two things deliberately do **not** fail the start, because a check that refuses a
+fleet which would have worked is worse than no check:
+
+- **A CLI too old to be asked.** It warns and continues —
+  `could not ask claude whether it is signed in (…)`.
+- **A credential in the environment.** `ANTHROPIC_API_KEY`, `CODEX_API_KEY` or a
+  third-party provider authenticates a run whatever the stored sign-in says, so
+  the check stands down for that CLI. codex is explicit that a `CODEX_API_KEY`
+  never becomes a cached login.
 
 ### `--help` cannot be read
 

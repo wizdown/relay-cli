@@ -372,12 +372,18 @@ RUNTIMES — no CLI is bundled, install them yourself
   RELAY_CLI_SKIP_RUNTIME_CHECK=1 to bypass that flag check.
 
   SIGN IN TO THE CLI FIRST. A worker launches it as you, so it authenticates the
-  way your own sessions do — run it once yourself and log in. For codex that is
-  "codex login" with your ChatGPT account, and "check" verifies it for you: the
-  CLI can say whether it is signed in without spending anything. For claude it
-  cannot — proving that CLI can authenticate costs a model call, and check spends
-  nothing — so a claude CLI that is installed but not signed in starts, fails
-  immediately, and says so in state/<name>/worker.log.
+  way your own sessions do — "claude auth login", or "codex login" with your
+  ChatGPT account.
+
+  Both are VERIFIED before anything starts, and a CLI that is installed but not
+  signed in stops the start by name. Each one can be asked from its own stored
+  credentials without spending anything, so this costs nothing and catches the
+  fleet that would otherwise launch a worker per cycle, fail in the same second
+  every time, and say so only in state/<name>/worker.log. A CLI too old to be
+  asked warns instead: unverifiable is not the same as signed out. If you
+  authenticate with a key in the environment (ANTHROPIC_API_KEY, CODEX_API_KEY)
+  the check stands down for that CLI — the key works whatever its stored sign-in
+  says.
 
 EVERYTHING COSTS WHAT IT SAYS
   Polls are free and runs are not, and every ceiling here counts runs. The

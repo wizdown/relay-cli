@@ -182,17 +182,28 @@ func missingCodexFlags(help []byte) []string {
 //
 // A worker launches codex as the operator, so it authenticates the way their own
 // sessions do. Signed out, every cycle starts a session that fails immediately
-// and costs the setup — so this is worth one local file read at startup. Like
-// the flag check, a status command that cannot be run at all is a warning rather
-// than a refusal: unverifiable is not the same as unusable.
+// and costs the setup — so a fleet with a signed-out codex does not start at
+// all, on one local file read.
+//
+// Three answers, not two. Signed in passes; signed out fails the start; and
+// "cannot tell" — an older build with no `login status`, or one that will not
+// run here — warns and continues, because unverifiable is not the same as
+// unusable.
 func codexLoginError() error {
 	out, err := exec.Command("codex", "login", "status").CombinedOutput()
 	if err == nil {
 		return nil
 	}
 	if _, ok := err.(*exec.ExitError); !ok {
-		fmt.Fprintf(os.Stderr, "warning: could not run `codex login status` to verify this install is signed in (%v).\n"+
-			"         Continuing anyway; a signed-out CLI will fail on the first run.\n", err)
+		warnUnverifiedSignIn("codex", err.Error())
+		return nil
+	}
+	// `login status` reports the CACHED sign-in only, and codex says outright
+	// that a CODEX_API_KEY passed to exec never becomes one. A key in the
+	// environment authenticates every run perfectly well, so refusing to start
+	// over the cache being empty would be this check causing the outage it exists
+	// to prevent.
+	if envCredentialSet("CODEX_API_KEY", "OPENAI_API_KEY") {
 		return nil
 	}
 	return fmt.Errorf("the installed codex is not signed in (%s).\n"+

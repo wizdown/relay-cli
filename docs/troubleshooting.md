@@ -18,8 +18,11 @@ noise included, so "no output" is the healthy steady state.
 | Nothing ever launches | `worker.log`. Queue genuinely empty (`relay check`)? Task delegated to *this* agent? `PAUSED` file present? Hourly ceiling hit? |
 | `FAIL … HTTP 401` from `check` | Credential revoked, or the wrong `relay_mcp`. Issue a new one in relay and replace the whole URL, secret included. |
 | `FAIL … HTTP` anything else from `check` | The host answered but not as a connector, so the host is right and the rest of the URL is not — usually a `connector_url` truncated on the way to the config. Paste the whole thing again. |
-| `Not logged in · Please run /login` in `worker.log` | Claude Code is installed but not signed in. A worker launches it as you, and `relay check` proves the CLI exists and is new enough, not that it can authenticate — that would cost a model call. Run `claude` once yourself, log in, then `relay run` again. |
-| `the installed codex is not signed in` | codex can be asked this for free, so it fails the check rather than the first run. Run `codex login` once as this user and sign in with your ChatGPT account. relay-cli sets no API key and never copies those credentials. |
+| `the installed claude is not signed in` | Nothing started, because every claude worker would have failed in the same second. Run `claude auth login` as the user this fleet runs as. |
+| `the installed codex is not signed in` | The same, for codex: run `codex login` once as this user and sign in with your ChatGPT account. relay-cli sets no API key and never copies those credentials. |
+| `Not logged in · Please run /login` in `worker.log` | The sign-in lapsed *after* startup, so the check passed and the run did not. Log in again and restart. |
+| `could not ask <cli> whether it is signed in` | A warning, not a failure: that CLI is too old to answer, or would not run. The start continues and a real failure surfaces on the first run. Upgrading the CLI restores the check. |
+| Signed out, but the fleet started anyway | A credential in the environment (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, a third-party provider) stands the check down, because it authenticates a run whatever the stored sign-in says. |
 | `THE CLI IS NOT SIGNED IN` in `worker.log` | The same thing found mid-run — the sign-in lapsed or expired after startup. `codex login` again. |
 | `PAUSED — N consecutive runs were cut off by a spend or usage limit` | For claude, raise `runtime_config.max_usd_per_run`. For codex there is no per-run cap: the account's plan window is spent, so wait for it to reset, lower `max_runs_per_hour`, or lower `reasoning_effort`. The explanation logged with each run says which it was. |
 | `THE RELAY MCP SERVER DID NOT COME UP` (codex) | The session had no relay tools. Run `relay check` — it tests the same credential over plain HTTP and spends nothing. If that passes, the installed codex could not connect: it has to support streamable-HTTP MCP servers, so upgrade it. |
@@ -34,7 +37,7 @@ noise included, so "no output" is the healthy steady state.
 | An agent says a tool isn't available | If relay refused it, the refusal names the capability; grant it on the agent in relay. If the *CLI* refused it, the log names it under "the CLI refused these tool calls". |
 | `PAUSED — task(s) N have needed this agent's attention` | The attention-stall breaker. See [When a worker keeps relaunching against the same task](configuration.md#when-a-worker-keeps-relaunching-against-the-same-task). |
 | `cycle timed out` repeatedly | Raise `max_seconds_per_run`, or the task is too big for one session — split it. |
-| `runtime "claude" is unusable` / `runtime "codex" is unusable` | The CLI is missing from `PATH`, too old for the flags the adapter needs, or (codex) not signed in. The error names which. See [Runtimes](runtimes.md#the-startup-check). |
+| `runtime "claude" is unusable` / `runtime "codex" is unusable` | The CLI is missing from `PATH`, too old for the flags the adapter needs, or not signed in. The error names which. See [Runtimes](runtimes.md#the-startup-check). |
 | `relay is already running (pid N)` | A fleet is already up — two would double-claim. `kill` that pid, or use the one that is running. |
 
 Claim and lease behaviour is relay's rather than this CLI's: a task that

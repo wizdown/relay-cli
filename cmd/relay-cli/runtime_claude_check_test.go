@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -161,6 +164,140 @@ func TestBypassSkipsFlagCheckButNotExistence(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	if err := (&claudeRuntime{}).Check(); err == nil {
 		t.Error("the bypass must not suppress a missing CLI")
+	}
+}
+
+// stubCLI puts a fake CLI of the given name on PATH, so a sign-in check can be
+// exercised on a machine that has neither CLI installed — and without touching
+// the real one's credentials on a machine that does.
+func stubCLI(t *testing.T, name, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+// The parse above is written from the real output shape, and a stub can only
+// prove it reads the stub. This is the drift check: where a claude IS installed,
+// its answer must still be one this adapter can read. Skipped rather than failed
+// where there is none, because a fresh clone has to pass with no CLI at all.
+func TestClaudeSignInCheckStillReadsTheInstalledCLI(t *testing.T) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude is not installed here")
+	}
+	out, err := exec.Command("claude", "auth", "status", "--json").CombinedOutput()
+	if err != nil {
+		t.Skipf("this build cannot be asked: %v", err)
+	}
+	var status struct {
+		LoggedIn *bool `json:"loggedIn"`
+	}
+	if json.Unmarshal(jsonObject(out), &status) != nil || status.LoggedIn == nil {
+		t.Errorf("the installed claude no longer answers in a shape this adapter reads, "+
+			"so every fleet gets the cannot-tell warning instead of a check:\n%s", out)
+	}
+}
+
+// noEnvCredentials makes a sign-in test hermetic. Both checks stand down when
+// the environment carries a key, so a test asserting a refusal would pass or
+// fail depending on whose machine ran it.
+func noEnvCredentials(t *testing.T) {
+	t.Helper()
+	for _, n := range []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+		"CODEX_API_KEY", "OPENAI_API_KEY",
+	} {
+		t.Setenv(n, "")
+	}
+}
+
+// A signed-out claude fails the start, rather than launching workers that each
+// fail in the same second, once a cycle, in a log nobody is watching.
+func TestClaudeLoginErrorNamesTheFix(t *testing.T) {
+	noEnvCredentials(t)
+	stubCLI(t, "claude", `echo '{"loggedIn":false}'`)
+
+	err := claudeLoginError()
+	if err == nil {
+		t.Fatal("a signed-out claude must fail the check")
+	}
+	for _, want := range []string{"not signed in", "claude auth login"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q: %v", want, err)
+		}
+	}
+}
+
+func TestClaudeLoginPassesWhenSignedIn(t *testing.T) {
+	// The real CLI prints more than this, so the parse has to read the field it
+	// needs rather than the whole shape.
+	stubCLI(t, "claude", `echo '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty"}'`)
+	if err := claudeLoginError(); err != nil {
+		t.Errorf("a signed-in CLI must pass: %v", err)
+	}
+}
+
+// A key in the environment authenticates every run whatever the cached sign-in
+// says. Refusing to start a fleet that would have worked is worse than not
+// checking, so the check stands down rather than overruling it.
+func TestSignInChecksStandDownForAnEnvCredential(t *testing.T) {
+	t.Run("claude", func(t *testing.T) {
+		stubCLI(t, "claude", `echo '{"loggedIn":false}'`)
+		t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+		if err := claudeLoginError(); err != nil {
+			t.Errorf("an API key in the environment is a working credential: %v", err)
+		}
+	})
+	t.Run("codex", func(t *testing.T) {
+		// codex says outright that a CODEX_API_KEY never becomes a cached login,
+		// so its own status reports signed out while every run works.
+		stubCLI(t, "codex", `echo 'Not logged in'; exit 1`)
+		t.Setenv("CODEX_API_KEY", "sk-test")
+		if err := codexLoginError(); err != nil {
+			t.Errorf("an API key in the environment is a working credential: %v", err)
+		}
+	})
+}
+
+// An older CLI with no way to answer must not fail the start: unverifiable is
+// not the same as signed out.
+func TestSignInChecksContinueWhenTheCLICannotAnswer(t *testing.T) {
+	t.Run("claude", func(t *testing.T) {
+		stubCLI(t, "claude", `echo "error: unknown command 'auth'" >&2; exit 1`)
+		if err := claudeLoginError(); err != nil {
+			t.Errorf("a CLI that cannot be asked must not fail the start: %v", err)
+		}
+	})
+	t.Run("codex missing entirely", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if err := codexLoginError(); err != nil {
+			t.Errorf("this check answers sign-in, not installation: %v", err)
+		}
+	})
+}
+
+// The point of every check in this file: a runtime that is not usable stops the
+// whole start, before a worker is launched. LoadConfig reports it separately
+// from problems in the file, because a correct config and an unusable CLI are
+// different jobs.
+func TestAnUnusableRuntimeStopsTheStart(t *testing.T) {
+	prev := checkRuntime
+	checkRuntime = func(name, runtime, relayDir string) error {
+		return fmt.Errorf("worker %q cannot run: runtime %q is unusable.\n       the installed %s is not signed in.", name, runtime, runtime)
+	}
+	t.Cleanup(func() { checkRuntime = prev })
+
+	_, err := LoadConfig(write(t, configOf(t, worker(t, ""))))
+	if err == nil {
+		t.Fatal("a signed-out runtime must stop the start, not launch workers that each fail")
+	}
+	for _, want := range []string{"the config is valid, but a runtime it names is not usable here", "not signed in"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should say %q:\n%v", want, err)
+		}
 	}
 }
 

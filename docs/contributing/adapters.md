@@ -33,8 +33,11 @@ Copy the shape of `runtime_codex.go`, which is the more recent of the two:
    documented in one table. See
    [the config loop](config-fields.md#adding-a-runtime-setting).
 2. `Check()` — is the CLI installed, does this build accept the flags the
-   adapter uses, and (if it can be asked for free) is it signed in. Read the
-   CLI's own `--help` rather than gating on a version number.
+   adapter uses, and is it signed in. Read the CLI's own `--help` rather than
+   gating on a version number, and ask about the sign-in only in a way that
+   spends nothing. Three answers, not two: signed in passes, signed out fails
+   the start, and a CLI that cannot be asked warns and continues — see
+   `warnUnverifiedSignIn` and `envCredentialSet` in `runtime.go`.
 3. `BuildCmd()` — the exact argv, with whatever spells "fully autonomous" set
    unconditionally: a headless run can never answer an approval prompt.
 4. `ParseLine()` — one output line to session events. An adapter that cannot

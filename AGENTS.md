@@ -157,8 +157,15 @@ is still the right way to prove a config parses.
 
 No CLI is bundled. The adapter ships; the CLI is installed separately, found on
 `PATH`, and proves itself at startup by its `--help` rather than by a version.
-codex also proves it is signed in, because `codex login status` costs nothing —
-claude cannot be asked that without spending a model call.
+Both also prove they are SIGNED IN, and a signed-out CLI stops the start: every
+worker using it would fail in the same second, once a cycle. `codex login status`
+and `claude auth status --json` both read stored credentials and spend nothing,
+which is what makes this a startup check rather than something the first run
+discovers. Two rules hold that check honest, and neither is optional — a check
+that refuses a fleet which would have worked is worse than no check:
+**a CLI too old to be asked warns and continues**, and **a credential in the
+environment (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, a third-party provider) stands
+it down**, because those authenticate a run whatever the stored sign-in says.
 
 Two codex-specific trades are deliberate and documented in
 [docs/runtimes.md](docs/runtimes.md); don't quietly reverse either:

@@ -359,6 +359,39 @@ func bashAdapterEnv(rc *RunContext) []string {
 	return env
 }
 
+// ── sign-in checks ───────────────────────────────────────────────────────────
+
+// Both CLIs can be asked whether they are signed in without spending anything,
+// and both are asked at startup: a signed-out CLI fails every cycle in the same
+// second, so refusing to start is the honest answer. The two helpers below are
+// what every adapter's sign-in check shares.
+
+// envCredentialSet reports whether the environment already carries a credential
+// for a CLI whose status command only knows about a CACHED sign-in.
+//
+// This is the escape hatch that keeps the check from causing the outage it
+// exists to prevent. A key exported into the environment authenticates a run
+// perfectly well while the CLI's own status says "not logged in" — codex says so
+// explicitly about CODEX_API_KEY — and refusing to start a fleet that would have
+// worked is worse than not checking at all.
+func envCredentialSet(names ...string) bool {
+	for _, n := range names {
+		if os.Getenv(n) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// warnUnverifiedSignIn is the answer when a CLI cannot be asked at all — an
+// older build with no status command, or one that will not run here.
+// Unverifiable is not the same as signed out: the start continues, and a real
+// failure surfaces on the first run instead.
+func warnUnverifiedSignIn(cli string, detail string) {
+	fmt.Fprintf(os.Stderr, "warning: could not ask %s whether it is signed in (%s).\n"+
+		"         Continuing anyway; if it is not, the first run will say so in worker.log.\n", cli, detail)
+}
+
 func defaultOutcome(status int) string {
 	switch status {
 	case 0:

@@ -28,11 +28,10 @@ no CLI is bundled.
   Either [Claude Code](https://claude.com/claude-code) (`claude`, then log in) or
   the [Codex CLI](https://developers.openai.com/codex/cli) (`codex login`, with
   your ChatGPT account).
-  - For codex, `relay check` verifies the sign-in — the CLI can answer that
-    without spending anything.
-  - For claude it cannot: proving that CLI can authenticate costs a model call,
-    and `check` spends nothing. An unauthenticated claude fails on the first run,
-    not before it.
+  - `relay check` verifies the sign-in for both — each CLI can answer that from
+    its own stored credentials, without spending anything.
+  - A signed-out CLI stops the start, by name. Nothing launches, because every
+    worker using it would fail in the same second.
 - Nothing else — one static binary. Go 1.22+ only to build it yourself.
 
 ## Install
