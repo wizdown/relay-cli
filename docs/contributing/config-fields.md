@@ -179,7 +179,7 @@ In `cmd/relay-cli/docs_test.go`:
 | `TestEveryWorkerFieldIsDocumented` | a `Worker` json tag is missing from the docs table or from `helpText` |
 | `TestEveryRuntimeConfigFieldIsDocumented` | a runtime declares a key the docs never mention, or declares one with no `Doc` line |
 | `TestConfigDocsQuoteTheRealDefaults` | a docs table default disagrees with the code, for a relay-cli field or a runtime one |
-| `TestEveryRemovedKeyIsDocumented` | a removed key isn't in the docs, or has no replacement text |
+| `TestEveryRemovedKeyExplainsItself` | a removed key has no replacement text |
 | `TestConfigDocsExampleValidates` | the complete example in the docs no longer survives the validator |
 
 And in `config_test.go` / `init_test.go`: `TestInitTemplateValidates` proves the

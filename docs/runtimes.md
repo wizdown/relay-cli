@@ -1,199 +1,80 @@
 # Runtimes
 
-A **runtime** is which coding CLI drives a worker. It is required on every
-worker, alongside whatever that CLI needs in `runtime_config` — see
-[Configuration](configuration.md#worker-fields).
-
-relay-cli contains no coding CLI. What it contains is an *adapter*: the code that
-builds an argv and reads what the CLI prints. The CLI itself is a separate
-program you install, resolved on `PATH` at startup and named in the banner, so
-"which `claude` is this using?" has an answer before the first run.
+A runtime is the coding CLI that drives a worker. Set `runtime` on every
+worker, plus that CLI's settings in `runtime_config`. relay-cli bundles no CLI:
+install it, sign in, and relay-cli finds it on `PATH` at startup.
 
 ## Which runtimes exist
 
-| `runtime` | Support | CLI you install | Per-run spend cap |
-|---|---|---|---|
-| `claude` | **Supported** | [Claude Code](https://claude.com/claude-code) | yes — `max_usd_per_run` |
-| `codex` | **Supported** | [Codex CLI](https://developers.openai.com/codex/cli) | **no** — the CLI has none |
+| `runtime` | CLI | Sign in with | Per-run spend cap | Reports |
+|---|---|---|---|---|
+| `claude` | [Claude Code](https://claude.com/claude-code) | `claude auth login` | yes: `max_usd_per_run` | dollars |
+| `codex` | [Codex CLI](https://developers.openai.com/codex/cli) | `codex login` | **no** | tokens |
 
-Any other value is refused when the config loads: a runtime you cannot use should
-cost a startup error, not a session you have already paid for.
+Any other value is rejected when the config loads. The settings each accepts
+are in Configuration: [claude](configuration.md#runtime_config-for-claude) and
+[codex](configuration.md#runtime_config-for-codex).
 
-What each accepts in `runtime_config` is in Configuration —
-[claude](configuration.md#runtime_config-for-claude) takes `model` and
-`max_usd_per_run`, [codex](configuration.md#runtime_config-for-codex) takes
-`model`, `reasoning_effort`, `sandbox`, `network_access` and `web_search`. Every
-key has a declared set of values or a type, checked when the config loads:
-neither CLI rejects a bad setting until it is already inside a run you paid for.
-`model` works the same on both — a list this build knows, short
-[names pinned to one id each](configuration.md#aliases-are-pinned-not-tracked),
-and an [escape hatch](configuration.md#a-model-this-build-has-not-heard-of) for a
-model newer than your relay-cli.
-
-**Read the spend column before choosing.** A claude run can be cut off at a
-dollar figure by the CLI itself. A codex run cannot — there is no such flag — so
-a codex worker is bounded by `max_seconds_per_run`, `max_runs_per_hour`, its
-`reasoning_effort`, and the plan limits of the account it is signed in as. Two
-runs stopped by those plan limits in a row pause the worker, the same way two
-spend-cap kills do.
+**Read the spend column before choosing.** A claude run is cut off at a dollar
+figure by the CLI itself. A codex run has no such cap, so a codex worker is
+bounded by `max_seconds_per_run`, `max_runs_per_hour`, `reasoning_effort` and
+the plan limits of the signed-in account.
 
 ## The startup check
 
-`relay run` and `relay check` both prove the named CLI is usable on this machine
-before anything launches. A failure stops the whole start.
+`relay run` and `relay check` verify every runtime the config names before
+anything launches:
 
-### The CLI is not installed
+1. The CLI is on `PATH`.
+2. Its `--help` offers the flags the adapter needs.
+3. It is signed in, asked with `claude auth status --json` or
+   `codex login status`. Both read stored credentials and spend nothing.
 
-```text
-error: the config is valid, but a runtime it names is not usable here:
-  worker "wizhub-claude" cannot run: runtime "claude" is unusable.
-       claude not found on PATH — install Claude Code (https://claude.com/claude-code).
-       relay-cli does not bundle any CLI; each one is installed separately.
-```
+A failure stops the start and names the fix. Two cases warn instead of
+failing:
 
-### The CLI is too old
+- A CLI too old to answer the sign-in question.
+- A credential in the environment (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, or a
+  third-party provider). It authenticates a run whatever the stored sign-in
+  says, and relay-cli cannot tell whether it is valid.
 
-The check goes further than "is it there". Each adapter depends on specific
-flags, so it reads the installed CLI's own `--help` and names every one that is
-missing, with what relay-cli needed it for:
-
-```text
-error: the config is valid, but a runtime it names is not usable here:
-  worker "wizhub-claude" cannot run: runtime "claude" is unusable.
-       the installed claude (1.0.3 (Claude Code) at /usr/local/bin/claude) does not support what relay-cli needs.
-       Its --help does not offer:
-         --strict-mcp-config          keeping the operator's personal MCP servers out of an unattended run
-         --max-budget-usd             the per-run spend cap
-         --output-format stream-json  the live session feed — the reason relay-cli exists
-       Upgrade Claude Code (https://claude.com/claude-code), then try again.
-       To run anyway, set RELAY_CLI_SKIP_RUNTIME_CHECK=1 — each session will
-       then fail on the missing flag instead of failing here, once.
-```
-
-It checks **capabilities rather than a version number** deliberately: the adapter
-depends on those flags, not on a release, and a version gate would block working
-installs whenever it guessed high.
-
-`RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag and sign-in checks — not the
-does-it-exist check — for a future CLI that reshapes its help or status output.
-It covers the model-name check too, which has its own switch,
-[`RELAY_CLI_SKIP_MODEL_CHECK`](configuration.md#a-model-this-build-has-not-heard-of).
-
-### The CLI is not signed in
-
-A worker launches the CLI as you, so it authenticates the way your own sessions
-do — `claude auth login`, or `codex login` with your ChatGPT account. relay-cli
-never writes, moves or copies those credentials, and it sets no API key.
-
-**A signed-out CLI stops the start.** Both can be asked from their own stored
-credentials without spending anything (`claude auth status --json`,
-`codex login status`), so it is caught once at startup rather than by every
-cycle launching a session that fails in the same second and says so only in
-`worker.log`.
-
-```text
-error: the config is valid, but a runtime it names is not usable here:
-  worker "app-codex" cannot run: runtime "codex" is unusable.
-       the installed codex is not signed in (Not logged in).
-       Run `codex login` once as this user and sign in with your ChatGPT
-       account; workers then run as you, with no API key to configure.
-       relay-cli never writes or moves those credentials.
-```
-
-Only workers that name that runtime are affected: a fleet of claude workers does
-not care whether codex is signed in, and the check is only run for a runtime some
-worker asks for.
-
-Two things deliberately do **not** fail the start, because a check that refuses a
-fleet which would have worked is worse than no check:
-
-- **A CLI too old to be asked.** It warns and continues —
-  `could not ask claude whether it is signed in (…)`.
-- **A credential in the environment.** `ANTHROPIC_API_KEY`, `CODEX_API_KEY` or a
-  third-party provider authenticates a run whatever the stored sign-in says, so
-  the check stands down for that CLI. codex is explicit that a `CODEX_API_KEY`
-  never becomes a cached login.
-
-  It stands down **out loud**, because what relay-cli knows is that the variable
-  is set, not that it is valid — checking that would cost the model call `check`
-  refuses to spend:
-
-  ```text
-  warning: codex reports it is NOT signed in, but OPENAI_API_KEY is set — starting anyway.
-           relay-cli cannot tell whether that key is valid without spending a call, so it
-           trusts it. If every run fails immediately, the key is wrong or left over from
-           something else: run `codex login` and unset OPENAI_API_KEY.
-  ```
-
-  If you sign in with a subscription, none of this applies: there is no key, the
-  stored sign-in is the whole answer, and a healthy start says nothing.
-
-### `--help` cannot be read
-
-Unverifiable is not the same as unusable. If `claude --help` cannot be run at
-all, the start continues with a warning rather than refusing over it:
-
-```text
-warning: could not run `claude --help` to verify this install supports the flags relay-cli needs (…).
-         Continuing anyway; a missing flag will surface on the first run.
-```
+`RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag, sign-in and model checks.
+`RELAY_CLI_SKIP_MODEL_CHECK=1` skips only the
+[model check](configuration.md#model-names). Neither skips the check that the
+CLI exists. The messages each check prints are in
+[Troubleshooting](troubleshooting.md#relay-run-refuses-to-start).
 
 ## What a claude run does
 
-- **Your own MCP servers do not load.** The session runs with
-  `--strict-mcp-config`, so it sees this worker's relay connector and nothing
-  else — not your personal MCP config, and not an `.mcp.json` in the working
-  directory. What the session *does* pick up from that directory is in
-  [The working directory](working-directory.md).
-- **Anything not pre-allowed is denied, silently.** A headless run has no
-  terminal to answer an approval prompt on, so the session is launched naming
-  every relay tool and the ordinary coding tools — reading and editing files,
-  running commands, searching the web. Neither relay access nor the ability to
-  do the work rides on the model's judgement about an unfamiliar tool. A refusal
-  is named in `worker.log`, under "the CLI refused these tool calls"; see
-  [Troubleshooting](troubleshooting.md).
-- **`model` and `max_usd_per_run` become flags**, and nothing else does. Every
-  setting a runtime accepts is a declared `runtime_config` key.
-- **The harness contract is appended to the CLI's own system prompt**, via
-  `--append-system-prompt`, so it layers on top rather than replacing it. It is
-  runtime-neutral — the same text whichever CLI runs — and what it says, plus
-  how to replace it, is in
-  [The working directory](working-directory.md#step-0--an-empty-directory).
-- **A finished run is reported in words, not an exit code.** The adapter reads
-  the result envelope, so a spend-cap kill says it was cut off mid-task and what
-  to change, rather than surfacing as a bare non-zero exit.
+- Runs with `--strict-mcp-config`: the session sees this worker's Relay
+  connector and no other MCP server, including an `.mcp.json` in the working
+  directory.
+- Pre-allows every Relay tool and the ordinary coding tools. Anything else is
+  denied without a prompt, and each refusal is listed in `worker.log` under
+  "the CLI refused these tool calls".
+- Passes `model` and `max_usd_per_run` as flags. No other argv is configurable.
+- Appends the harness rules to the CLI's system prompt with
+  `--append-system-prompt`. See
+  [Harness rules](configuration.md#harness-rules).
+- Reads the result envelope, so a spend-cap kill is reported in words rather
+  than as an exit code.
 
 ## What a codex run does
 
-- **Your own codex config does not load.** The session runs with
-  `--ignore-user-config`, so `~/.codex/config.toml` — your models, your MCP
-  servers, your defaults — is not read. This worker's relay connector is passed
-  in directly and is the only MCP server the session has. A `.codex/config.toml`
-  **inside the working directory** is a project config and still applies;
-  `relay check` names it if one is there.
-- **The sandbox is what bounds a run, not an allowlist.** codex has no per-tool
-  approval to pre-grant in a headless run: what it may write is
-  `runtime_config.sandbox`, and whether the commands it runs may reach the
-  network is `network_access`. The defaults — `workspace-write` and network on —
-  let a worker edit its checkout and push a branch, and nothing outside it.
-- **The harness contract arrives in the prompt.** `codex exec` has no
-  "append to the system prompt" flag, so the contract is the first thing in the
-  prompt instead. It is the same runtime-neutral text a claude worker gets; see
-  [The working directory](working-directory.md#step-0--an-empty-directory).
-- **Sessions are not recorded.** Runs use `--ephemeral`, so a fleet does not
-  leave a session recording behind every cycle. relay-cli keeps its own record
-  in `~/.relay/logs/`.
-- **Tokens, not dollars.** codex reports token usage and no cost, so that is
-  what the dashboard and the logs show for a codex worker.
-- **The connector URL is visible in `ps`.** codex takes its MCP servers from
-  config rather than from a file you can point it at, so the credential is
-  passed as a `-c` override on the command line — where any other user on the
-  machine can read it. The alternative is a private `CODEX_HOME`, and that
-  breaks a ChatGPT sign-in: `auth.json` lives there and its refresh tokens are
-  single-use, so a copy stops working the moment either side refreshes. On a
-  machine you share, that trade is worth knowing about. It is the one place a
-  codex worker is weaker than a claude one, which writes its connector to a
-  `0600` file instead.
+- Runs with `--ignore-user-config`: your `~/.codex/config.toml` is not read.
+  A `.codex/config.toml` inside `repo_dir` still applies.
+- Is bounded by `runtime_config.sandbox` and `network_access`, not by a tool
+  allowlist. The defaults (`workspace-write`, network on) let it edit the
+  checkout and push a branch.
+- Receives the harness rules at the top of the prompt, because `codex exec`
+  has no system-prompt flag.
+- Runs with `--ephemeral`, so no session recording is left behind. relay-cli
+  keeps its own record in `~/.relay/logs/`.
+- Reports tokens, not dollars.
+- Receives the connector URL as a `-c` override on the command line, so
+  another user on the same machine can read it in `ps`. A claude worker
+  writes it to a `0600` file instead. The reason is in
+  [Design](contributing/design.md#the-codex-connector-trade).
 
 Adding a runtime is a contributor topic:
-[docs/contributing/adapters.md](contributing/adapters.md).
+[Adapters](contributing/adapters.md).

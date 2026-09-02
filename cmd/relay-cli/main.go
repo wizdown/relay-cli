@@ -245,7 +245,7 @@ FLAGS ────────────────────────�
 GETTING STARTED ─────────────────────────────────────────────────────────────
   You need this binary and a relay agent credential. Relay is at
   https://relay.bytecurio.com/ — sign in with Google or Microsoft; the free
-  demo workspace is enough. No coding CLI is installed from here. See RUNTIMES.
+  workspace is enough. No coding CLI is installed from here. See RUNTIMES.
 
   1  relay init       creates ~/` + relayDirName + `/ and a config: one worker per
                    coding CLI found on PATH, two placeholders in each

@@ -1,36 +1,35 @@
 # Development
 
-Go 1.22+ and nothing else. One module with no third-party dependencies, so there
-is no `go.sum`, no lockfile, and no network needed to build or test.
+Go 1.22+ and nothing else. One module with no third-party dependencies, so
+there is no `go.sum`, no lockfile, and no network needed to build or test.
 
 ## Commands
 
 From the repository root:
 
 ```bash
-make check    # gofmt + vet + test — the pre-PR command
+make check    # gofmt + vet + test. The pre-PR command
 make test     # tests only
 make fmt      # gofmt -w
 make build    # build ./relay
-make hooks    # one-time per clone: install the git hooks
+make hooks    # once per clone: install the git hooks
 
-make release VERSION=x.y.z   # cut a release — see below
+make release VERSION=x.y.z   # cut a release; see below
 ```
-
-Everything runs from the repository root; there is no second module to enter.
 
 ## The fresh-clone property
 
-**A clone passes its tests with no coding CLI installed.** Requiring someone to
-install Claude Code before they can test a JSON parser is a poor first five
-minutes, and it is easy to break without noticing — *your* machine has the CLI.
+A clone passes its tests with no coding CLI installed. It is easy to break
+without noticing, because your machine has the CLI.
 
-The seam is `checkRuntime` in `config.go`, a package variable the parsing tests
-stub via `noRuntimeCheck(t)`. If you add a test that genuinely needs a CLI on
-`PATH`, gate it on the CLI being present rather than making the suite depend on
-it.
+Two seams make it hold, both package variables. `checkRuntime` in `config.go`
+is stubbed by the parsing tests via `noRuntimeCheck(t)`. `installedRuntimes`
+in `init.go` decides which workers `relay init` writes live, and is stubbed
+via `withInstalledRuntimes(t, …)`, so an init test describes a machine rather
+than the one it runs on. A test that genuinely needs a CLI gates on it being
+present.
 
-To check you haven't broken it:
+To check you have not broken it:
 
 ```bash
 env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
@@ -38,114 +37,88 @@ env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
 
 ## The git hooks
 
-```bash
-make hooks
-```
-
-This sets `core.hooksPath` to the tracked `.githooks/` directory, so every hook
-in it is installed at once and an updated one reaches you with a `git pull`
-rather than needing a reinstall.
+`make hooks` sets `core.hooksPath` to the tracked `.githooks/` directory, so
+an updated hook reaches you with a `git pull`.
 
 **pre-commit** runs, cheapest first:
 
-1. **Credentials** — refuses a staged relay-cli config, or any connector-shaped
-   secret in added lines. First because it is the only check here guarding a
-   mistake you cannot take back: a secret pushed to a public repo is leaked the
+1. **Credentials**: refuses a staged relay-cli config, or any connector-shaped
+   secret in added lines. A secret pushed to a public repo is leaked the
    moment it lands, and rewriting history does not un-leak it.
 2. **gofmt** on staged Go files.
-3. **`go test ./...`** when Go changed — and also when only docs changed,
-   because the drift tests read those docs. Without `-race`, for speed; CI runs
-   the race detector.
+3. **`go test ./...`** when Go changed, and also when only docs changed,
+   because the drift tests read the docs. Without `-race`, for speed.
 
-**commit-msg** scans the commit message for the same connector shapes, using the
-same allow-list — both hooks read it from `.githooks/lib.sh`, so a placeholder
-legal in one is legal in the other. It exists because nothing else looks there:
-the pre-commit scan and `ci.yml` both read files. A message is where a failing
-`check` gets pasted, and that output quotes the credential.
+**commit-msg** scans the message for the same connector shapes, with the same
+allow-list from `.githooks/lib.sh`. A message is where a failing `check` gets
+pasted, and that output quotes the credential.
 
-They are a fast local loop, not a guarantee: they only run where someone ran
-`make hooks`, and `git commit --no-verify` skips them. The manual CI workflow is
-the backstop for the file scan — nothing is a backstop for the message, which is
-why the rule matters more than the hook.
+The hooks only run where someone ran `make hooks`, and `--no-verify` skips
+them. CI is the backstop for files; nothing is a backstop for a PR body.
 
 ## CI
 
-`.github/workflows/ci.yml` is **manual-dispatch only** — it does not run on push
-or pull request. Everything it does runs locally with nothing but Go, and runner
-time is a cost this repo does not spend per commit.
+`.github/workflows/ci.yml` is manual-dispatch only. Everything it does runs
+locally with nothing but Go, and runner time is a cost this repo does not
+spend per commit.
 
 ```bash
 gh workflow run ci.yml --ref <branch>
+gh run watch
 ```
 
-It exists for the one check that is awkward by hand: whether the suite still
-passes on a machine with **no coding CLI installed**. It also runs `-race` and a
-scan for credential-shaped strings across tracked files.
+It runs gofmt, `go vet`, `go test -race`, a build, and a scan for
+credential-shaped strings across tracked files, on a machine with no coding
+CLI installed.
 
 ## Versions
 
-`master` always carries the **next** version with a `-SNAPSHOT` marker on it:
+`master` always carries the next version with a `-SNAPSHOT` marker:
 
 ```go
 version = "0.2.0-SNAPSHOT"
 channel = "beta"
 ```
 
-**A PR never touches it.** `make release` clears the marker for exactly one
-commit — the one the tag points at — and puts it back on the next. So the
-constant is either a release, or an admission that this tree is not one.
+A PR never touches it. `make release` clears the marker for exactly one
+commit, the one the tag points at, and puts it back on the next. A release is
+a batch of merges, and a bare `0.2.0` on every commit between two tags would
+claim each is the release.
 
-That matters because a release is a **batch** of merges. Dozens of commits share
-one version number between two tags, and a bare `0.2.0` on all of them would
-claim each is the release. `-SNAPSHOT` says otherwise in a form a user can read
-out of `relay version` and paste into an issue.
-
-*Which* unreleased tree is a separate question, answered by the build stamp:
+Which unreleased tree a binary came from is the build stamp:
 
 ```text
 relay 0.2.0-SNAPSHOT (beta) [v0.1.0-4-g1aa22a3]
 ```
 
 The Makefile stamps `main.build` with `git describe --tags --always --dirty`.
-It is empty when built outside a checkout — a source tarball — and suppressed
-when it would only repeat the tag, so a **released** binary prints exactly
-`relay 0.2.0 (beta)`, which is what the docs show.
+It is empty outside a checkout and suppressed when it would only repeat the
+tag, so a released binary prints exactly `relay 0.2.0 (beta)`.
 
-Stay on `0.x`. A test fails the build if the version leaves it, because 1.0 would
-be a claim that the interface is settled — see
-[Versioning](../../readme.md#versioning). If that is genuinely the intent, delete
-that test in the same commit, deliberately.
+Stay on 0.x. A test fails the build if the version leaves it, because 1.0
+claims the interface is settled; see [Versioning](../cli.md#versioning). If
+that is the intent, delete that test in the same commit.
 
 ## Cutting a release
 
-Releases publish a `relay` binary for **macOS on Apple Silicon**, with a
-checksum, so a user can download one file and run it without a Go toolchain.
-`.github/workflows/release.yml` builds it.
+A release publishes a `relay` binary for macOS on Apple Silicon plus
+`SHA256SUMS`, built by `.github/workflows/release.yml` and marked pre-release
+while the project is 0.x. Other platforms build (CGO is off, nothing is
+platform-specific) and are not published; adding one is a line in `PLATFORMS`
+in the `Makefile`. Artifacts are named for the platform a user recognises
+(`macos-arm64`), not for `GOOS`. The build is unsigned, so the readme and the
+release notes carry the `xattr -c` line.
 
-Other platforms are deliberately not published yet. They all build — CGO is off
-and nothing here is platform-specific — so adding one is a line in
-`PLATFORMS` in the root `Makefile`; the release picks it up.
-
-Artifacts are named for the platform a user recognises (`macos-arm64`), not for
-`GOOS` (`darwin-arm64`). The build is unsigned and unnotarised, so Gatekeeper
-quarantines it on first run; the release notes carry the `xattr -d` line.
-
-One command does all of it:
+Before cutting, move the `Unreleased` entries in `CHANGELOG.md` under the new
+version. Then:
 
 ```bash
 make release VERSION=0.2.0
 ```
 
-**1. Choose the version.** It is mandatory, and nothing guesses it — not the
-Makefile, not an agent asked to cut a release. The number says whether the batch
-since the last tag was a fix or a feature, and only someone reading those commits
-knows. Run it bare to see them:
-
-```bash
-make release
-```
-
-That refuses, and prints the last tag, every commit since it, and the candidates:
+**1. Choose the version.** It is mandatory and nothing guesses it. The number
+says whether the batch since the last tag was a fix or a feature, and only
+someone reading those commits knows. Run it bare to see them:
 
 ```text
 error: make release needs a version. It is never guessed.
@@ -161,91 +134,71 @@ error: make release needs a version. It is never guessed.
   anything new          make release VERSION=0.3.0
 ```
 
-The number already on `master` is a suggestion, not a default: it was chosen when
-the *last* release closed, before anyone knew what this batch would hold.
+The number already on `master` is a suggestion, chosen before anyone knew
+what the batch would hold.
 
-**2. It checks before it touches anything.** Clean tree, on `master`, in sync
-with `origin/master`, and no such tag either locally or on origin. A version
-lower than the one `master` already claims is refused outright — a published
-number means one tree, forever.
+**2. It checks first.** Clean tree, on `master`, in sync with
+`origin/master`, no such tag locally or on origin, and a version no lower than
+the one `master` claims.
 
-**3. It proves the tree it is about to publish.** The constant is written
-*first*, then `make check` and `make dist` run against the bumped tree — so the
-documentation tests are checking the release rather than the commit before it. If
-either fails, the constant is put back and nothing is committed.
+**3. It proves the bumped tree.** The constant is written, then `make check`
+and `make dist` run against it, so the documentation tests check the release.
+If either fails, the constant is put back and nothing is committed.
 
-This is also what "the docs are up to date" means here: `docs_pages_test.go`
-fails if a link is broken, if `docs/cli.md` has fallen behind the commands and
-flags the binary actually has, or if a page quotes a version that does not exist.
-A release cannot go out over any of those.
+**4. It asks.** The tag, the commit, the artifacts and the diff, then
+`[y/N]`. Without a terminal it refuses.
 
-**4. It asks.** The tag, the commit, the artifacts and the diff, then `[y/N]`.
-There is no unattended path: run without a terminal and it refuses.
-
-**5. Two commits, one tag, one push.**
+**5. Two commits, one tag, one `--atomic` push.**
 
 ```text
-Release v0.2.0        ← the tag points here; constant is 0.2.0
+Release v0.2.0        ← the tag points here
 Start 0.2.1-SNAPSHOT  ← master carries the next version again
 ```
 
-Both commits and the tag go up in a single `git push --atomic`. A branch push
-that lands without its tag would leave `master` claiming a release nobody
-published; atomic makes that state unreachable. If something merged to `master`
-while the checks were running, the push is rejected, **nothing is published**,
-and the script prints the two lines that undo it:
+If something merged to `master` while the checks ran, the push is rejected,
+nothing is published, and the script prints the undo:
 
 ```bash
 git tag -d v0.2.0 && git reset --hard origin/master
 ```
 
-**6. The workflow publishes.** Pushing the tag is what starts it — the only
-workflow here that runs without being asked, because pushing a version tag *is*
-the request. It re-checks the tag against the constant, refuses a `-SNAPSHOT`
-one, runs gofmt/vet/`test -race`, builds every platform in `PLATFORMS`, and
-publishes a **pre-release** with `SHA256SUMS` attached and the commits since the
-previous tag appended to the notes. `make release` runs `gh run watch` for you.
+**6. The workflow publishes.** Pushing the tag starts `release.yml`. It
+re-checks the tag against the constant, refuses a `-SNAPSHOT` one, runs
+gofmt/vet/`test -race`, builds every platform in `PLATFORMS`, and publishes a
+pre-release with `SHA256SUMS` and the commits since the previous tag appended
+to the notes. `make release` runs `gh run watch` for you.
 
-**If publishing fails** after the tag is already pushed, fix the cause and re-run
-without moving the tag:
+If publishing fails after the tag is pushed, fix the cause and re-run without
+moving the tag:
 
 ```bash
 gh workflow run release.yml -f tag=v0.2.0
 ```
 
-Only move or delete a tag that never published. A tag someone may already have
-downloaded should be superseded by a new version, not rewritten.
+Only move or delete a tag that never published. A tag someone may have
+downloaded is superseded by a new version, not rewritten.
 
 ## Pull requests
 
 Keep the diff to one concern. `make check` passes. Docs updated in the same
-commit — not a follow-up, which is how documentation ends up describing a
-version that no longer exists.
+commit.
 
-Commit messages and PR bodies here explain **why**, matching the codebase's own
-comments. A reviewer can read the diff; what they cannot read is the reason.
+Commit messages and PR bodies explain why, matching the codebase's own
+comments. The repo is public and a message outlives the branch: no connector
+URL, no internal hostname, no absolute path off your machine, nobody else's
+name. Redact rather than omit: "HTTP 401 from the configured endpoint" carries
+what the value would. The `commit-msg` hook catches connector shapes in a
+message; a PR title and body are checked by you or by nobody.
 
-**The repo is public, and a message outlives the branch.** No connector URL, no
-internal hostname, no absolute path off your machine, nobody else's name. Redact
-rather than omit: "HTTP 401 from the configured endpoint" carries what the value
-would. The `commit-msg` hook catches connector shapes in a commit message; a PR
-title and body are checked by you or by nobody, so read them before you open one.
-This is about what is safe to disclose, not about tone — the rule below that an
-admitted gap beats an unverified claim still holds, and a summary that sounds
-tidier than the work is the worse failure.
+A PR summary covers:
 
-A PR summary should cover:
+- **What changed, and why**: the problem, not just the edit.
+- **Anything deleted, and why it was safe**: name what replaced it.
+- **Behaviour changes for existing users**, with the error they will see and
+  what to do.
+- **Verification you actually ran**: which tests, on what, and anything
+  checked by hand. Say plainly if something is unverified.
+- **What you deliberately left out**, so a reviewer does not have to guess.
 
-- **What changed, and why** — the problem, not just the edit.
-- **Anything deleted, and why it was safe** — name what replaced it. If a file
-  was unreachable or superseded, say how you established that.
-- **Behaviour changes for existing users**, especially anything that makes an
-  existing config, adapter or checkout stop working. Say what error
-  they will see and what they should do.
-- **Verification you actually ran.** Not "tests pass" — which tests, on what,
-  and anything you checked by hand. Say plainly if something is unverified.
-- **What you deliberately left out**, so a reviewer doesn't have to guess whether
-  you missed it or chose it.
-
-Do not claim a check you did not run. An unverified claim in a PR body is worse
-than an admitted gap, because it stops anyone else from looking.
+Do not claim a check you did not run. An unverified claim in a PR body is
+worse than an admitted gap, because it stops anyone else from looking.
