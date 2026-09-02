@@ -203,7 +203,8 @@ func codexLoginError() error {
 	// environment authenticates every run perfectly well, so refusing to start
 	// over the cache being empty would be this check causing the outage it exists
 	// to prevent.
-	if envCredentialSet("CODEX_API_KEY", "OPENAI_API_KEY") {
+	if name := envCredentialName("CODEX_API_KEY", "OPENAI_API_KEY"); name != "" {
+		warnSignInStandDown("codex", name, "codex login")
 		return nil
 	}
 	return fmt.Errorf("the installed codex is not signed in (%s).\n"+

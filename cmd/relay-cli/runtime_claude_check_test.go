@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -240,26 +241,70 @@ func TestClaudeLoginPassesWhenSignedIn(t *testing.T) {
 	}
 }
 
+// captureWarnings redirects the two sign-in warnings so a test can assert on
+// them. A warning nobody checks is a warning that silently stops being printed.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := warnOut
+	warnOut = &buf
+	t.Cleanup(func() { warnOut = prev })
+	return &buf
+}
+
 // A key in the environment authenticates every run whatever the cached sign-in
 // says. Refusing to start a fleet that would have worked is worse than not
-// checking, so the check stands down rather than overruling it.
-func TestSignInChecksStandDownForAnEnvCredential(t *testing.T) {
+// checking, so the check stands down rather than overruling it — and says so,
+// because what relay-cli knows is that the variable is SET, not that it is
+// valid. A stale one left over from something else, on a machine whose CLI is
+// genuinely signed out, is the case this line exists for.
+func TestSignInChecksStandDownLoudlyForAnEnvCredential(t *testing.T) {
 	t.Run("claude", func(t *testing.T) {
+		warnings := captureWarnings(t)
 		stubCLI(t, "claude", `echo '{"loggedIn":false}'`)
 		t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+
 		if err := claudeLoginError(); err != nil {
-			t.Errorf("an API key in the environment is a working credential: %v", err)
+			t.Fatalf("an API key in the environment is a working credential: %v", err)
+		}
+		for _, want := range []string{"NOT signed in", "ANTHROPIC_API_KEY", "claude auth login"} {
+			if !strings.Contains(warnings.String(), want) {
+				t.Errorf("the stand-down must name %q:\n%s", want, warnings)
+			}
 		}
 	})
 	t.Run("codex", func(t *testing.T) {
 		// codex says outright that a CODEX_API_KEY never becomes a cached login,
 		// so its own status reports signed out while every run works.
+		warnings := captureWarnings(t)
 		stubCLI(t, "codex", `echo 'Not logged in'; exit 1`)
 		t.Setenv("CODEX_API_KEY", "sk-test")
+
 		if err := codexLoginError(); err != nil {
-			t.Errorf("an API key in the environment is a working credential: %v", err)
+			t.Fatalf("an API key in the environment is a working credential: %v", err)
+		}
+		for _, want := range []string{"NOT signed in", "CODEX_API_KEY", "codex login"} {
+			if !strings.Contains(warnings.String(), want) {
+				t.Errorf("the stand-down must name %q:\n%s", want, warnings)
+			}
 		}
 	})
+}
+
+// A signed-in CLI is the ordinary case and has nothing to say about it. A
+// warning printed on every healthy start is one nobody reads on the start that
+// matters.
+func TestASignedInCLIWarnsAboutNothing(t *testing.T) {
+	warnings := captureWarnings(t)
+	stubCLI(t, "claude", `echo '{"loggedIn":true,"authMethod":"oauth_token"}'`)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+
+	if err := claudeLoginError(); err != nil {
+		t.Fatalf("a signed-in CLI must pass: %v", err)
+	}
+	if warnings.Len() > 0 {
+		t.Errorf("nothing to warn about here:\n%s", warnings)
+	}
 }
 
 // An older CLI with no way to answer must not fail the start: unverifiable is

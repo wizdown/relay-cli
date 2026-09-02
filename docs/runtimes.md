@@ -108,6 +108,20 @@ fleet which would have worked is worse than no check:
   the check stands down for that CLI. codex is explicit that a `CODEX_API_KEY`
   never becomes a cached login.
 
+  It stands down **out loud**, because what relay-cli knows is that the variable
+  is set, not that it is valid — checking that would cost the model call `check`
+  refuses to spend:
+
+  ```text
+  warning: codex reports it is NOT signed in, but OPENAI_API_KEY is set — starting anyway.
+           relay-cli cannot tell whether that key is valid without spending a call, so it
+           trusts it. If every run fails immediately, the key is wrong or left over from
+           something else: run `codex login` and unset OPENAI_API_KEY.
+  ```
+
+  If you sign in with a subscription, none of this applies: there is no key, the
+  stored sign-in is the whole answer, and a healthy start says nothing.
+
 ### `--help` cannot be read
 
 Unverifiable is not the same as unusable. If `claude --help` cannot be run at

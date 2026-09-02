@@ -382,8 +382,10 @@ RUNTIMES — no CLI is bundled, install them yourself
   every time, and say so only in state/<name>/worker.log. A CLI too old to be
   asked warns instead: unverifiable is not the same as signed out. If you
   authenticate with a key in the environment (ANTHROPIC_API_KEY, CODEX_API_KEY)
-  the check stands down for that CLI — the key works whatever its stored sign-in
-  says.
+  the check stands down for that CLI and says so — the key works whatever the
+  stored sign-in says, and what relay-cli can see is that the variable is set,
+  not that it is valid. Signing in with a subscription needs none of that, and a
+  healthy start is silent.
 
 EVERYTHING COSTS WHAT IT SAYS
   Polls are free and runs are not, and every ceiling here counts runs. The

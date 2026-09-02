@@ -166,6 +166,10 @@ that refuses a fleet which would have worked is worse than no check:
 **a CLI too old to be asked warns and continues**, and **a credential in the
 environment (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, a third-party provider) stands
 it down**, because those authenticate a run whatever the stored sign-in says.
+Both paths WARN rather than pass silently: the second one is relay-cli trusting a
+variable it cannot validate, and a stale key hiding a signed-out CLI is exactly
+what the check was added to catch. A healthy start stays silent — a warning
+printed every time is one nobody reads on the start that matters.
 
 Two codex-specific trades are deliberate and documented in
 [docs/runtimes.md](docs/runtimes.md); don't quietly reverse either:

@@ -184,8 +184,11 @@ func claudeLoginError() error {
 	// A key in the environment authenticates a run whatever the cached sign-in
 	// says, and refusing to start a fleet that would have worked is the worse
 	// failure. Third-party providers carry their own credentials the same way.
-	if envCredentialSet("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
-		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX") {
+	// Standing down is said out loud, because relay-cli is trusting a variable it
+	// cannot validate.
+	if name := envCredentialName("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"); name != "" {
+		warnSignInStandDown("claude", name, "claude auth login")
 		return nil
 	}
 	return fmt.Errorf("the installed claude is not signed in.\n" +

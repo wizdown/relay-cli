@@ -29,6 +29,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -366,21 +367,47 @@ func bashAdapterEnv(rc *RunContext) []string {
 // second, so refusing to start is the honest answer. The two helpers below are
 // what every adapter's sign-in check shares.
 
-// envCredentialSet reports whether the environment already carries a credential
-// for a CLI whose status command only knows about a CACHED sign-in.
+// warnOut is where the two warnings below go. A variable so a test can read what
+// was printed: a warning nobody can assert on is a warning that silently stops
+// being printed.
+var warnOut io.Writer = os.Stderr
+
+// envCredentialName returns the first of these environment variables that is
+// set, or "" when none is.
 //
-// This is the escape hatch that keeps the check from causing the outage it
-// exists to prevent. A key exported into the environment authenticates a run
+// This is the escape hatch that keeps the sign-in check from causing the outage
+// it exists to prevent. A key exported into the environment authenticates a run
 // perfectly well while the CLI's own status says "not logged in" — codex says so
 // explicitly about CODEX_API_KEY — and refusing to start a fleet that would have
 // worked is worse than not checking at all.
-func envCredentialSet(names ...string) bool {
+//
+// It returns the NAME rather than a bool because standing down silently is its
+// own trap: what relay-cli knows is that a key is present, not that it is valid,
+// so the one case where a stale variable left over from something else hides a
+// genuinely signed-out CLI has to be visible. See warnSignInStandDown.
+func envCredentialName(names ...string) string {
 	for _, n := range names {
 		if os.Getenv(n) != "" {
-			return true
+			return n
 		}
 	}
-	return false
+	return ""
+}
+
+// warnSignInStandDown says why a signed-out CLI is being allowed to start
+// anyway, and names the variable responsible.
+//
+// Validating the key would cost a model call, which is the one thing `check`
+// may not spend — so relay-cli trusts its presence. That trust is worth stating
+// out loud: an ANTHROPIC_API_KEY or OPENAI_API_KEY exported for something
+// unrelated, on a machine whose CLI is genuinely signed out, is exactly the
+// combination that would otherwise turn a startup error back into a failure per
+// cycle in a log nobody is watching.
+func warnSignInStandDown(cli, envName, loginCmd string) {
+	fmt.Fprintf(warnOut, "warning: %s reports it is NOT signed in, but %s is set — starting anyway.\n"+
+		"         relay-cli cannot tell whether that key is valid without spending a call, so it\n"+
+		"         trusts it. If every run fails immediately, the key is wrong or left over from\n"+
+		"         something else: run `%s` and unset %s.\n", cli, envName, loginCmd, envName)
 }
 
 // warnUnverifiedSignIn is the answer when a CLI cannot be asked at all — an
@@ -388,7 +415,7 @@ func envCredentialSet(names ...string) bool {
 // Unverifiable is not the same as signed out: the start continues, and a real
 // failure surfaces on the first run instead.
 func warnUnverifiedSignIn(cli string, detail string) {
-	fmt.Fprintf(os.Stderr, "warning: could not ask %s whether it is signed in (%s).\n"+
+	fmt.Fprintf(warnOut, "warning: could not ask %s whether it is signed in (%s).\n"+
 		"         Continuing anyway; if it is not, the first run will say so in worker.log.\n", cli, detail)
 }
 
