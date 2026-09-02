@@ -1,21 +1,13 @@
 # The working directory
 
-Every worker has a `repo_dir`, and the coding CLI starts inside it. That
-directory is the whole of what the agent knows about your world: relay tells it
-*what* to do, and this directory decides *what it can do it with*.
+Every worker has a `repo_dir`, and the coding CLI starts inside it. Relay tells
+the agent *what* to do; this directory decides *what it can do it with*.
 
-The ladder below is written for [Claude Code](https://claude.com/claude-code) —
-the same `CLAUDE.md`, skills and subagents you would use yourself. A `codex`
-worker reads the same directory in its own layout, and
-[what codex loads instead](#what-codex-loads-instead) maps each rung across.
+The steps below are written for Claude Code. A `codex` worker reads the same
+directory in its own layout; see [What codex loads](#what-codex-loads).
+An empty directory already works, and every later step is optional.
 
-Read it as a ladder. An empty directory already works; everything after the
-first step is optional, and you add a rung only when you want the capability it
-gives.
-
-## Step 0 — an empty directory
-
-A worker needs a directory to exist. It does not need anything in it.
+## Step 0: an empty directory
 
 ```bash
 mkdir -p ~/relay/hello
@@ -25,89 +17,56 @@ mkdir -p ~/relay/hello
 "repo_dir": "~/relay/hello"
 ```
 
-That is a complete, working setup. The agent arrives with:
+That is a complete setup. The agent arrives with its task from Relay, the
+ordinary tools (read, write and edit files, run commands, search the web), and
+the [harness rules](configuration.md#harness-rules). It has never seen your
+code and remembers nothing from the last run.
 
-- **its task**, from relay — the description, the Task Context, and your
-  standing instructions for that agent;
-- **the ordinary tools** — read, write and edit files, run shell commands,
-  search the web;
-- **the harness contract** — a few rules about the process it is running in,
-  which relay cannot know: one task per session, and stop rather than invent
-  work when the queue is empty. Same text for every worker and every runtime,
-  compiled into the binary so a downloaded `relay` carries it;
-- **nothing else**. It has never seen your codebase and holds no memory of the
-  last run.
+This is enough for self-contained work: drafting a document, research, or
+orchestrating subtasks handed to other agents.
 
-A `worker-rules.md` in `~/.relay/` replaces that contract — for *every* worker
-on the machine, which is what makes it the wrong place for anything about one
-agent. That belongs on the relay agent, where it reaches a session already
-running.
+> A run is autonomous and cannot ask before changing files. Point `repo_dir`
+> somewhere you are willing to have rewritten.
 
-This is enough for self-contained work: drafting a document, doing research,
-or orchestrating subtasks it hands to other agents. An agent that never touches
-code can stop reading here.
-
-> Point `repo_dir` somewhere you are willing to have rewritten. The run is
-> autonomous, and there is no prompt for it to ask you first.
-
-## Step 1 — point it at a real checkout
-
-Swap the empty directory for the repository the agent should work in.
+## Step 1: a real checkout
 
 ```jsonc
 "repo_dir": "~/code/app"
 ```
 
-Now the agent can read and change your code — but it still knows nothing about
-it beyond what it can find by looking. It will guess your test command.
+Now the agent can read and change your code. It still knows nothing about the
+project beyond what it finds by looking, and it will guess your test command.
 
-## Step 2 — tell it about the project: `CLAUDE.md`
+## Step 2: `CLAUDE.md`
 
-`CLAUDE.md` in the working directory is read at the start of every run. It is
-the highest-value thing on this page: one file, and every future run inherits
-it.
-
-```
-~/code/app/
-└── CLAUDE.md
-```
-
-Write what a new colleague would need on day one:
+`CLAUDE.md` in the working directory is read at the start of every run. One
+file, and every future run inherits it.
 
 ```markdown
 # app
 
-Go service, one module. `make test` before anything is done — it is fast.
+Go service, one module. `make test` before anything is done; it is fast.
 
 - Migrations live in `db/migrations/`. Never edit one that has shipped; add a new one.
 - `internal/billing/` is under audit. Don't touch it without saying so in the task.
 - Branch as `agent/<short-description>`. Never commit to `master`.
 ```
 
-Two rules keep it useful:
+Write what a new colleague needs on day one: commands, conventions, the places
+that bite. Not a tour of the tree, which the agent can read itself. Keep *who
+the agent is* out of it; its role and remit belong on the Relay agent's
+instructions, which reach a session already running. A `CLAUDE.md` can pull
+in other files with `@path/to/file.md`.
 
-- **Say what is not obvious from the code.** The commands, the conventions, the
-  places that bite. Not a tour of the directory tree — the agent can read that.
-- **Keep *who the agent is* out of it.** Its role, its remit, what it may decide
-  alone — that belongs on the relay agent's own instructions, because relay
-  delivers those to a session already running, and an edit there reaches the
-  next run without touching this machine.
+## Step 3: skills
 
-A `CLAUDE.md` can pull in other files with `@path/to/file.md`, so shared house
-rules do not have to be copied into it.
-
-## Step 3 — give it a procedure: skills
-
-A skill is a named procedure the agent can pull in when it is relevant. Add one
-when there is a job with steps you would otherwise re-explain in every task.
+A skill is a named procedure the agent pulls in when relevant. Add one for a
+job with steps you would otherwise re-explain in every task.
 
 ```
 ~/code/app/
 ├── CLAUDE.md
-└── .claude/
-    └── skills/
-        └── release-check/
-            └── SKILL.md
+└── .claude/skills/release-check/SKILL.md
 ```
 
 ```markdown
@@ -123,15 +82,13 @@ description: Verify a release candidate before tagging. Use when a task asks to 
 Report each check as pass or fail. Never tag anything yourself.
 ```
 
-The `description` is what the agent matches against, so write it as *when to use
-this*, not as a title. Skills in this directory load exactly as they do in your
-own sessions.
+The `description` is what the agent matches against, so write it as *when to
+use this*.
 
-## Step 4 — give it a specialist: subagents
+## Step 4: subagents
 
-A subagent is a separate context the agent can hand a slice of work to. It is
-worth adding when a task has a step better done by something with its own
-instructions and its own blank slate — a reviewer, an explorer.
+A subagent is a separate context the agent can hand a slice of work to, such as
+a reviewer or an explorer.
 
 ```
 .claude/agents/reviewer.md
@@ -147,15 +104,13 @@ You review Go diffs. Report only defects you can name a failing input for.
 Do not edit files.
 ```
 
-## Step 5 — give it an environment: `.claude/settings.json`
+## Step 5: `.claude/settings.json`
 
 Two parts of this file apply to a worker run:
 
 ```jsonc
 {
-  "env": {
-    "APP_ENV": "test"
-  },
+  "env": { "APP_ENV": "test" },
   "hooks": {
     "PostToolUse": [
       { "matcher": "Edit|Write",
@@ -165,100 +120,69 @@ Two parts of this file apply to a worker run:
 }
 ```
 
-- **`env`** — variables every command in the run sees. The usual reason to reach
-  for it is pointing the agent at a test database rather than a real one.
-- **`hooks`** — they run, unattended, on every session. That is useful for
-  formatting after an edit, and it is worth being deliberate about: a hook here
-  fires with nobody watching it.
+- **`env`**: variables every command in the run sees, such as a test database.
+- **`hooks`**: run unattended on every session. Useful for formatting after an
+  edit; be deliberate about anything else.
 
 **`permissions` in this file has no effect on a worker.** A headless run skips
-the workspace-trust step, so the directory's own rules are ignored — relay-cli
-pre-allows relay's tools and the ordinary coding tools instead. Your personal
-`~/.claude/settings.json` still applies, and a `deny` rule there still wins.
+the workspace-trust step, so relay-cli pre-allows Relay's tools and the
+ordinary coding tools instead. Your personal `~/.claude/settings.json` still
+applies, and a `deny` rule there still wins.
 
-## What codex loads instead
-
-A `codex` worker starts in the same `repo_dir` and the ladder above still
-applies — only the filenames change, and one rung has no equivalent:
+## What codex loads
 
 | Step | claude | codex |
 |---|---|---|
 | Tell it about the project | `CLAUDE.md` | `AGENTS.md` |
-| Give it a procedure | `.claude/skills/<name>/SKILL.md` | — |
+| Give it a procedure | `.claude/skills/<name>/SKILL.md` | not supported |
 | Give it a specialist | `.claude/agents/<name>.md` | `.codex/agents/<name>.toml` |
 | Give it an environment | `.claude/settings.json` | `.codex/config.toml` |
 
-`relay check` prints what it found under each worker, in that worker's own
-layout, so a file written for the wrong CLI shows up before the first run rather
-than after a day of sessions that never read it.
+A project `.codex/config.toml` applies even though your own
+`~/.codex/config.toml` does not. What a codex worker may write is
+`runtime_config.sandbox` and `network_access`, not a rules file; see
+[Runtimes](runtimes.md#what-a-codex-run-does).
 
-Two differences worth knowing:
+## What does not load: MCP servers
 
-- **A project `.codex/config.toml` does apply.** A worker runs with
-  `--ignore-user-config`, which drops *your* `~/.codex/config.toml` — but a
-  config committed in the checkout is still read. It is the one file in the
-  directory that can change how the run itself behaves.
-- **What the agent may write is a sandbox, not a rules file.** It is
-  `runtime_config.sandbox` and `network_access` in the worker's config; see
-  [Runtimes](runtimes.md#what-a-codex-run-does).
-
-## What a worker will not pick up: MCP servers
-
-This is the one thing in the directory that does not load. A claude worker runs
-with `--strict-mcp-config` and a codex worker with `--ignore-user-config`, and
-both mean:
-
-- an `.mcp.json` in the working directory is **ignored**;
-- the MCP servers in your own CLI config are **ignored**.
-
-The session's only MCP server is this worker's relay connector. An unattended
-agent gets the credentials the operator chose for it deliberately, not whatever
-happens to be configured on the machine it runs on. If a task needs a service,
-give the agent a script or a CLI it can run instead.
+An `.mcp.json` in the working directory and the MCP servers in your own CLI
+config are both ignored. The session's only MCP server is this worker's Relay
+connector. If a task needs a service, give the agent a script or a CLI it can
+run instead.
 
 ## What comes along from your machine
 
-For claude, the isolation above is about MCP servers only. Your personal Claude
-Code setup is otherwise still there: skills and subagents in `~/.claude/` are
-visible to the worker, and so are the permission rules in
-`~/.claude/settings.json`.
-
-For codex it is broader: `--ignore-user-config` drops your `~/.codex/config.toml`
-entirely, so a codex worker behaves the same whatever you have configured for
-yourself. Your sign-in is the one thing it does share.
-
-If you want a worker to behave the same way on someone else's machine, keep what
-it depends on in the working directory.
+A claude worker still sees the skills, subagents and permission rules in
+`~/.claude/`. A codex worker sees nothing from `~/.codex/` except your
+sign-in. To make a worker behave the same on another machine, keep what it
+depends on in the working directory.
 
 ## Checking what landed
 
-Nothing here fails loudly. A `CLAUDE.md` written one directory up, or a skill in
-a folder that isn't `<name>/SKILL.md`, produces a worker that starts, runs, costs
-money and knows none of it. `relay check` says what each worker would actually
-find, before anything launches:
+Nothing here fails loudly. A `CLAUDE.md` one directory up, or a skill outside
+`<name>/SKILL.md`, produces a worker that runs and knows none of it.
+`relay check` prints what each worker will actually find:
 
 ```text
   wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
     repo /Users/you/code/wizhub   CLAUDE.md · 2 skills · 1 subagent · 1 hook
 ```
 
-It counts only what the CLI itself loads, so if you wrote a file and it is not
-in that line, the agent will not see it either.
+If you wrote a file and it is not on that line, the agent will not see it.
 
 ## The whole ladder
 
 | You want the agent to… | Add |
 |---|---|
-| do self-contained work | nothing — an empty directory |
+| do self-contained work | nothing: an empty directory |
 | work on your code | a `repo_dir` that is the checkout |
 | know your conventions and commands | `CLAUDE.md` |
 | follow a repeatable procedure | `.claude/skills/<name>/SKILL.md` |
 | delegate a step to a specialist | `.claude/agents/<name>.md` |
 | run with particular env vars, or hooks | `.claude/settings.json` |
-| reach another MCP server | not supported — see above |
-| follow different harness rules, fleet-wide | `~/.relay/worker-rules.md` — not in `repo_dir`; see [Step 0](#step-0--an-empty-directory) |
+| reach another MCP server | not supported |
+| follow different harness rules, fleet-wide | `~/.relay/worker-rules.md`; see [Harness rules](configuration.md#harness-rules) |
 
-Two workers may share one directory, but they share the working tree with it:
-keep their tasks on separate branches, or give each its own clone. See
-[Configuration](configuration.md#more-than-one-worker) for the fleet side of
-that.
+Two workers may share one directory, but they share the working tree. Keep
+their tasks on separate branches, or give each its own clone. See
+[More than one worker](configuration.md#more-than-one-worker).

@@ -35,11 +35,12 @@ LDFLAGS := -s -w -X main.build=$(BUILD)
 # on a MacBook is looking for "macos-arm64", not "darwin-arm64".
 PLATFORMS := darwin/arm64
 
-.PHONY: help hooks all build test vet fmt check dist clean run version release
+.PHONY: help hooks all build test vet fmt check lint-docs dist clean run version release
 
 help:
 	@echo "make check   gofmt + vet + test — what to run before a PR"
 	@echo "make test    go test ./..."
+	@echo "make lint-docs  only the tests that hold the docs to the code"
 	@echo "make build   build ./$(BINARY)"
 	@echo "make fmt     gofmt -w ."
 	@echo "make hooks   install the git hooks (one-time, per clone)"
@@ -62,6 +63,11 @@ build:
 
 test:
 	go test ./...
+
+# The documentation tests alone: the config reference, the pages, the manual
+# and the prose lint. Faster than the suite when only docs changed.
+lint-docs:
+	go test -run 'Doc|Help|Pages|RemovedKey|Branch' $(PKG)
 
 vet:
 	go vet ./...
