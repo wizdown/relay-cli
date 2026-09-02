@@ -41,8 +41,8 @@ anyone who downloaded a release and has no checkout.
 `version` prints one line, and it is the line to quote in a bug report:
 
 ```text
-relay 0.1.1 (beta)                                a release
-relay 0.1.1-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo
+relay 0.2.0 (beta)                                a release
+relay 0.2.0-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo
 ```
 
 A `-SNAPSHOT` version is a build made between releases; the part in brackets is
@@ -51,7 +51,7 @@ the commit it came from. A downloaded release prints neither.
 ## What `check` answers
 
 ```text
-relay 0.1.1 (beta) — checking 2 worker(s) from /Users/you/.relay/config
+relay 0.2.0 (beta) — checking 2 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
@@ -157,7 +157,7 @@ endpoint is never in an HTTP response.
 ## Startup and shutdown
 
 ```text
-relay 0.1.1 (beta) — 1 worker(s) from /Users/you/.relay/config
+relay 0.2.0 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
   runtime codex    codex-cli 0.60.0 /Users/you/.local/bin/codex
   wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
