@@ -110,8 +110,8 @@ in the `Makefile`. Artifacts are named for the platform a user recognises
 (`macos-arm64`), not for `GOOS`. The build is unsigned, so the readme and the
 release notes carry the `xattr -c` line.
 
-Before cutting, move the `Unreleased` entries in `CHANGELOG.md` under the new
-version. Then:
+Everything a user should know about the batch is already under `Unreleased`
+in `CHANGELOG.md`; the release moves it under the new version. Then:
 
 ```bash
 make release VERSION=0.2.0
@@ -139,15 +139,19 @@ The number already on `master` is a suggestion, chosen before anyone knew
 what the batch would hold.
 
 **2. It checks first.** Clean tree, on `master`, in sync with
-`origin/master`, no such tag locally or on origin, and a version no lower than
-the one `master` claims.
+`origin/master`, no such tag locally or on origin, a version no lower than
+the one `master` claims, and at least one entry under `Unreleased` in
+`CHANGELOG.md`. A release says what changed, even when that is "docs only".
 
-**3. It proves the bumped tree.** The constant is written, then `make check`
-and `make dist` run against it, so the documentation tests check the release.
-If either fails, the constant is put back and nothing is committed.
+**3. It proves the bumped tree.** The constant is written, the sample
+`relay x.y.z` lines in the user docs follow it, and the `Unreleased` entries
+in `CHANGELOG.md` move under `## vx.y.z` with an empty `Unreleased` left above
+for the next batch. Then `make check` and `make dist` run against that tree,
+so the documentation tests check the release itself. If either fails, every
+file is put back and nothing is committed.
 
-**4. It asks.** The tag, the commit, the artifacts and the diff, then
-`[y/N]`. Without a terminal it refuses.
+**4. It asks.** The tag, the commit, the artifacts, the changelog entries and
+the diff, then `[y/N]`. Without a terminal it refuses.
 
 **5. Two commits, one tag, one `--atomic` push.**
 
