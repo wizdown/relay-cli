@@ -11,16 +11,31 @@ program you install, resolved on `PATH` at startup and named in the banner, so
 
 ## Which runtimes exist
 
-| `runtime` | Support | CLI you install |
-|---|---|---|
-| `claude` | **Supported** | [Claude Code](https://claude.com/claude-code) |
-| `codex` | **Coming soon** — refused when the config loads | — |
+| `runtime` | Support | CLI you install | Per-run spend cap |
+|---|---|---|---|
+| `claude` | **Supported** | [Claude Code](https://claude.com/claude-code) | yes — `max_usd_per_run` |
+| `codex` | **Supported** | [Codex CLI](https://developers.openai.com/codex/cli) | **no** — the CLI has none |
 
-`codex` is refused by name, and so is any other value: a runtime you cannot use
-should cost a startup error, not a session you have already paid for.
+Any other value is refused when the config loads: a runtime you cannot use should
+cost a startup error, not a session you have already paid for.
 
-The keys `claude` accepts in `runtime_config` — `model` and `max_usd_per_run` —
-are in [Configuration](configuration.md#runtime_config-for-claude).
+What each accepts in `runtime_config` is in Configuration —
+[claude](configuration.md#runtime_config-for-claude) takes `model` and
+`max_usd_per_run`, [codex](configuration.md#runtime_config-for-codex) takes
+`model`, `reasoning_effort`, `sandbox`, `network_access` and `web_search`. Every
+key has a declared set of values or a type, checked when the config loads:
+neither CLI rejects a bad setting until it is already inside a run you paid for.
+`model` works the same on both — a list this build knows, short
+[names pinned to one id each](configuration.md#aliases-are-pinned-not-tracked),
+and an [escape hatch](configuration.md#a-model-this-build-has-not-heard-of) for a
+model newer than your relay-cli.
+
+**Read the spend column before choosing.** A claude run can be cut off at a
+dollar figure by the CLI itself. A codex run cannot — there is no such flag — so
+a codex worker is bounded by `max_seconds_per_run`, `max_runs_per_hour`, its
+`reasoning_effort`, and the plan limits of the account it is signed in as. Two
+runs stopped by those plan limits in a row pause the worker, the same way two
+spend-cap kills do.
 
 ## The startup check
 
@@ -38,9 +53,9 @@ error: the config is valid, but a runtime it names is not usable here:
 
 ### The CLI is too old
 
-For `claude` the check goes further than "is it there". The adapter depends on
-specific flags, so it reads the installed CLI's own `--help` and names every one
-that is missing, with what relay-cli needed it for:
+The check goes further than "is it there". Each adapter depends on specific
+flags, so it reads the installed CLI's own `--help` and names every one that is
+missing, with what relay-cli needed it for:
 
 ```text
 error: the config is valid, but a runtime it names is not usable here:
@@ -59,8 +74,59 @@ It checks **capabilities rather than a version number** deliberately: the adapte
 depends on those flags, not on a release, and a version gate would block working
 installs whenever it guessed high.
 
-`RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag check — not the
-does-it-exist check — if a future CLI reshapes its help text.
+`RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag and sign-in checks — not the
+does-it-exist check — for a future CLI that reshapes its help or status output.
+It covers the model-name check too, which has its own switch,
+[`RELAY_CLI_SKIP_MODEL_CHECK`](configuration.md#a-model-this-build-has-not-heard-of).
+
+### The CLI is not signed in
+
+A worker launches the CLI as you, so it authenticates the way your own sessions
+do — `claude auth login`, or `codex login` with your ChatGPT account. relay-cli
+never writes, moves or copies those credentials, and it sets no API key.
+
+**A signed-out CLI stops the start.** Both can be asked from their own stored
+credentials without spending anything (`claude auth status --json`,
+`codex login status`), so it is caught once at startup rather than by every
+cycle launching a session that fails in the same second and says so only in
+`worker.log`.
+
+```text
+error: the config is valid, but a runtime it names is not usable here:
+  worker "app-codex" cannot run: runtime "codex" is unusable.
+       the installed codex is not signed in (Not logged in).
+       Run `codex login` once as this user and sign in with your ChatGPT
+       account; workers then run as you, with no API key to configure.
+       relay-cli never writes or moves those credentials.
+```
+
+Only workers that name that runtime are affected: a fleet of claude workers does
+not care whether codex is signed in, and the check is only run for a runtime some
+worker asks for.
+
+Two things deliberately do **not** fail the start, because a check that refuses a
+fleet which would have worked is worse than no check:
+
+- **A CLI too old to be asked.** It warns and continues —
+  `could not ask claude whether it is signed in (…)`.
+- **A credential in the environment.** `ANTHROPIC_API_KEY`, `CODEX_API_KEY` or a
+  third-party provider authenticates a run whatever the stored sign-in says, so
+  the check stands down for that CLI. codex is explicit that a `CODEX_API_KEY`
+  never becomes a cached login.
+
+  It stands down **out loud**, because what relay-cli knows is that the variable
+  is set, not that it is valid — checking that would cost the model call `check`
+  refuses to spend:
+
+  ```text
+  warning: codex reports it is NOT signed in, but OPENAI_API_KEY is set — starting anyway.
+           relay-cli cannot tell whether that key is valid without spending a call, so it
+           trusts it. If every run fails immediately, the key is wrong or left over from
+           something else: run `codex login` and unset OPENAI_API_KEY.
+  ```
+
+  If you sign in with a subscription, none of this applies: there is no key, the
+  stored sign-in is the whole answer, and a healthy start says nothing.
 
 ### `--help` cannot be read
 
@@ -96,6 +162,38 @@ warning: could not run `claude --help` to verify this install supports the flags
 - **A finished run is reported in words, not an exit code.** The adapter reads
   the result envelope, so a spend-cap kill says it was cut off mid-task and what
   to change, rather than surfacing as a bare non-zero exit.
+
+## What a codex run does
+
+- **Your own codex config does not load.** The session runs with
+  `--ignore-user-config`, so `~/.codex/config.toml` — your models, your MCP
+  servers, your defaults — is not read. This worker's relay connector is passed
+  in directly and is the only MCP server the session has. A `.codex/config.toml`
+  **inside the working directory** is a project config and still applies;
+  `relay check` names it if one is there.
+- **The sandbox is what bounds a run, not an allowlist.** codex has no per-tool
+  approval to pre-grant in a headless run: what it may write is
+  `runtime_config.sandbox`, and whether the commands it runs may reach the
+  network is `network_access`. The defaults — `workspace-write` and network on —
+  let a worker edit its checkout and push a branch, and nothing outside it.
+- **The harness contract arrives in the prompt.** `codex exec` has no
+  "append to the system prompt" flag, so the contract is the first thing in the
+  prompt instead. It is the same runtime-neutral text a claude worker gets; see
+  [The working directory](working-directory.md#step-0--an-empty-directory).
+- **Sessions are not recorded.** Runs use `--ephemeral`, so a fleet does not
+  leave a session recording behind every cycle. relay-cli keeps its own record
+  in `~/.relay/logs/`.
+- **Tokens, not dollars.** codex reports token usage and no cost, so that is
+  what the dashboard and the logs show for a codex worker.
+- **The connector URL is visible in `ps`.** codex takes its MCP servers from
+  config rather than from a file you can point it at, so the credential is
+  passed as a `-c` override on the command line — where any other user on the
+  machine can read it. The alternative is a private `CODEX_HOME`, and that
+  breaks a ChatGPT sign-in: `auth.json` lives there and its refresh tokens are
+  single-use, so a copy stops working the moment either side refreshes. On a
+  machine you share, that trade is worth knowing about. It is the one place a
+  codex worker is weaker than a claude one, which writes its connector to a
+  `0600` file instead.
 
 Adding a runtime is a contributor topic:
 [docs/contributing/adapters.md](contributing/adapters.md).

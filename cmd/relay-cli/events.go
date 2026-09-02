@@ -47,6 +47,21 @@ const (
 	StateStopped  = "stopped"
 )
 
+// TokenUsage is what a run spent, for a runtime that reports tokens rather than
+// dollars.
+//
+// It exists because codex has no per-run spend cap and no cost figure: the only
+// honest number a codex worker can show is the one its CLI reports. Cached input
+// is the part of Input that was served from the prompt cache, so Total counts
+// input and output and not that again.
+type TokenUsage struct {
+	Input       int `json:"input,omitempty"`
+	CachedInput int `json:"cached_input,omitempty"`
+	Output      int `json:"output,omitempty"`
+}
+
+func (u TokenUsage) Total() int { return u.Input + u.Output }
+
 // SessionEvent is one thing that happened inside a CLI run.
 //
 // This is the whole reason relay-cli exists. The bash poller ran claude with
@@ -63,6 +78,8 @@ type SessionEvent struct {
 	SessionID string  `json:"session_id,omitempty"`
 	CostUSD   float64 `json:"cost_usd,omitempty"`
 	NumTurns  int     `json:"num_turns,omitempty"`
+	// Usage is set instead of CostUSD by a runtime that reports tokens.
+	Usage *TokenUsage `json:"usage,omitempty"`
 }
 
 // CycleInfo describes one CLI run, at its start and again at its end.
@@ -74,6 +91,7 @@ type CycleInfo struct {
 	Outcome     string      `json:"outcome,omitempty"` // ok | timeout | error | budget_exhausted
 	Explanation string      `json:"explanation,omitempty"`
 	CostUSD     float64     `json:"cost_usd,omitempty"`
+	Usage       *TokenUsage `json:"usage,omitempty"`
 	DurationMS  int64       `json:"duration_ms,omitempty"`
 	NumTurns    int         `json:"num_turns,omitempty"`
 	Result      string      `json:"result,omitempty"`

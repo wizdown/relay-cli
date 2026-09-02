@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -164,40 +168,215 @@ func TestBypassSkipsFlagCheckButNotExistence(t *testing.T) {
 	}
 }
 
-// codex is not offered yet, and the error has to say that rather than describe
-// a missing file — someone who deliberately wrote "codex" would otherwise go
-// hunting for a typo.
-func TestCodexSaysComingSoon(t *testing.T) {
-	_, err := ResolveRuntime("codex", t.TempDir())
-	if err == nil {
-		t.Fatal("codex is not a supported runtime yet")
+// stubCLI puts a fake CLI of the given name on PATH, so a sign-in check can be
+// exercised on a machine that has neither CLI installed — and without touching
+// the real one's credentials on a machine that does.
+func stubCLI(t *testing.T, name, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	for _, want := range []string{"coming soon", `"runtime": "claude"`} {
+	t.Setenv("PATH", dir)
+}
+
+// The parse above is written from the real output shape, and a stub can only
+// prove it reads the stub. This is the drift check: where a claude IS installed,
+// its answer must still be one this adapter can read. Skipped rather than failed
+// where there is none, because a fresh clone has to pass with no CLI at all.
+func TestClaudeSignInCheckStillReadsTheInstalledCLI(t *testing.T) {
+	if _, err := exec.LookPath("claude"); err != nil {
+		t.Skip("claude is not installed here")
+	}
+	out, err := exec.Command("claude", "auth", "status", "--json").CombinedOutput()
+	if err != nil {
+		t.Skipf("this build cannot be asked: %v", err)
+	}
+	var status struct {
+		LoggedIn *bool `json:"loggedIn"`
+	}
+	if json.Unmarshal(jsonObject(out), &status) != nil || status.LoggedIn == nil {
+		t.Errorf("the installed claude no longer answers in a shape this adapter reads, "+
+			"so every fleet gets the cannot-tell warning instead of a check:\n%s", out)
+	}
+}
+
+// noEnvCredentials makes a sign-in test hermetic. Both checks stand down when
+// the environment carries a key, so a test asserting a refusal would pass or
+// fail depending on whose machine ran it.
+func noEnvCredentials(t *testing.T) {
+	t.Helper()
+	for _, n := range []string{
+		"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+		"CODEX_API_KEY", "OPENAI_API_KEY",
+	} {
+		t.Setenv(n, "")
+	}
+}
+
+// A signed-out claude fails the start, rather than launching workers that each
+// fail in the same second, once a cycle, in a log nobody is watching.
+func TestClaudeLoginErrorNamesTheFix(t *testing.T) {
+	noEnvCredentials(t)
+	stubCLI(t, "claude", `echo '{"loggedIn":false}'`)
+
+	err := claudeLoginError()
+	if err == nil {
+		t.Fatal("a signed-out claude must fail the check")
+	}
+	for _, want := range []string{"not signed in", "claude auth login"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q: %v", want, err)
 		}
 	}
-	// The old error described a missing adapter file and an npm install. Both
-	// would now be a lie: no adapter path is consulted at all.
-	if strings.Contains(err.Error(), "runtimes/") || strings.Contains(err.Error(), "npm i -g") {
-		t.Errorf("should not describe an adapter that cannot be loaded: %v", err)
+}
+
+func TestClaudeLoginPassesWhenSignedIn(t *testing.T) {
+	// The real CLI prints more than this, so the parse has to read the field it
+	// needs rather than the whole shape.
+	stubCLI(t, "claude", `echo '{"loggedIn":true,"authMethod":"oauth_token","apiProvider":"firstParty"}'`)
+	if err := claudeLoginError(); err != nil {
+		t.Errorf("a signed-in CLI must pass: %v", err)
 	}
 }
 
-// Any other name gets the shorter answer, and it still names the one runtime
-// that works rather than only saying what does not.
-func TestUnknownRuntimeNamesTheSupportedOne(t *testing.T) {
+// captureWarnings redirects the two sign-in warnings so a test can assert on
+// them. A warning nobody checks is a warning that silently stops being printed.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := warnOut
+	warnOut = &buf
+	t.Cleanup(func() { warnOut = prev })
+	return &buf
+}
+
+// A key in the environment authenticates every run whatever the cached sign-in
+// says. Refusing to start a fleet that would have worked is worse than not
+// checking, so the check stands down rather than overruling it — and says so,
+// because what relay-cli knows is that the variable is SET, not that it is
+// valid. A stale one left over from something else, on a machine whose CLI is
+// genuinely signed out, is the case this line exists for.
+func TestSignInChecksStandDownLoudlyForAnEnvCredential(t *testing.T) {
+	t.Run("claude", func(t *testing.T) {
+		warnings := captureWarnings(t)
+		stubCLI(t, "claude", `echo '{"loggedIn":false}'`)
+		t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+
+		if err := claudeLoginError(); err != nil {
+			t.Fatalf("an API key in the environment is a working credential: %v", err)
+		}
+		for _, want := range []string{"NOT signed in", "ANTHROPIC_API_KEY", "claude auth login"} {
+			if !strings.Contains(warnings.String(), want) {
+				t.Errorf("the stand-down must name %q:\n%s", want, warnings)
+			}
+		}
+	})
+	t.Run("codex", func(t *testing.T) {
+		// codex says outright that a CODEX_API_KEY never becomes a cached login,
+		// so its own status reports signed out while every run works.
+		warnings := captureWarnings(t)
+		stubCLI(t, "codex", `echo 'Not logged in'; exit 1`)
+		t.Setenv("CODEX_API_KEY", "sk-test")
+
+		if err := codexLoginError(); err != nil {
+			t.Fatalf("an API key in the environment is a working credential: %v", err)
+		}
+		for _, want := range []string{"NOT signed in", "CODEX_API_KEY", "codex login"} {
+			if !strings.Contains(warnings.String(), want) {
+				t.Errorf("the stand-down must name %q:\n%s", want, warnings)
+			}
+		}
+	})
+}
+
+// A signed-in CLI is the ordinary case and has nothing to say about it. A
+// warning printed on every healthy start is one nobody reads on the start that
+// matters.
+func TestASignedInCLIWarnsAboutNothing(t *testing.T) {
+	warnings := captureWarnings(t)
+	stubCLI(t, "claude", `echo '{"loggedIn":true,"authMethod":"oauth_token"}'`)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+
+	if err := claudeLoginError(); err != nil {
+		t.Fatalf("a signed-in CLI must pass: %v", err)
+	}
+	if warnings.Len() > 0 {
+		t.Errorf("nothing to warn about here:\n%s", warnings)
+	}
+}
+
+// An older CLI with no way to answer must not fail the start: unverifiable is
+// not the same as signed out.
+func TestSignInChecksContinueWhenTheCLICannotAnswer(t *testing.T) {
+	t.Run("claude", func(t *testing.T) {
+		stubCLI(t, "claude", `echo "error: unknown command 'auth'" >&2; exit 1`)
+		if err := claudeLoginError(); err != nil {
+			t.Errorf("a CLI that cannot be asked must not fail the start: %v", err)
+		}
+	})
+	t.Run("codex missing entirely", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		if err := codexLoginError(); err != nil {
+			t.Errorf("this check answers sign-in, not installation: %v", err)
+		}
+	})
+}
+
+// The point of every check in this file: a runtime that is not usable stops the
+// whole start, before a worker is launched. LoadConfig reports it separately
+// from problems in the file, because a correct config and an unusable CLI are
+// different jobs.
+func TestAnUnusableRuntimeStopsTheStart(t *testing.T) {
+	prev := checkRuntime
+	checkRuntime = func(name, runtime, relayDir string) error {
+		return fmt.Errorf("worker %q cannot run: runtime %q is unusable.\n       the installed %s is not signed in.", name, runtime, runtime)
+	}
+	t.Cleanup(func() { checkRuntime = prev })
+
+	_, err := LoadConfig(write(t, configOf(t, worker(t, ""))))
+	if err == nil {
+		t.Fatal("a signed-out runtime must stop the start, not launch workers that each fail")
+	}
+	for _, want := range []string{"the config is valid, but a runtime it names is not usable here", "not signed in"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should say %q:\n%v", want, err)
+		}
+	}
+}
+
+// Both compiled-in runtimes resolve without touching the disk: resolving is
+// pure, and the tests that parse configs have to run where no CLI is installed.
+func TestBothRuntimesResolve(t *testing.T) {
+	for _, name := range []string{"claude", "codex"} {
+		rt, err := ResolveRuntime(name, t.TempDir())
+		if err != nil {
+			t.Fatalf("%s should resolve: %v", name, err)
+		}
+		if rt.Name() != name {
+			t.Errorf("resolved %q to the %q adapter", name, rt.Name())
+		}
+	}
+}
+
+// Any other name is refused, and the error names the runtimes that do work
+// rather than only saying what does not.
+func TestUnknownRuntimeNamesTheSupportedOnes(t *testing.T) {
 	_, err := ResolveRuntime("aider", t.TempDir())
 	if err == nil {
-		t.Fatal("only claude resolves while bash adapters are gated")
+		t.Fatal("only the compiled-in adapters resolve while bash adapters are gated")
 	}
-	if !strings.Contains(err.Error(), "claude") {
-		t.Errorf("error should name claude: %v", err)
+	for _, want := range []string{"claude", "codex"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s: %v", want, err)
+		}
 	}
 }
 
-// The bash-adapter path is shipped disabled, not deleted — codex support is the
-// reason it is kept. Unreachable code rots silently, so this exercises it
+// The bash-adapter path is shipped disabled, not deleted — a CLI nobody has
+// written an adapter for is the reason it is kept. Unreachable code rots
+// silently, so this exercises it
 // directly: it has to still build an argv the day bashAdaptersEnabled flips.
 func TestBashAdapterStillBuildsACommand(t *testing.T) {
 	dir := t.TempDir()
@@ -266,5 +445,61 @@ func TestLoadWorkerRulesReadsBesideTheConfig(t *testing.T) {
 	}
 	if filepath.Dir(path) != root {
 		t.Errorf("the rules path should be the on-disk one, got %q", path)
+	}
+}
+
+// The claude model list, and the alias behaviour both runtimes share.
+
+// An alias is resolved when the config loads, not handed on. Everything
+// downstream — the argv, worker.log, the dashboard — then names the model that
+// actually ran, and the same config keeps running it after the CLI's own
+// "latest sonnet" has moved on.
+func TestModelAliasesResolveToAPinnedID(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, c := range []struct{ runtime, alias, want string }{
+		{"claude", "opus", "claude-opus-5"},
+		{"claude", "sonnet", "claude-sonnet-5"},
+		{"claude", "haiku", "claude-haiku-4-5"},
+		{"codex", "sol", "gpt-5.6-sol"},
+		{"codex", "terra", "gpt-5.6-terra"},
+		{"codex", "luna", "gpt-5.6-luna"},
+	} {
+		t.Run(c.runtime+"/"+c.alias, func(t *testing.T) {
+			body := `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_aaaaaaaa",` +
+				`"repo_dir":"` + repoHere(t) + `","runtime":"` + c.runtime + `",` +
+				`"runtime_config":{"model":"` + c.alias + `"}}]}`
+			cfg, err := LoadConfig(write(t, body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.Workers[0].RCString("model"); got != c.want {
+				t.Errorf("model = %q, want the pinned %q — an alias that reaches the CLI "+
+					"is one whose meaning moves when the CLI's does", got, c.want)
+			}
+		})
+	}
+}
+
+// claude's model is checked for the same reason codex's is: the CLI takes
+// whatever --model it is handed, so a name nobody validated fails inside a run
+// that has already been paid for.
+func TestUnknownClaudeModelIsRefusedAtLoad(t *testing.T) {
+	noRuntimeCheck(t)
+	body := `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_aaaaaaaa",` +
+		`"repo_dir":"` + repoHere(t) + `","runtime":"claude",` +
+		`"runtime_config":{"model":"claude-opus-4-5"}}]}`
+
+	err := loadErr(write(t, body))
+	if err == nil {
+		t.Fatal("a model this build does not know should refuse the start")
+	}
+	for _, want := range []string{
+		"it takes one of: claude-opus-5, claude-sonnet-5, claude-haiku-4-5",
+		"opus (claude-opus-5)", // the aliases, and what each one pins to
+		"RELAY_CLI_SKIP_MODEL_CHECK",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q:\n%v", want, err)
+		}
 	}
 }

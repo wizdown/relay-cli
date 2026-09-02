@@ -3,18 +3,54 @@
 How a runtime is wired in. `docs/runtimes.md` is the user-facing half — which
 CLIs are offered and what is checked at startup; this is the contract behind it.
 
-## The extension point, and where it stands
+## Two kinds, and why both shipped runtimes are the first kind
 
-A second adapter kind exists in the binary and does not run. `bashRuntime` drives
-a `runtimes/<name>.sh` through a small shell contract, and it is complete, tested
-and switched off by `bashAdaptersEnabled` in `runtime.go`. It is not dead code —
-it is the half of codex support that is already written.
+`claude` and `codex` are both **native** adapters: Go, compiled in, each one
+implementing `Runtime` in `runtime_claude.go` and `runtime_codex.go`. That is not
+incidental. A native adapter is the only kind that can parse its CLI's event
+stream into session events — which is what relay-cli is for — and the only kind
+that can declare `ConfigFields()`, without which a worker cannot even be told
+which model to run.
 
-While that constant is false, no `runtimes/` directory ships and no runtime but
-`claude` resolves. Enabling one means two things: flipping the constant, and
-restoring an adapter for it. Both are deliberate, because "supported" here means
-verified against a real CLI and given a spend bound — not merely that an argv can
-be built.
+A second kind exists in the binary and does not run. `bashRuntime` drives a
+`runtimes/<name>.sh` through a small shell contract, and it is complete, tested
+and switched off by `bashAdaptersEnabled` in `runtime.go`. It is not dead code:
+it is the extension point for a CLI nobody here has written an adapter for. What
+it gives that CLI is an argv and nothing else — raw lines in the feed, and no
+declared settings — so it is the fallback, not the pattern to copy.
+
+While that constant is false, no `runtimes/` directory ships and only the
+compiled-in adapters resolve. Enabling one means two things: flipping the
+constant, and restoring an adapter for it. Both are deliberate, because
+"supported" here means verified against a real CLI and given a bound — not merely
+that an argv can be built.
+
+## Adding a native adapter
+
+Copy the shape of `runtime_codex.go`, which is the more recent of the two:
+
+1. `ConfigFields()` — every setting the CLI takes, typed, defaulted and
+   documented in one table. See
+   [the config loop](config-fields.md#adding-a-runtime-setting).
+2. `Check()` — is the CLI installed, does this build accept the flags the
+   adapter uses, and is it signed in. Read the CLI's own `--help` rather than
+   gating on a version number, and ask about the sign-in only in a way that
+   spends nothing. Three answers, not two: signed in passes, signed out fails
+   the start, and a CLI that cannot be asked warns and continues — see
+   `warnUnverifiedSignIn` and `envCredentialSet` in `runtime.go`.
+3. `BuildCmd()` — the exact argv, with whatever spells "fully autonomous" set
+   unconditionally: a headless run can never answer an approval prompt.
+4. `ParseLine()` — one output line to session events. An adapter that cannot
+   parse its CLI returns a single `raw` event, which is still live in the UI.
+5. `ClassifyExit()` — what the exit MEANT. The loop knows a run exited 1; only
+   the adapter knows whether that was a limit, a missing sign-in, or ordinary
+   failure. Return `outcomeBudget` for a limit — it is the one outcome the loop
+   acts on.
+6. Optionally `InspectWorkdir()` and `Version()`/`Path()`, which `relay check`
+   and the startup banner use.
+
+Then add it to `supportedRuntimes()`. `ResolveRuntime` reads that list, the docs
+test reads it too, and `make check` names the documentation you still owe.
 
 For reference, an adapter is sourced (not executed) and defines two functions:
 
@@ -70,10 +106,11 @@ is denied by the CLI, silently, after relay has already offered it to the agent.
 ### Why shell functions rather than a table of flags
 
 The CLIs differ in shape, not just spelling. `claude` takes an MCP config file
-plus a system-prompt flag; codex takes TOML config overrides, has no
-system-prompt flag, and may need an `mcp-remote` stdio bridge depending on the
-build. A flag table in the config can't express that; fifteen lines of
-shell can.
+plus a system-prompt flag; `codex` takes TOML config overrides on the command
+line, has no system-prompt flag at all — the harness contract rides in its prompt
+instead — and bounds a run with a sandbox rather than a tool allowlist. A flag
+table in the config cannot express that. A native adapter can, and fifteen lines
+of shell can express the easy half of it.
 
 Runtime-specific behaviour belongs in the adapter. If you find yourself adding an
 `if [ "$RUNTIME" = … ]` to the worker loop, it belongs in an adapter instead.

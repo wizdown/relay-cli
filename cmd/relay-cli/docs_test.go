@@ -186,3 +186,25 @@ func TestConfigDocsExampleValidates(t *testing.T) {
 		t.Fatalf("the example in docs/configuration.md does not validate: %v", err)
 	}
 }
+
+// An alias is only useful if it names something the field accepts. A typo in
+// the alias table would otherwise produce a config that loads and a CLI that is
+// handed a model nobody declared — the exact failure the list exists to stop,
+// reintroduced one level up.
+func TestEveryAliasResolvesToADeclaredValue(t *testing.T) {
+	for _, rt := range supportedRuntimes() {
+		for _, f := range rt.ConfigFields() {
+			for alias, canonical := range f.Aliases {
+				if !contains(f.Enum, canonical) {
+					t.Errorf("runtime %q: %s alias %q resolves to %q, which is not one of "+
+						"its declared values (%s)", rt.Name(), f.Key, alias, canonical,
+						strings.Join(f.Enum, ", "))
+				}
+				if _, clash := f.Aliases[canonical]; clash || contains(f.Enum, alias) {
+					t.Errorf("runtime %q: %s alias %q is also a value — one spelling has to "+
+						"mean one thing", rt.Name(), f.Key, alias)
+				}
+			}
+		}
+	}
+}

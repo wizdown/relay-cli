@@ -1,4 +1,4 @@
-// relay-cli — run a fleet of relay CLI workers, and watch them work.
+// relay-cli — run relay CLI workers, and watch them work.
 //
 // One binary with no runtime dependencies. It reads ~/.relay/config, validates
 // it, runs every worker's poll loop, and serves a local page showing each
@@ -142,110 +142,146 @@ func baseVersion() string { return strings.TrimSuffix(version, snapshotSuffix) }
 // and docs/cli.md to it.
 var commands = []string{"init", "check", "run", "version", "help"}
 
-// helpText is the whole manual. It is long on purpose.
+// shortHelpMaxLines is the ceiling a test holds shortHelp to: one screen, on
+// the smallest terminal anyone actually uses.
+const shortHelpMaxLines = 40
+
+// shortHelp is what a bare `relay` and `-h` print: one screen, no rationale.
+//
+// The manual below is the reference, and it is the right thing to have — but it
+// is not what someone typing `relay` with no arguments is asking for. They want
+// the command names, the flags, and the decisions the config will demand of
+// them. Everything here earns its line by being one of those three; the reasons
+// behind them are one `relay help` away.
+const shortHelp = `relay ` + version + ` (` + channel + `) — a fleet of coding-CLI workers, driven by relay.
+
+USAGE
+  relay <command> [flags]
+
+COMMANDS ───────────────────────────────────────────────────────────────
+  init      write ~/` + relayDirName + `/` + configFileName + ` (never overwrites an existing one)
+  check     validate the config + probe every credential. Spends nothing
+  run       start every worker, open the dashboard on 127.0.0.1:7717
+  version   print the version
+  help      the full manual — config, models, runtimes, safeguards
+
+FLAGS ──────────────────────────────────────────────────────────────────
+  run     --port N (default 7717)  --no-open  --quiet  --no-archive
+  check   --timeout N seconds (default 15)
+  init    takes none
+
+QUICKSTART ─────────────────────────────────────────────────────────────
+  1  relay init      write the starting config
+  2  edit it         fill in the four required fields below
+  3  relay check     proves the wiring. Costs nothing
+  4  relay run       start the fleet
+
+WHAT YOU HAVE TO DECIDE — four fields per worker ───────────────────────
+  relay_mcp   the agent's credential URL from relay. A SECRET, shown ONCE
+  repo_dir    the checkout this agent works in. Its files and tooling are
+              what the agent can do — and a headless run rewrites them
+              with no prompt to answer
+  runtime     claude or codex. Install and sign in to that CLI yourself;
+              none is bundled
+  model       stated outright, in that runtime's own words:
+                claude → opus | sonnet | haiku
+                codex  → sol | terra | luna
+
+  Everything else is already bounded. Polls are free; only RUNS spend.
+  Never commit ~/` + relayDirName + `/` + configFileName + ` — every relay_mcp in it is live.
+
+  relay help  →  the full manual        ` + repoURL + `
+`
+
+// helpText is the whole manual, and `relay help` is what prints it.
 //
 // This CLI launches autonomous agents that spend money, inside a repo checkout,
 // with no prompt to answer — so the cost of someone (or some agent) guessing at
 // how it works is not a confusing error message, it is a fleet doing something
 // unintended. Everything needed to use it correctly is here, in one place, at
 // zero cost to read.
-const helpText = `relay ` + version + ` (` + channel + `) — run a fleet of relay CLI workers, and watch them work.
-
-Each worker polls relay over plain HTTP for work assigned to its agent. A poll
-runs no model and costs nothing. Only when relay actually has a task does the
-worker launch one headless CLI session, which claims and works exactly that one
-task and then goes idle again. While a session runs, relay-cli serves a local
-page showing it happen: every tool call with its target, every assistant turn,
-and the cost so far.
+//
+// It is a REFERENCE, though, which is why shortHelp exists above it: a bare
+// invocation is a question about command names, and answering it with four
+// screens of manual is how a manual stops being read at all. The rule for
+// editing this string is that a section states what a thing IS and what it
+// DEFAULTS to; the argument for why it works that way belongs in docs/, and a
+// reason that lives in two places will eventually disagree with itself.
+const helpText = `relay ` + version + ` (` + channel + `) — run relay CLI workers, and watch them work.
 
   one worker = one relay agent identity × one repo checkout × one CLI runtime
 
-This is BETA and stays on 0.x until the interface settles. It is safe to run —
-spend is bounded by default — but relay is still evolving, so an upgrade may
-need edits to your config.
+A worker polls relay over plain HTTP for work assigned to its agent. A poll runs
+no model and costs nothing. Only when relay has a task does the worker launch one
+headless CLI session, which claims and works exactly that task and then goes idle
+again. A local page shows it happen: every tool call with its target, every
+assistant turn, and the cost so far.
 
-USAGE
+BETA — 0.x until the interface settles. Safe to run, since spend is bounded by
+default, but an upgrade may need edits to your config.
+
+USAGE ───────────────────────────────────────────────────────────────────────
   relay <command> [flags]
 
-GETTING STARTED
-  You need two things: this binary, and a relay agent credential. Relay is at
-  https://relay.bytecurio.com/ — sign in with Google or Microsoft, and the free
-  demo workspace is enough. Nothing else is installed from here: the coding CLI
-  is separate (see RUNTIMES).
+COMMANDS ────────────────────────────────────────────────────────────────────
+  init      write ~/` + relayDirName + `/` + configFileName + ` with a starting config. Never overwrites
+  check     validate the config, probe every credential, and report what each
+            repo_dir gives its agent. Launches nothing, spends nothing
+  run       start every worker in the config and open the dashboard
+  version   print the version — the line to quote in a bug report
+  help      this manual
 
-    1. relay init
-       Creates ~/.relay/ with a starting config in it. Everything relay-cli
-       keeps lives there and nowhere else.
+FLAGS ───────────────────────────────────────────────────────────────────────
+  run    --port N       dashboard port on 127.0.0.1. Default 7717; if it is
+                        taken, the next free port is used and the URL printed
+         --no-open      do not open a browser (servers, containers, CI)
+         --quiet        do not echo worker logs to stdout. The dashboard and
+                        state/<name>/worker.log are unaffected
+         --no-archive   do not archive worker logs to logs/ on shutdown
+  check  --timeout N    seconds to wait for each credential probe. Default 15
+  init   none           and it never overwrites an existing config: that file
+                        holds credentials relay showed only once
 
-    2. Fill in the two placeholders it wrote.
-       "relay_mcp" — in your relay workspace, add the agent (onboard_agent),
-       then issue its credential (issue_agent_credential). Leave its
-       capabilities off; a first worker needs none. The secret is embedded in
-       the URL it returns and is shown EXACTLY ONCE.
-       "repo_dir" — the directory this agent should work in. Its CLAUDE.md,
-       skills and tooling are what the agent gets, so this is the choice that
-       decides what the worker is actually able to do. An empty directory is a
-       valid start, and this is the ladder from there:
-       ` + docsBase + `working-directory.md
-       Point it somewhere you are willing to have rewritten: a headless run is
-       fully autonomous and cannot answer an approval prompt.
+GETTING STARTED ─────────────────────────────────────────────────────────────
+  You need this binary and a relay agent credential. Relay is at
+  https://relay.bytecurio.com/ — sign in with Google or Microsoft; the free
+  demo workspace is enough. No coding CLI is installed from here. See RUNTIMES.
 
-    3. relay check
-       Validates the config, tests every credential, and prints what each
-       worker's repo_dir would give its agent — the CLAUDE.md, skills and
-       subagents the CLI will actually find there. Launches nothing and spends
-       nothing, so it is the cheap way to find a mistake.
-
-    4. relay run
-       Starts the workers and opens the dashboard on 127.0.0.1.
+  1  relay init       creates ~/` + relayDirName + `/ and a config: one worker per
+                   coding CLI found on PATH, two placeholders in each
+  2  fill them in     relay_mcp and repo_dir — see the next section
+  3  relay check      proves every credential and repo. Costs nothing
+  4  relay run        starts the workers and opens the dashboard
 
   Then delegate a task to that agent in relay and watch the run happen.
 
-COMMANDS
-  init         create ~/.relay/ with a starting config
-  check        validate the config, test every credential and report what each
-               repo_dir holds, launching nothing
-  run          start every worker in the config and open the dashboard
-  version      print the version
-  help         show this message
+WHAT YOU HAVE TO DECIDE ─────────────────────────────────────────────────────
+  Four fields per worker are required, because each is a decision relay-cli
+  cannot make for you. Everything else has a bounded default.
 
-WHERE EVERYTHING LIVES
-  ~/.relay/
-    config      your workers. 0600 — every relay_mcp in it is a live credential
-    state/      runtime state while a fleet is up; removed on shutdown
-    logs/       archived sessions
+  name        unique in the file. Names the state directory, the log, and the
+              row on the dashboard
+  relay_mcp   the agent's credential URL. In your relay workspace add the agent
+              (onboard_agent), then issue its credential
+              (issue_agent_credential) — leave its capabilities off, a first
+              worker needs none. The secret is embedded in the URL it returns
+              and is shown EXACTLY ONCE
+  repo_dir    the directory this agent works in. Its CLAUDE.md or AGENTS.md,
+              skills and tooling are what the agent gets, so this is the choice
+              that decides what the worker is actually able to do. An empty
+              directory is a valid start. Point it somewhere you are willing to
+              have rewritten: a headless run is fully autonomous and cannot
+              answer an approval prompt
+  runtime     claude or codex. The CLI itself is yours to install and sign in to
+  runtime_config.model
+              which model this worker runs, spelled in that runtime's own
+              vocabulary. See CHOOSING A MODEL
 
-  One location, and no flag moves it. A worker is a relay agent identity holding
-  a credential issued to you, which is user-scoped the way ~/.aws and ~/.kube
-  are — and a fleet routinely spans several checkouts, so there is no one repo
-  it would belong beside.
+  Preparing a repo_dir:
+    ` + docsBase + `working-directory.md
 
-FLAGS (for run)
-  --port N        dashboard port on 127.0.0.1. Default 7717. If it is taken,
-                  the next free port is used and the real URL is printed.
-  --no-open       do not open a browser (servers, containers, CI).
-  --quiet         do not echo worker logs to stdout. The dashboard and
-                  state/<name>/worker.log are unaffected.
-  --no-archive    do not archive worker logs to logs/ on shutdown.
-
-FLAGS (for check)
-  --timeout N     seconds to wait for each credential probe. Default 15.
-
-  init takes no flags. It never overwrites an existing config: that file holds
-  credentials relay showed only once.
-
-EXAMPLES
-  relay init                 # start here — writes a starting config
-  relay check                # is everything wired up? costs nothing
-  relay run
-  relay run --port 8080 --no-open
-  relay run --quiet          # dashboard only, quiet terminal
-
-THE CONFIG FILE
-  ~/.relay/config is JSON listing your workers, and // comments are allowed.
-  Four fields per worker are required — a name, a credential, a repo and a
-  runtime — because each is a decision relay-cli cannot make for you. Everything
-  else has a bounded default:
+THE CONFIG FILE ─────────────────────────────────────────────────────────────
+  ~/` + relayDirName + `/` + configFileName + ` is JSON listing your workers, and // comments are allowed.
 
     {
       "poll_seconds": 30,          // fleet-wide. default 30, min 5
@@ -261,122 +297,177 @@ THE CONFIG FILE
           "max_seconds_per_run": 900,  // default 900 — kill for one session
 
           "runtime_config": {          // settings the RUNTIME understands
-            "model": "sonnet",         // REQUIRED for claude
-            "max_usd_per_run": 5       // default 5 — cap inside one run
+            "model": "sonnet"          // REQUIRED for claude
           }
         }
       ]
     }
 
-  The fields outside "runtime_config" are enforced by relay-cli and mean the
-  same thing for every runtime. The ones inside are that CLI's own vocabulary.
+  Fields OUTSIDE runtime_config are enforced by relay-cli and mean the same for
+  every runtime. Fields INSIDE are that CLI's own vocabulary:
 
-  EVERY key is checked by name, at every level of the file, and one this version
-  does not accept is refused when the config loads — with the key you probably
-  meant, or with where that setting belongs. A key relay-cli does not read is a
-  ceiling you believe is in force and is not, so it is not ignored for the life
-  of the fleet. Values are checked for sanity too: a ceiling counts whole
-  things and cannot be negative, "relay_mcp" has to be an http(s) URL, and
-  "repo_dir" has to be an absolute path that exists. Every problem in the file
-  is reported at once.
+  claude   model             REQUIRED    opus | sonnet | haiku
+           max_usd_per_run   default 5   hard dollar cap INSIDE one run,
+                                         enforced by the CLI. 0 removes it
+
+  codex    model             REQUIRED    sol | terra | luna
+           reasoning_effort  default medium
+                                         minimal | low | medium | high | xhigh.
+                                         The biggest dial on what a run costs
+           sandbox           default workspace-write
+                                         read-only | workspace-write (repo_dir
+                                         and temp files) | danger-full-access
+           network_access    default true
+                                         may the agent's commands reach the
+                                         network. Off, git push and dependency
+                                         installs fail
+           web_search        default true
+                                         may the agent search the web
+
+  codex has NO per-run spend cap: the CLI has none to set. A codex worker is
+  bounded by max_seconds_per_run, max_runs_per_hour, reasoning_effort and the
+  plan limits of the account it is signed in as.
+
+  • Every key is checked by name, at every level of the file. One this version
+    does not accept is refused when the config loads — with the key you probably
+    meant, or with where that setting went. A key relay-cli does not read would
+    be a ceiling you believe is in force and is not.
+  • Values are checked for sanity too: a ceiling counts whole things and cannot
+    be negative, relay_mcp has to be an http(s) URL, and repo_dir an absolute
+    path that exists.
+  • Every problem in the file is reported at once.
 
   Full reference, per runtime:
     ` + docsBase + `configuration.md
-  Preparing a repo_dir:
-    ` + docsBase + `working-directory.md
 
   NEVER COMMIT IT: each relay_mcp is a live credential, and each is shown by
   relay exactly once.
 
-CHOOSING A MODEL
-  For claude, "runtime_config"."model" takes opus, sonnet or haiku — each alias
-  tracks the latest model in that family — or a full id like claude-opus-5 to
-  pin an exact version.
+CHOOSING A MODEL ────────────────────────────────────────────────────────────
+  Required for both runtimes, and checked against the models this build knows.
+  Write the short name — relay-cli pins it to the id beside it.
 
-    opus     open-ended briefs, wide blast radius, work you would review closely
-    sonnet   the usual default — capable, and cheaper per run
-    haiku    mechanical, well-specified work where turnaround is the win
+    opus     claude-opus-5      open-ended briefs, wide blast radius, work you
+                                review closely
+    sonnet   claude-sonnet-5    the usual default — capable, cheaper per run
+    haiku    claude-haiku-4-5   mechanical, well-specified work where
+                                turnaround is the win
 
-  It is required rather than defaulted on purpose. The CLI has its own default,
-  but that default moves between CLI versions — so an unchanged config would
-  quietly change what a worker costs the next time you upgraded claude. An
-  unattended process that spends money should say what it runs.
+    sol      gpt-5.6-sol        ambiguous, high-value work that needs judgement
+    terra    gpt-5.6-terra      the balanced one — capable, cheaper per run
+    luna     gpt-5.6-luna       narrow, repeatable, well-specified work
 
-  Pair a bigger model with a tighter max_runs_per_hour and a lower
-  max_usd_per_run. A wrong model name fails inside the run, not at startup, so
-  "claude --help" is the authority on what is currently accepted.
+  • The full ids are accepted too. What the short names are NOT is what they are
+    in the CLIs themselves: there, a bare "sonnet" means the latest model in
+    that family, which would change what a worker runs and costs from a config
+    nobody edited. Here each is pinned, and only a relay-cli release moves it.
+    Logs and the dashboard show the resolved id.
+  • Required rather than defaulted because each CLI's own default moves between
+    versions. An unattended process that spends money should say what it runs.
+  • A name that is neither is refused when the config loads: both CLIs take
+    whatever they are handed, so an unchecked typo would fail inside a session
+    you have already paid for, once a cycle.
+  • The lists are a snapshot — neither CLI can be asked what it accepts. For a
+    model newer than this build, see ENVIRONMENT.
+  • Pair a bigger model with a tighter max_runs_per_hour — and for claude a
+    lower max_usd_per_run, for codex a lower reasoning_effort.
 
-TWO CLOCKS
+RUNTIMES — no CLI is bundled, install them yourself ──────────────────────────
+  relay-cli ships adapters, not CLIs. An adapter is the code that knows how to
+  invoke one coding CLI and read what it prints; the CLI is a separate program
+  you install, and relay-cli finds it on PATH.
+
+    claude    SUPPORTED   live session feed, and a hard per-run spend cap the
+                          CLI enforces itself
+                          https://claude.com/claude-code
+    codex     SUPPORTED   live session feed, and NO per-run spend cap
+                          https://developers.openai.com/codex/cli
+    <other>   nothing else is offered today. An unsupported value is refused
+              when the config loads, rather than failing inside a run you have
+              already paid for
+
+  SIGN IN TO THE CLI FIRST. A worker launches it as you, so it authenticates the
+  way your own sessions do — "claude auth login", or "codex login" with your
+  ChatGPT account.
+
+  All of this is verified before anything starts, so a fleet that cannot work
+  stops once, by name, instead of failing every cycle in a background log:
+  • the CLI is installed and usable
+  • the installed build accepts the flags this adapter needs — streaming output,
+    the MCP wiring, the sandbox, the spend cap
+  • the CLI is signed in. Asked from its own stored credentials, so it costs
+    nothing. A CLI too old to be asked warns instead: unverifiable is not the
+    same as signed out
+  • a credential in the environment stands that check down for that CLI, and
+    says so out loud. See ENVIRONMENT
+
+ENVIRONMENT ─────────────────────────────────────────────────────────────────
+  RELAY_CLI_SKIP_RUNTIME_CHECK=1    skip the CLI flag check
+  ` + modelCheckEnv + `=1      pass an unlisted model through, with a
+                                    warning naming the worker it let past
+  ANTHROPIC_API_KEY, CODEX_API_KEY  authenticate a CLI by key. The sign-in check
+                                    stands down for that CLI: the key works
+                                    whatever the stored sign-in says, and what
+                                    relay-cli can see is that the variable is
+                                    set, not that it is valid
+
+COST AND SAFEGUARDS ─────────────────────────────────────────────────────────
   A POLL is curl-equivalent: it asks relay "do I have a task?" and runs no
   model, so an idle worker costs nothing however often it ticks.
   A RUN is one CLI session, and is the part that costs money.
-  max_runs_per_hour limits RUNS, not polls. Lowering it does not make a worker
-  check less often — it makes it act less often.
+  Every ceiling here counts RUNS. Lowering max_runs_per_hour does not make a
+  worker check less often — it makes it act less often.
 
-WHILE IT RUNS
-  Ctrl-C            stop every worker, archive logs to logs/, remove state/
-  Pause one worker  touch ~/.relay/state/<name>/PAUSED
-  Resume it         rm ~/.relay/state/<name>/PAUSED
-  A worker also pauses itself after repeated probe failures, two spend-cap
-  kills in a row, or an attention stall — each explains the fix in its log.
+    poll_seconds          default 30    fleet-wide, with a 5-second floor
+    max_runs_per_hour     default 12    runs started, per worker, per hour
+    max_seconds_per_run   default 900   wall-clock kill for one session
+    max_usd_per_run       default 5     claude only, enforced by the CLI
+    relaunch cooldown     60s, fixed    between one run ending and the next
 
-THE DASHBOARD
-  Read-only. There is no route that can pause a worker, launch a run, or edit a
-  ceiling, so a page open on your machine can only show what already happened.
+  Set any per-worker ceiling to 0 to remove it — deliberately. The one bound
+  that is not yours to remove is the floor under poll_seconds: it protects relay
+  rather than you, since an empty poll costs you nothing but relay still has to
+  answer it. A config below the floor is rejected rather than clamped.
+
+  A worker also pauses ITSELF rather than failing forever: after 10 consecutive
+  probe failures (a revoked credential, a dead host), after 2 spend-cap kills in
+  a row, or when the same task has needed its attention across 3 consecutive
+  runs with nothing changing. Each explains its own fix in the worker's log.
+
+WHILE IT RUNS ───────────────────────────────────────────────────────────────
+  Ctrl-C                 stop every worker, archive logs to logs/, remove state/
+  Pause one worker       touch ~/` + relayDirName + `/state/<name>/PAUSED
+  Resume it              rm ~/` + relayDirName + `/state/<name>/PAUSED
+  Apply a config edit    restart — state/ is rebuilt on every start
+
+  ~/` + relayDirName + `/
+    ` + configFileName + `    your workers. 0600 — every relay_mcp in it is a live credential
+    state/    runtime state while a fleet is up; removed on shutdown
+    logs/     archived sessions
+
+  One location, and no flag moves it: a credential issued to you is user-scoped
+  the way ~/.aws and ~/.kube are, and a fleet routinely spans several checkouts.
+
+  The dashboard is READ-ONLY. No route can pause a worker, launch a run or edit
+  a ceiling, so a page open on your machine can only show what already happened.
   It binds 127.0.0.1 only and no flag changes that: session output can contain
   anything the agent read. Connector secrets are redacted server-side and never
   reach the page.
-
-RUNTIMES — no CLI is bundled, install them yourself
-  relay-cli ships adapters, not CLIs. An adapter is the code that knows how to
-  invoke one coding CLI and read what it prints; the CLI itself is a separate
-  program you install, and relay-cli finds it on PATH.
-
-    claude    SUPPORTED — the only runtime supported today. Its adapter is
-              compiled in, and it is the one that produces the live session
-              feed. Install the CLI separately: https://claude.com/claude-code
-    codex     COMING SOON. Not offered yet: it is unverified against current
-              codex builds and has no per-run spend cap, and shipping a runtime
-              that cannot be bounded is not something this will do quietly. A
-              worker asking for it is refused at startup, by name.
-    <other>   nothing else is offered today. An unsupported "runtime" value is
-              refused when the config loads, rather than failing inside a run
-              you have already paid for.
-
-  At startup, every worker's runtime must prove its CLI is installed and usable,
-  and relay-cli refuses to start if one is not — a missing CLI is reported once,
-  by name, rather than failing on every cycle in a background log. For claude it
-  also checks that the installed build accepts the flags this adapter needs
-  (streaming output, the MCP config, the spend cap); set
-  RELAY_CLI_SKIP_RUNTIME_CHECK=1 to bypass that flag check.
-
-  SIGN IN TO THE CLI FIRST. A worker launches it as you, so it authenticates the
-  way your own sessions do — run it once yourself and log in. That is the one
-  prerequisite neither "check" nor startup can verify for you: proving a CLI can
-  authenticate costs a model call, and check spends nothing. A CLI that is
-  installed but not signed in starts, fails immediately, and says so in
-  state/<name>/worker.log.
-
-EVERYTHING COSTS WHAT IT SAYS
-  Polls are free and runs are not, and every ceiling here counts runs. The
-  defaults bound you before you configure anything: 12 runs an hour, $5 inside
-  one run, a 15-minute kill. Set any of them to 0 to remove it — deliberately.
-
-  The one bound that is not yours to remove is the 5-second floor under
-  poll_seconds. That one protects relay rather than you: an empty poll costs you
-  nothing, but relay still has to answer it. A config below the floor is
-  rejected instead of clamped.
-
-  A worker also pauses ITSELF rather than failing forever: after repeated probe
-  failures (a revoked credential, a dead host), after two spend-cap kills in a
-  row, or when the same task has needed its attention across consecutive runs
-  with nothing changing. Each explains its own fix in the worker's log.
 
 Source and full documentation:
   ` + repoURL + `
 `
 
-func usage(w *os.File) { fmt.Fprint(w, helpText) }
+// usage prints the manual when asked for by name, and the one-screen summary
+// otherwise. `relay` with no arguments and `-h` are the same question — which
+// commands are there — and `relay help` and `--help` ask for the reference.
+func usage(w *os.File, full bool) {
+	if full {
+		fmt.Fprint(w, helpText)
+		return
+	}
+	fmt.Fprint(w, shortHelp)
+}
 
 // displayConfigPath is the config path as a human would write it. Errors that
 // tell someone which file to edit read better with the ~ they typed than with
@@ -390,13 +481,16 @@ func main() {
 	// not a neutral default here — it launches autonomous sessions that spend
 	// money — so it has to be asked for by name.
 	if len(os.Args) < 2 {
-		usage(os.Stdout)
+		usage(os.Stdout, false)
 		return
 	}
 
 	switch os.Args[1] {
-	case "help", "-h", "--help":
-		usage(os.Stdout)
+	case "-h":
+		usage(os.Stdout, false)
+		return
+	case "help", "--help":
+		usage(os.Stdout, true)
 		return
 	case "version", "-v", "--version":
 		fmt.Println(versionLine())

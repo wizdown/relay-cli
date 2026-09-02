@@ -28,9 +28,12 @@ make release VERSION=x.y.z   # cut a release — see Cutting a release below
 
 Go 1.22+, no other dependencies, no network needed. **A fresh clone passes its
 tests with no coding CLI installed** — that is a property to protect, not an
-accident. The seam is `checkRuntime` in `config.go`, a package variable the
-parsing tests stub via `noRuntimeCheck(t)`. A test that genuinely needs a CLI
-gates on it being present. To verify you haven't broken it:
+accident. There are two seams, both package variables: `checkRuntime` in
+`config.go`, stubbed by the parsing tests via `noRuntimeCheck(t)`, and
+`installedRuntimes` in `init.go`, which decides which workers `relay init`
+writes live and is stubbed via `withInstalledRuntimes(t, …)` — an init test
+describes a machine rather than the one it runs on. A test that genuinely needs
+a CLI gates on it being present. To verify you haven't broken it:
 
 ```bash
 env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
@@ -49,13 +52,14 @@ the suite — and the pre-commit hook knows it.
 
 | File | Owns |
 |---|---|
-| `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, the `version` constant, and `helpText` — the full manual |
-| `init.go` | `relay init` and the short starting config it writes |
+| `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, the `version` constant, `shortHelp` (the one-screen summary a bare `relay` prints) and `helpText` (the full manual) |
+| `init.go` | `relay init`, the short starting config it writes, and the PATH check that decides which workers in it are live |
 | `config.go` | config parse, defaults, and every validation done before launch — problems are accumulated and reported together |
 | `probe.go` | MCP JSON-RPC over `net/http` — the token-free gate, no model anywhere |
 | `worker.go` | the poll loop: ceilings, the three circuit breakers, locking, timeouts |
 | `runtime.go` | the `Runtime` interface, `runtimeField` (what each runtime accepts in `runtime_config`), and the bash-adapter bridge |
 | `runtime_claude.go` | the native claude adapter: argv, `stream-json` parsing, exit classification |
+| `runtime_codex.go` | the native codex adapter: `codex exec` argv, `--json` event parsing, exit classification, and the sign-in check |
 | `events.go` | the event bus → `worker.log`, `events.ndjson`, SSE |
 | `server.go` | `/api/snapshot`, `/api/stream`, and the embedded page. **Read-only by design** |
 | `redact.go` | `Scrub` / `RedactURL`. Everything user-facing goes through these |
@@ -77,12 +81,15 @@ Outside the binary:
 
 ```bash
 relay init     # creates ~/.relay/config (never overwrites an existing one)
+               # one live worker per CLI on PATH, the rest commented out;
+               # refuses outright when neither CLI is installed
 relay check    # validate config + test every credential — launches nothing, spends nothing
 relay run      # start the fleet, open the dashboard on 127.0.0.1:7717
 ```
 
-A bare `relay` prints the whole manual — starting is asked for by name because it
-launches autonomous sessions that spend money.
+A bare `relay` prints a one-screen summary and `relay help` prints the whole
+manual — starting is asked for by name because it launches autonomous sessions
+that spend money.
 
 Every command reads `~/.relay/config`. **One location, and no flag moves it** —
 `state/` and `logs/` sit beside it. Don't add a path flag back without a reason
@@ -98,9 +105,10 @@ relay init
 
 Four fields per worker are required — `name`, `relay_mcp`, `repo_dir`,
 `runtime` — because each is a decision relay-cli cannot make for anyone, plus
-whatever the named runtime requires inside `runtime_config` (`model`, for
-claude). Everything else is already bounded: 12 runs/hour, $5 per run, a
-15-minute kill, a 30-second fleet poll with a fixed 5-second floor. The full
+whatever the named runtime requires inside `runtime_config` (`model`, for both
+claude and codex). Everything else is already bounded: 12 runs/hour, $5 per run
+(claude only), a 15-minute kill, a 30-second fleet poll with a fixed 5-second
+floor. The full
 reference for users is **[docs/configuration.md](docs/configuration.md)**.
 
 The split is the thing to preserve: fields **outside** `runtime_config` are
@@ -150,18 +158,65 @@ is still the right way to prove a config parses.
 
 | | |
 |---|---|
-| `claude` | **The only supported runtime.** Adapter compiled in. `runtime_config.model` is REQUIRED — `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`. |
-| `codex` | **Coming soon, not offered.** Refused at config load. Don't document it as usable, and don't add a `codex` branch anywhere outside `ResolveRuntime`. |
+| `claude` | **Supported**, adapter compiled in and native. `runtime_config.model` is REQUIRED — `claude-opus-5`, `claude-sonnet-5` or `claude-haiku-4-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`, which the CLI enforces itself. |
+| `codex` | **Supported**, adapter compiled in and native. Takes `model` (REQUIRED, same reason — `gpt-5.6-sol`, `gpt-5.6-terra` or `gpt-5.6-luna`), `reasoning_effort`, `sandbox`, `network_access`, `web_search`. **It has no per-run spend cap** — none exists in the CLI — so `max_usd_per_run` is claude's alone and a codex worker is bounded by `max_seconds_per_run`, `max_runs_per_hour` and its account's plan limits. Say that plainly wherever the runtimes are compared; it is the one thing someone choosing between them needs. |
+
+**`model` is validated against a declared list on both**, with each CLI's short
+names accepted as aliases *pinned* to one id (`sonnet` → `claude-sonnet-5`,
+`sol` → `gpt-5.6-sol`) and resolved when the config loads, so an argv, a log
+line and the dashboard all name the model that ran. Both CLIs read a bare
+`sonnet` as "the latest Sonnet", which is the drift `model` is required to
+prevent — an alias whose meaning moves is the field defaulting itself. Both
+lists are SNAPSHOTS, since neither CLI can be asked what it accepts, so
+`RELAY_CLI_SKIP_MODEL_CHECK=1` passes an unlisted name through with a warning:
+without it a check meant to save one paid run would cost every run until someone
+cut a release. Adding a model is `claudeModels` / `codexModels` plus the field
+table in `docs/configuration.md` — the same loop as any other config change.
 
 No CLI is bundled. The adapter ships; the CLI is installed separately, found on
 `PATH`, and proves itself at startup by its `--help` rather than by a version.
+Both also prove they are SIGNED IN, and a signed-out CLI stops the start: every
+worker using it would fail in the same second, once a cycle. `codex login status`
+and `claude auth status --json` both read stored credentials and spend nothing,
+which is what makes this a startup check rather than something the first run
+discovers. Two rules hold that check honest, and neither is optional — a check
+that refuses a fleet which would have worked is worse than no check:
+**a CLI too old to be asked warns and continues**, and **a credential in the
+environment (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, a third-party provider) stands
+it down**, because those authenticate a run whatever the stored sign-in says.
+Both paths WARN rather than pass silently: the second one is relay-cli trusting a
+variable it cannot validate, and a stale key hiding a signed-out CLI is exactly
+what the check was added to catch. A healthy start stays silent — a warning
+printed every time is one nobody reads on the start that matters.
 
-The bash-adapter path (`bashRuntime`) is **complete but gated off** by
-`bashAdaptersEnabled` in `runtime.go`, and is the half of codex support that
-already exists. Keep it compiling and keep its test passing — it is not dead
-code, it is unreleased code. Shipping codex means flipping that constant and
-adding a `runtimes/` directory back; nothing else should need to change. The
-contract is **[docs/contributing/adapters.md](docs/contributing/adapters.md)**.
+`relay init` asks a third question, weaker than either of those: is the CLI on
+`PATH` at all (`cliLocator`)? That decides whether a runtime's worker is written
+live or commented out in the starting config, and it is deliberately not
+`Check()` — a signed-out or outdated CLI is installed, and telling someone to
+install what they already have would be the wrong fix. With neither CLI present
+`init` writes nothing: a worker is a coding CLI.
+
+Two codex-specific trades are deliberate and documented in
+[docs/runtimes.md](docs/runtimes.md); don't quietly reverse either:
+
+- **The harness contract rides in the prompt**, not in a system prompt, because
+  `codex exec` has no flag for one and its config key for the job has not
+  reliably applied in non-interactive runs. A contract that silently does not
+  arrive is a worker that claims two tasks in a session and tells nobody.
+- **The connector URL is a `-c` override**, so it is visible in `ps`. The
+  isolated alternative is a private `CODEX_HOME`, which breaks a ChatGPT sign-in:
+  `auth.json` lives there and its refresh tokens are single-use. Working sign-in
+  beat the smaller exposure. Everything else about that URL still goes through
+  `Scrub`.
+
+Both shipped adapters are native for the same reason: only a native adapter can
+parse a CLI's event stream into session events, and only a native one can declare
+`ConfigFields()`. The bash-adapter path (`bashRuntime`) is **complete but gated
+off** by `bashAdaptersEnabled` in `runtime.go` — it is the extension point for a
+CLI nobody here has written an adapter for, not the pattern a shipped runtime
+follows. Keep it compiling and keep its test passing: it is not dead code, it is
+unreleased code. The contract is
+**[docs/contributing/adapters.md](docs/contributing/adapters.md)**.
 
 ## Documentation rules
 
@@ -170,6 +225,7 @@ Docs drift because nobody decides where a sentence belongs. Here it is decided:
 | Question | Where it is answered |
 |---|---|
 | How do I install and run one worker? | `readme.md` — and nothing else lives there |
+| Which runtime should I pick, and what bounds it? | `docs/runtimes.md` — the comparison lives there, not in the readme |
 | What does this config field do? | `docs/configuration.md`, the only field reference |
 | What commands and flags exist? | `docs/cli.md` |
 | How do I run several workers? | `docs/configuration.md` — the CLI side only |
@@ -210,7 +266,7 @@ a reader will look and be wrong:
 |---|---|
 | a config field or its default | the tables in `docs/configuration.md`, the `THE CONFIG FILE` block in `helpText`, and `docs/contributing/config-fields.md` if the loop itself moved |
 | a field you **removed** | delete every mention from `docs/configuration.md` and `helpText`; add it to `removedKeys` with what to use instead — the error carries the migration, the docs do not |
-| a command or a flag | `helpText`, `docs/cli.md`, and the quickstart in `readme.md` if it appears there |
+| a command or a flag | `shortHelp` **and** `helpText`, `docs/cli.md`, and the quickstart in `readme.md` if it appears there |
 | a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` **and** the summary list under `## Safeguards` in `readme.md` |
 | what the dashboard shows or serves | `docs/cli.md` |
 | a runtime's support status or its startup check | `docs/runtimes.md`, and the runtime table in this file |
@@ -227,8 +283,9 @@ Some of that is enforced and the rest is not, so know which is which:
   default or a removed key is missing from `docs/configuration.md`, and when the
   `jsonc` example there no longer validates.
 - `TestHelpQuotesTheRealDefaults` and the flag/command tests hold `helpText` to
-  the code, and `docs_pages_test.go` holds `docs/cli.md` to the same command and
-  flag lists — a flag now has to be documented in both places or the build fails.
+  the code, `TestShortHelp*` holds `shortHelp` to the same command and flag lists
+  and to a 40-line ceiling, and `docs_pages_test.go` holds `docs/cli.md` to those
+  lists too — a flag has to be documented in all three or the build fails.
 - `docs_pages_test.go` also fails when a **link** between two markdown files
   points at a file or a heading anchor that does not exist, and when **sample
   output** quotes a version the code has never been: every page must show the
@@ -262,7 +319,8 @@ secret shapes in the message.
    in the commit message. Same for a PR title and body, which no hook can see.
 2. `make check` passes.
 3. If you changed a config field → [the config loop](docs/contributing/config-fields.md).
-4. If you added a flag or command, `helpText` documents it — a test enforces it.
+4. If you added a flag or command, `shortHelp` and `helpText` both document it —
+   a test enforces both.
 5. Docs updated in the same commit — walk [the table above](#documentation-is-part-of-the-change-not-a-follow-up).
 6. **Do not touch the version constant** — [Versions](#versions-and-the-snapshot-marker).
 

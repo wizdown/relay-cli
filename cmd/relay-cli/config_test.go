@@ -359,6 +359,7 @@ func TestAcceptsZeroSpendCap(t *testing.T) {
 // printed instructions tell someone to.
 func TestInitTemplateValidates(t *testing.T) {
 	noRuntimeCheck(t)
+	withInstalledRuntimes(t, "claude", "codex")
 	dir := filepath.Join(t.TempDir(), relayDirName)
 	var out strings.Builder
 	if err := initConfig(dir, &out); err != nil {

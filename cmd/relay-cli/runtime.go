@@ -11,20 +11,25 @@
 // alone is relay's per-agent instructions_md, which the agent receives over MCP.
 // An adapter passes along the runtime contract and nothing more.
 //
-// `claude` is the only runtime offered today, and its adapter is native Go —
-// which is what lets relay run with no jq, no curl and no scripts on disk.
+// `claude` and `codex` are the runtimes offered today, and both adapters are
+// native Go — which is what lets relay run with no jq, no curl and no scripts
+// on disk. A native adapter is what buys the live session feed: both CLIs emit
+// one JSON object per event, and only Go in this repo can turn those into the
+// events the dashboard draws.
 //
-// A second kind exists in this file and does not run: bashRuntime drives a
+// A third kind exists in this file and does not run: bashRuntime drives a
 // runtimes/<name>.sh through the contract documented on bashAdapterEnv below.
-// It is complete and tested, but bashAdaptersEnabled is false, because nothing
-// but claude has been verified against a current CLI and an extension point
-// that cannot be supported is a promise this repo is not ready to keep. Codex
-// support is the reason it is kept rather than deleted.
+// It is complete and tested, but bashAdaptersEnabled is false, because a bash
+// adapter contributes an argv and nothing else — no stream parsing and no
+// declared config keys — and an extension point that cannot be supported is a
+// promise this repo is not ready to keep. It is kept for the CLI nobody has
+// written an adapter for yet.
 package main
 
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,6 +120,35 @@ type runtimeField struct {
 	// Default applies when the key is absent and not required. Empty means the
 	// setting simply goes unset, which is not the same as zero.
 	Default string
+	// Enum, when set, is the complete list of values this key accepts. A value
+	// outside it is refused when the config loads rather than by the CLI inside
+	// a run that has already been paid for — which is the whole reason this
+	// table exists.
+	Enum []string
+	// EnumMoves marks an Enum this repo does not own: a SNAPSHOT of a list that
+	// changes on someone else's release schedule, which model names do and
+	// sandbox modes do not. A sandbox mode is printed in the CLI's own --help
+	// and moves only when the CLI does, so a value outside that set is simply
+	// wrong. A model name can be right on the morning a provider ships it and
+	// still be absent from a relay-cli built the week before.
+	//
+	// It does not soften the check — an unlisted value still refuses the start,
+	// because a typo is far likelier than a launch and the cost of guessing
+	// wrong is a paid run per cycle. What it changes is that the error names the
+	// way past it, and modelCheckEnv lets an operator who knows better say so.
+	EnumMoves bool
+	// Aliases are short names accepted for a value in Enum, and RESOLVED when
+	// the config loads: what reaches the CLI, the argv, the log and the
+	// dashboard is always the value they map to, never the alias.
+	//
+	// Resolving rather than passing through is the whole point. Both CLIs spell
+	// an alias as "the LATEST model in that family", so a worker configured as
+	// `sonnet` would change what it runs — and what it costs — the next time one
+	// shipped, from a config nobody edited. That is the drift `model` is
+	// required to prevent, so an alias here is a shorthand for one pinned model
+	// and stays that until this table says otherwise. It also means an alias
+	// works for a CLI that has none of its own: codex takes full slugs only.
+	Aliases map[string]string
 	// Doc is one line, used in the error a missing required field produces and
 	// in the generated reference table.
 	Doc string
@@ -125,6 +159,11 @@ type fieldKind int
 const (
 	fieldString fieldKind = iota
 	fieldNumber
+	// fieldBool is a JSON true/false, canonicalised to "true"/"false". Written
+	// as a boolean rather than as a string because that is what someone editing
+	// a JSON file expects to write, and "false" quoted is the value that reads
+	// as on.
+	fieldBool
 )
 
 // Runtime is one CLI, wrapped.
@@ -162,6 +201,19 @@ const (
 	outcomeBudget  = "budget_exhausted"
 )
 
+// cliLocator is implemented by a runtime that can say whether its CLI is
+// present on this machine, without deciding whether it is usable.
+//
+// A weaker question than Check(), deliberately. `relay init` asks this one to
+// choose which workers to write live, and a signed-out or outdated CLI is
+// installed — telling someone to install what they already have would be the
+// wrong fix, and Check()'s answer is the right one everywhere else. A runtime
+// that cannot answer is simply not offered in a starting config; only a
+// runtime that says yes is written as a worker that runs.
+type cliLocator interface {
+	Installed() bool
+}
+
 // versioned is implemented by adapters that can report which CLI they found.
 // Optional: a bash adapter contributes an argv and nothing else, so it has no
 // way to answer this.
@@ -170,18 +222,21 @@ type versioned interface {
 	Path() string
 }
 
-// bashAdaptersEnabled gates every runtime that is not claude.
+// bashAdaptersEnabled gates every runtime that has no adapter compiled in.
 //
 // The bash-adapter path below is complete and covered by tests; what it is
 // missing is verification against a real CLI, which is the whole of what
-// "supported" means here. Flipping this to true is one half of shipping codex
-// support — the other is restoring runtimes/ with an adapter in it.
+// "supported" means here. It is also the weaker half of the contract: a script
+// gets no stream parsing and declares no config keys, so a worker driven by one
+// cannot even be told which model to run. Both compiled-in runtimes are native
+// for that reason; flipping this constant is for a third-party CLI, not for
+// anything this repo ships.
 const bashAdaptersEnabled = false
 
 // supportedRuntimes is every runtime a config may name today. The reference
 // tables in docs/configuration.md and the test that guards them are both
 // written from this, so a new adapter is documented by existing.
-func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter} }
+func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter, codexAdapter} }
 
 // ResolveRuntime maps a worker's "runtime" field to an adapter.
 //
@@ -191,20 +246,14 @@ func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter} }
 // is installed separately and found on PATH, and its adapter is asked to prove
 // that at startup.
 func ResolveRuntime(name, relayDir string) (Runtime, error) {
-	if name == "claude" {
-		return claudeAdapter, nil
+	for _, rt := range supportedRuntimes() {
+		if rt.Name() == name {
+			return rt, nil
+		}
 	}
 	if !bashAdaptersEnabled {
-		// Naming codex specifically matters: "unknown runtime" would read as a
-		// typo, and someone who deliberately wrote "codex" would go looking for
-		// the spelling mistake rather than learning that the runtime is simply
-		// not offered yet.
-		if name == "codex" {
-			return nil, fmt.Errorf("claude is the only supported runtime today, and codex support is coming soon.\n" +
-				"       Set \"runtime\": \"claude\".")
-		}
-		return nil, fmt.Errorf("relay-cli supports one runtime: claude.\n"+
-			"       %q is not offered. Set \"runtime\": \"claude\".", name)
+		return nil, fmt.Errorf("relay-cli supports two runtimes: claude and codex.\n"+
+			"       %q is not offered. Set \"runtime\" to one of those.", name)
 	}
 	script := filepath.Join(relayDir, "runtimes", name+".sh")
 	if _, err := os.Stat(script); err != nil {
@@ -346,6 +395,65 @@ func bashAdapterEnv(rc *RunContext) []string {
 		env = append(env, "RUNTIME_"+strings.ToUpper(k)+"="+rc.Worker.RuntimeConfig[k])
 	}
 	return env
+}
+
+// ── sign-in checks ───────────────────────────────────────────────────────────
+
+// Both CLIs can be asked whether they are signed in without spending anything,
+// and both are asked at startup: a signed-out CLI fails every cycle in the same
+// second, so refusing to start is the honest answer. The two helpers below are
+// what every adapter's sign-in check shares.
+
+// warnOut is where the two warnings below go. A variable so a test can read what
+// was printed: a warning nobody can assert on is a warning that silently stops
+// being printed.
+var warnOut io.Writer = os.Stderr
+
+// envCredentialName returns the first of these environment variables that is
+// set, or "" when none is.
+//
+// This is the escape hatch that keeps the sign-in check from causing the outage
+// it exists to prevent. A key exported into the environment authenticates a run
+// perfectly well while the CLI's own status says "not logged in" — codex says so
+// explicitly about CODEX_API_KEY — and refusing to start a fleet that would have
+// worked is worse than not checking at all.
+//
+// It returns the NAME rather than a bool because standing down silently is its
+// own trap: what relay-cli knows is that a key is present, not that it is valid,
+// so the one case where a stale variable left over from something else hides a
+// genuinely signed-out CLI has to be visible. See warnSignInStandDown.
+func envCredentialName(names ...string) string {
+	for _, n := range names {
+		if os.Getenv(n) != "" {
+			return n
+		}
+	}
+	return ""
+}
+
+// warnSignInStandDown says why a signed-out CLI is being allowed to start
+// anyway, and names the variable responsible.
+//
+// Validating the key would cost a model call, which is the one thing `check`
+// may not spend — so relay-cli trusts its presence. That trust is worth stating
+// out loud: an ANTHROPIC_API_KEY or OPENAI_API_KEY exported for something
+// unrelated, on a machine whose CLI is genuinely signed out, is exactly the
+// combination that would otherwise turn a startup error back into a failure per
+// cycle in a log nobody is watching.
+func warnSignInStandDown(cli, envName, loginCmd string) {
+	fmt.Fprintf(warnOut, "warning: %s reports it is NOT signed in, but %s is set — starting anyway.\n"+
+		"         relay-cli cannot tell whether that key is valid without spending a call, so it\n"+
+		"         trusts it. If every run fails immediately, the key is wrong or left over from\n"+
+		"         something else: run `%s` and unset %s.\n", cli, envName, loginCmd, envName)
+}
+
+// warnUnverifiedSignIn is the answer when a CLI cannot be asked at all — an
+// older build with no status command, or one that will not run here.
+// Unverifiable is not the same as signed out: the start continues, and a real
+// failure surfaces on the first run instead.
+func warnUnverifiedSignIn(cli string, detail string) {
+	fmt.Fprintf(warnOut, "warning: could not ask %s whether it is signed in (%s).\n"+
+		"         Continuing anyway; if it is not, the first run will say so in worker.log.\n", cli, detail)
 }
 
 func defaultOutcome(status int) string {

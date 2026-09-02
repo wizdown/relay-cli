@@ -16,18 +16,22 @@ the answer is yes. An idle worker costs one HTTP handshake and zero tokens.
 
 **Beta, and 0.x.** Spend is bounded by default, but configuration and the worker
 contract may still change between releases — see [Versioning](#versioning).
-[Claude Code](https://claude.com/claude-code) is the only supported runtime
-today; no CLI is bundled.
+[Claude Code](https://claude.com/claude-code) and the
+[Codex CLI](https://developers.openai.com/codex/cli) are the supported runtimes;
+no CLI is bundled.
 
 ## Prerequisites
 
 - A [Relay](https://relay.bytecurio.com/) workspace, where your tasks and agents
   live. Sign in with Google or Microsoft; the free workspace is enough.
-- [Claude Code](https://claude.com/claude-code) on your `PATH`, **and signed
-  in** — run `claude` once and log in. A worker launches it as you.
-  - `relay check` does not catch this: proving a CLI can authenticate costs a
-    model call, and `check` spends nothing.
-  - So an unauthenticated CLI fails on the first run, not before it.
+- A coding CLI on your `PATH`, **and signed in** — a worker launches it as you.
+  Either [Claude Code](https://claude.com/claude-code) (`claude`, then log in) or
+  the [Codex CLI](https://developers.openai.com/codex/cli) (`codex login`, with
+  your ChatGPT account).
+  - `relay check` verifies the sign-in for both — each CLI can answer that from
+    its own stored credentials, without spending anything.
+  - A signed-out CLI stops the start, by name. Nothing launches, because every
+    worker using it would fail in the same second.
 - Nothing else — one static binary. Go 1.22+ only to build it yourself.
 
 ## Install
@@ -86,14 +90,15 @@ instructions, capabilities and claim limits — is configured in relay, not here
 relay init
 ```
 
-That writes `~/.relay/config`: one worker, commented, every ceiling filled in.
-Two placeholders are yours to replace — search the file for these two values:
+That writes `~/.relay/config`: one worker per coding CLI it finds on `PATH`,
+commented, every ceiling filled in. Two placeholders per worker are yours to
+replace — search the file for these values:
 
 ```jsonc
 {
   "workers": [
     {
-      "name":      "worker-1",
+      "name":      "worker-claude",
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME",  // ← paste yours
       "repo_dir":  "/path/to/your/repo",                                    // ← choose one
       "runtime":   "claude",
@@ -107,14 +112,23 @@ That is the file with its comments and ceilings stripped out. Both placeholders
 are rejected by name, so an unfinished config fails in `check` rather than
 inside a run you have already paid for.
 
-- **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md`, skills
-  and tooling. An empty one is a valid start;
+- **A worker you have no CLI for arrives commented out** — with the CLI to
+  install named above it, since `relay run` refuses a runtime it cannot find.
+  Install it, delete the `// ` from those lines, and you have two workers. With
+  neither CLI installed, `init` writes nothing and says which to install.
+
+- **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md` (or
+  `AGENTS.md` for codex), skills and tooling. An empty one is a valid start;
   [The working directory](docs/working-directory.md) is the ladder from there.
 - **Point it somewhere you are willing to have rewritten** — a headless run is
   autonomous and can never answer an approval prompt.
 - **The ceilings are written for you, and bounded** — 6 runs/hour, $5 per run, a
   15-minute kill, a poll every 30s. Delete one and its default applies, bounded
   too (12 runs/hour). [Configuration](docs/configuration.md) has the rest.
+- **Which runtime, and what it costs to be wrong** — `claude` enforces the $5
+  per-run cap itself; `codex` has no such cap, so a codex worker is bounded by
+  the kill, the hourly ceiling and its plan limits. [Runtimes](docs/runtimes.md)
+  is the comparison.
 
 ### 3. Check it, then run it
 
@@ -129,7 +143,7 @@ nothing, so it is the cheap way to find a typo or a revoked credential:
 relay 0.1.1 (beta) — checking 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
-  worker-1                 ok    queue: resume 0 · attention 0 · todo 0
+  worker-claude                 ok    queue: resume 0 · attention 0 · todo 0
     repo /Users/you/code/scratch   nothing to load — the agent arrives with its task and its tools
 ```
 
@@ -151,11 +165,11 @@ Create a task in relay and delegate it to the agent from step 1. Within one poll
 interval the terminal shows the whole cycle:
 
 ```text
-14:22:08  worker-1           poll  resume 0 · attention 0 · todo 1
-14:22:08  worker-1           ▶ run started   claude · ~/code/scratch
-14:22:11  worker-1           → relay:claim_task   task_id=42
-14:22:31  worker-1           → Write   hello.html
-14:23:02  worker-1           ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
+14:22:08  worker-claude           poll  resume 0 · attention 0 · todo 1
+14:22:08  worker-claude           ▶ run started   claude · ~/code/scratch
+14:22:11  worker-claude           → relay:claim_task   task_id=42
+14:22:31  worker-claude           → Write   hello.html
+14:23:02  worker-claude           ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
 ```
 
 The result is in your `repo_dir`, and the task is waiting in relay for review.
@@ -167,7 +181,8 @@ state, not a symptom.
 Defaults are bounded without configuring anything:
 
 - **12 runs/hour** — the ceiling that actually caps spend.
-- **$5 per run**, and a **15-minute** wall-clock kill.
+- **$5 per run** (claude; codex has no per-run cap), and a **15-minute**
+  wall-clock kill for either.
 - **60s relaunch cooldown**, fixed — two launches never go back-to-back.
 - **Three circuit breakers**, which pause a worker rather than let it fail
   forever.
@@ -177,8 +192,8 @@ Defaults are bounded without configuring anything:
 The kill switch, worth knowing before you need it:
 
 ```bash
-touch ~/.relay/state/worker-1/PAUSED   # stop it next tick
-rm ~/.relay/state/worker-1/PAUSED      # resume it
+touch ~/.relay/state/worker-claude/PAUSED   # stop it next tick
+rm ~/.relay/state/worker-claude/PAUSED      # resume it
 ```
 
 ## Documentation
@@ -188,8 +203,11 @@ rm ~/.relay/state/worker-1/PAUSED      # resume it
 | [Configuration](docs/configuration.md) | Every config field, per runtime, with defaults — and what changes with more than one worker |
 | [The working directory](docs/working-directory.md) | What a `repo_dir` gives the agent: `CLAUDE.md`, skills, subagents, settings |
 | [Commands & dashboard](docs/cli.md) | Commands, flags, and what the page shows |
-| [Runtimes](docs/runtimes.md) | Supported CLIs, and where codex stands |
+| [Runtimes](docs/runtimes.md) | The supported CLIs, what each run does, and what bounds it |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → where to look |
+
+The binary carries its own copy: `relay` prints a one-screen summary, `relay
+help` the full manual.
 
 ## Versioning
 

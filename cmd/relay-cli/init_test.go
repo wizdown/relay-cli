@@ -8,9 +8,24 @@ import (
 	"testing"
 )
 
-// initHere runs init into a fresh ~/.relay-shaped directory and returns it.
+// withInstalledRuntimes fixes what init believes is on PATH, so these tests
+// describe a machine instead of the one they happen to run on.
+//
+// Without it the file init writes would differ between a laptop with both CLIs
+// and a clone with neither, and `go test ./...` passing with no coding CLI
+// installed is a property this repo keeps.
+func withInstalledRuntimes(t *testing.T, names ...string) {
+	t.Helper()
+	prev := installedRuntimes
+	installedRuntimes = func() []string { return names }
+	t.Cleanup(func() { installedRuntimes = prev })
+}
+
+// initHere runs init into a fresh ~/.relay-shaped directory and returns it, on
+// a machine with both CLIs — the shape most of these tests are about.
 func initHere(t *testing.T) (string, string) {
 	t.Helper()
+	withInstalledRuntimes(t, "claude", "codex")
 	dir := filepath.Join(t.TempDir(), relayDirName)
 	var out bytes.Buffer
 	if err := initConfig(dir, &out); err != nil {
@@ -33,9 +48,10 @@ func TestInitWritesAConfigThePlaceholdersAreTheOnlyProblemWith(t *testing.T) {
 	if err == nil {
 		t.Fatal("a freshly written config still has both placeholders and must not validate")
 	}
-	// Exactly the two decisions relay-cli cannot make for anyone, reported
-	// together — a third complaint would mean the template itself is malformed.
-	for _, want := range []string{"relay_mcp", "repo_dir", "placeholder", "2 fix"} {
+	// Exactly the two decisions relay-cli cannot make for anyone, per worker,
+	// reported together — a fifth complaint would mean the template itself is
+	// malformed.
+	for _, want := range []string{"relay_mcp", "repo_dir", "placeholder", "4 fix"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error should point at the placeholders, missing %q:\n%v", want, err)
 		}
@@ -48,14 +64,15 @@ func TestInitWritesAConfigThePlaceholdersAreTheOnlyProblemWith(t *testing.T) {
 // The comments are the documentation for someone who has only the binary, so
 // "it parses" is not enough — it has to still be annotated after stripping.
 func TestInitTemplateIsAnnotated(t *testing.T) {
-	if !strings.Contains(initConfigTemplate, "//") {
+	template := renderInitConfig([]string{"claude", "codex"})
+	if !strings.Contains(template, "//") {
 		t.Fatal("the generated config has no comments; a user with just the binary " +
 			"has nothing else in front of them")
 	}
 	// Comment-stripping is what makes annotation possible, so prove it on this
 	// exact text rather than trusting the general case.
-	stripped := string(stripLineComments([]byte(initConfigTemplate)))
-	if strings.Contains(stripped, "NEVER COMMIT") {
+	stripped := string(stripLineComments([]byte(template)))
+	if strings.Contains(stripped, "becomes ~/.relay/state") {
 		t.Error("comments survived stripping")
 	}
 	if !strings.Contains(stripped, `"relay_mcp"`) {
@@ -69,11 +86,12 @@ func TestInitTemplateIsAnnotated(t *testing.T) {
 // The link has to be a full URL, because this file lands in ~/.relay/ and its
 // reader may never have cloned anything for a relative path to point into.
 func TestInitTemplatePointsAtTheRealReference(t *testing.T) {
-	if !strings.Contains(initConfigTemplate, docsBase+"configuration.md") {
+	template := renderInitConfig([]string{"claude", "codex"})
+	if !strings.Contains(template, docsBase+"configuration.md") {
 		t.Error("the template should link the full field reference, as a URL its " +
 			"reader can open — it deliberately does not repeat it")
 	}
-	if !strings.Contains(initConfigTemplate, docsBase+"working-directory.md") {
+	if !strings.Contains(template, docsBase+"working-directory.md") {
 		t.Error("repo_dir is the choice that decides what the worker can do; the " +
 			"template should link how to prepare one")
 	}
@@ -190,16 +208,161 @@ func TestInitOutputExplainsWhatToDoNext(t *testing.T) {
 // Both placeholders must be obviously placeholders — and the endpoint one must
 // not look like a real secret to the repo's own credential scanners.
 func TestInitTemplateUsesObviousPlaceholders(t *testing.T) {
-	if !strings.Contains(initConfigTemplate, "wzh_REPLACE_ME") {
+	template := renderInitConfig([]string{"claude", "codex"})
+	if !strings.Contains(template, "wzh_REPLACE_ME") {
 		t.Error("the endpoint placeholder should be wzh_REPLACE_ME: it reads as a " +
 			"placeholder, and the pre-commit hook and CI scanner allow it by name")
 	}
-	if !strings.Contains(initConfigTemplate, "relay.example.com") {
+	if !strings.Contains(template, "relay.example.com") {
 		t.Error("the placeholder host should be relay.example.com")
 	}
 	// Rejected by name in config.go, so the two have to stay in step.
-	if !strings.Contains(initConfigTemplate, repoDirPlaceholder) {
+	if !strings.Contains(template, repoDirPlaceholder) {
 		t.Errorf("the template should write %q into repo_dir — that exact string is "+
 			"what the validator rejects by name", repoDirPlaceholder)
+	}
+}
+
+// The file has to match the machine. relay-cli bundles no CLI and refuses to
+// start on a runtime it cannot find, so a worker naming one that is not
+// installed would be a config that fails the first `relay check` for a reason
+// the user did nothing to cause.
+func TestInitWritesLiveWorkersOnlyForInstalledRuntimes(t *testing.T) {
+	for _, tc := range []struct {
+		installed []string
+		live      []string
+		off       []string
+	}{
+		{installed: []string{"claude", "codex"}, live: []string{"claude", "codex"}},
+		{installed: []string{"claude"}, live: []string{"claude"}, off: []string{"codex"}},
+		{installed: []string{"codex"}, live: []string{"codex"}, off: []string{"claude"}},
+	} {
+		t.Run(strings.Join(tc.installed, "+"), func(t *testing.T) {
+			cfg := renderInitConfig(tc.installed)
+			// What the parser sees is the file with its comments gone, which is
+			// exactly the question here: which workers actually exist.
+			active := string(stripLineComments([]byte(cfg)))
+
+			for _, name := range tc.live {
+				if !strings.Contains(active, `"runtime": "`+name+`"`) {
+					t.Errorf("%s is installed but has no live worker:\n%s", name, cfg)
+				}
+			}
+			for _, name := range tc.off {
+				if strings.Contains(active, `"runtime": "`+name+`"`) {
+					t.Errorf("%s is not installed, so its worker must be commented out:\n%s", name, cfg)
+				}
+				// Commented out and unexplained is just a wall of text: the file
+				// has to say which CLI is missing and how to get it.
+				if !strings.Contains(cfg, initInstallHints[name].URL) {
+					t.Errorf("the commented %s worker does not say how to install it:\n%s", name, cfg)
+				}
+			}
+		})
+	}
+}
+
+// Uncommenting the second worker is the whole edit — no comma to add, no brace
+// to chase. That is the moment this file has to be right, so it is proved by
+// doing it the way a user would: delete the prefix from those lines.
+func TestInitCommentedWorkerUncommentsIntoValidJSON(t *testing.T) {
+	noRuntimeCheck(t)
+
+	for _, live := range []string{"claude", "codex"} {
+		t.Run(live, func(t *testing.T) {
+			off := "codex"
+			if live == "codex" {
+				off = "claude"
+			}
+
+			cfg := renderInitConfig([]string{live})
+			commented := commentOut(initWorkerBlocks[off])
+			if !strings.Contains(cfg, commented) {
+				t.Fatalf("the %s worker is not in the file, commented:\n%s", off, cfg)
+			}
+
+			var restored strings.Builder
+			for _, line := range strings.Split(strings.TrimSuffix(commented, "\n"), "\n") {
+				body, ok := strings.CutPrefix(line, "    // ")
+				if !ok {
+					t.Fatalf("a commented line does not carry the uniform prefix: %q", line)
+				}
+				restored.WriteString("    " + body + "\n")
+			}
+
+			filled := strings.Replace(cfg, commented, restored.String(), 1)
+			filled = strings.ReplaceAll(filled, repoDirPlaceholder, repoHere(t))
+			filled = strings.ReplaceAll(filled, "wzh_REPLACE_ME", "wzh_secretvalue")
+
+			if err := loadErr(write(t, filled)); err != nil {
+				t.Fatalf("uncommenting the %s worker does not leave a valid config: %v", off, err)
+			}
+		})
+	}
+}
+
+// A worker IS a coding CLI. Writing a config for a machine that has none would
+// hand someone a file whose every worker fails the start, so init says what to
+// install and creates nothing — leaving the second run, after they install one,
+// a clean directory rather than the overwrite refusal.
+func TestInitRefusesWhenNoCodingCLIIsInstalled(t *testing.T) {
+	withInstalledRuntimes(t)
+	dir := filepath.Join(t.TempDir(), relayDirName)
+
+	var out bytes.Buffer
+	err := initConfig(dir, &out)
+	if err == nil {
+		t.Fatal("init wrote a config for a machine with no runtime to run it")
+	}
+	for _, want := range []string{
+		"https://claude.com/claude-code",
+		"https://developers.openai.com/codex/cli",
+		"Nothing was written",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal is missing %q:\n%v", want, err)
+		}
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("%s was created before the refusal; running init again after "+
+			"installing a CLI would then hit the overwrite refusal instead", dir)
+	}
+	if out.Len() > 0 {
+		t.Errorf("init printed a success message for a config it did not write:\n%s", out.String())
+	}
+}
+
+// Two workers in one file mean two credentials, and a shared one is rejected at
+// startup — so the placeholders must differ before anyone edits them.
+func TestInitGivesEachWorkerItsOwnEndpointPlaceholder(t *testing.T) {
+	cfg := renderInitConfig([]string{"claude", "codex"})
+	if strings.Count(cfg, "wzh_REPLACE_ME\"") != 1 {
+		t.Errorf("the two workers share an endpoint placeholder, which the config "+
+			"loader rejects as a duplicate credential:\n%s", cfg)
+	}
+}
+
+// The three refusals all create nothing, so their order is chosen by what is
+// most useful to hear. A config that already exists will not be written
+// whatever is on PATH — and the credentials in it are the thing worth naming —
+// so it outranks the missing-CLI refusal.
+func TestInitReportsAnExistingConfigBeforeAMissingCLI(t *testing.T) {
+	withInstalledRuntimes(t)
+	dir := filepath.Join(t.TempDir(), relayDirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, configFileName)
+	if err := os.WriteFile(path, []byte(`{"workers":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	err := initConfig(dir, &out)
+	if err == nil {
+		t.Fatal("init must refuse when a config already exists")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("the refusal should name the config that is already there, got: %v", err)
 	}
 }

@@ -20,6 +20,52 @@ func TestHelpDocumentsEveryRunFlag(t *testing.T) {
 	})
 }
 
+// The short help is what a bare `relay` prints, and its whole job is to answer
+// "which commands are there" in one screen. Both halves of that are worth
+// holding: a command missing from it is one nobody finds, and a short help that
+// grows back into the manual is the thing this split removed.
+func TestShortHelpListsEveryCommandAndFlag(t *testing.T) {
+	for _, cmd := range commands {
+		if !strings.Contains(shortHelp, "  "+cmd) {
+			t.Errorf("command %q is not listed in shortHelp", cmd)
+		}
+	}
+	var ro runOpts
+	var co checkOpts
+	for _, fs := range []*flag.FlagSet{runFlags(&ro), checkFlags(&co)} {
+		fs.VisitAll(func(f *flag.Flag) {
+			if !strings.Contains(shortHelp, "--"+f.Name) {
+				t.Errorf("flag --%s is not in shortHelp", f.Name)
+			}
+		})
+	}
+}
+
+// One screen, and a terminal is 80 columns until told otherwise.
+func TestShortHelpFitsOneScreen(t *testing.T) {
+	lines := strings.Split(strings.TrimRight(shortHelp, "\n"), "\n")
+	if len(lines) > shortHelpMaxLines {
+		t.Errorf("shortHelp is %d lines, over the %d-line ceiling — it is the "+
+			"summary, not the manual. Put it in helpText instead.", len(lines), shortHelpMaxLines)
+	}
+	for i, l := range lines {
+		if n := len([]rune(l)); n > 80 {
+			t.Errorf("shortHelp line %d is %d columns, over 80: %s", i+1, n, l)
+		}
+	}
+}
+
+// The summary has to name the four decisions a config demands, because it is
+// the only thing a user reads before opening that file. Anything else in it is
+// a convenience; these are what make `relay init` finishable.
+func TestShortHelpNamesEveryRequiredField(t *testing.T) {
+	for _, want := range []string{"relay_mcp", "repo_dir", "runtime", "model", "relay help"} {
+		if !strings.Contains(shortHelp, want) {
+			t.Errorf("shortHelp does not mention %q", want)
+		}
+	}
+}
+
 func TestHelpDocumentsEveryCommand(t *testing.T) {
 	for _, cmd := range []string{"init", "run", "check", "version", "help"} {
 		if !strings.Contains(helpText, "  "+cmd) {

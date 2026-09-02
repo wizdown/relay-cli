@@ -59,6 +59,7 @@ type RunSummary struct {
 	Status    int        `json:"status"`
 	Outcome   string     `json:"outcome,omitempty"`
 	CostUSD   float64    `json:"cost_usd"`
+	Usage     TokenUsage `json:"usage"`
 	NumTurns  int        `json:"num_turns"`
 	ToolCalls int        `json:"tool_calls"`
 	Queue     QueueState `json:"queue"`
@@ -81,6 +82,9 @@ type WorkerStatus struct {
 
 	RunsLastHour int     `json:"runs_last_hour"`
 	TotalCostUSD float64 `json:"total_cost_usd"`
+	// TotalTokens is the same running total for a runtime that reports tokens
+	// rather than dollars. One of the two is always zero for a given worker.
+	TotalTokens int `json:"total_tokens"`
 
 	CurrentRun *RunSummary  `json:"current_run,omitempty"`
 	Runs       []RunSummary `json:"runs,omitempty"`
@@ -414,6 +418,7 @@ func (r *WorkerRunner) runCycle(ctx context.Context, queue QueueState) {
 	r.mu.Lock()
 	r.status.CurrentRun = nil
 	r.status.TotalCostUSD += summary.CostUSD
+	r.status.TotalTokens += summary.Usage.Total()
 	r.runs = append(r.runs, summary)
 	// Bounded: a worker running for weeks must not accumulate an unbounded run
 	// list in memory. events.ndjson keeps the full record.
@@ -425,7 +430,7 @@ func (r *WorkerRunner) runCycle(ctx context.Context, queue QueueState) {
 	r.bus.Publish(Event{Worker: r.w.Name, Kind: KindCycleEnd, RunID: runID,
 		Cycle: &CycleInfo{
 			Runtime: r.w.Runtime, Status: status, Outcome: outcome, Explanation: explanation,
-			CostUSD: summary.CostUSD, NumTurns: summary.NumTurns,
+			CostUSD: summary.CostUSD, Usage: usageOrNil(summary.Usage), NumTurns: summary.NumTurns,
 			DurationMS: ended.Sub(summary.StartedAt).Milliseconds(),
 		}})
 
@@ -582,6 +587,9 @@ func (r *WorkerRunner) applySessionEvent(runID string, summary *RunSummary, ev S
 	case "result":
 		summary.CostUSD = ev.CostUSD
 		summary.NumTurns = ev.NumTurns
+		if ev.Usage != nil {
+			summary.Usage = *ev.Usage
+		}
 	}
 	r.mu.Lock()
 	if r.status.CurrentRun != nil && r.status.CurrentRun.RunID == runID {
@@ -609,18 +617,29 @@ func (r *WorkerRunner) selfPause(reason string) {
 	r.setState(StatePaused, reason)
 }
 
-// noteBudgetKill — a spend cap that fires once is information; twice in a row is
-// a wall. The first is always explained in full (the adapter wrote the text);
-// this only decides when explaining again has stopped being useful.
+// usageOrNil keeps an all-zero usage out of the event stream, so a claude run —
+// which reports dollars and no tokens — carries no empty token object.
+func usageOrNil(u TokenUsage) *TokenUsage {
+	if u.Total() == 0 {
+		return nil
+	}
+	return &u
+}
+
+// noteBudgetKill — a limit that fires once is information; twice in a row is a
+// wall. The first is always explained in full (the adapter wrote the text, and
+// it is the adapter that knows whether the limit was a spend cap or a plan
+// window); this only decides when explaining again has stopped being useful.
 func (r *WorkerRunner) noteBudgetKill() {
 	n := readCounter(r.budgetKillFile()) + 1
 	writeCounter(r.budgetKillFile(), n)
 	if maxBudgetKills > 0 && n >= maxBudgetKills {
-		r.selfPause(fmt.Sprintf(`%d consecutive runs were killed by the $%g max_usd_per_run cap.
+		r.selfPause(fmt.Sprintf(`%d consecutive runs were cut off by a spend or usage limit.
   This worker will not make progress by trying again — every run restarts the
-  same task and stops at the same point, spending the cap each time. Raise
-  runtime_config.max_usd_per_run for this worker in %s and relaunch, or split
-  the task in relay so a run can finish inside the cap.`, n, r.w.RCFloat("max_usd_per_run"), displayConfigPath()))
+  same task and stops at the same point. Which limit it was, and how to raise it,
+  is in the explanation logged with each of those runs; the other way out is to
+  split the task in relay so a run can finish inside it, or to change this
+  worker's ceilings in %s.`, n, displayConfigPath()))
 	}
 }
 

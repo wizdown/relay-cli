@@ -113,6 +113,11 @@ func (w *Worker) RCFloat(key string) float64 {
 	return n
 }
 
+// RCBool reads one runtime_config value as a boolean. Values are canonicalised
+// to "true"/"false" when the config is validated, so anything else is a key the
+// worker's runtime does not declare and reads as false.
+func (w *Worker) RCBool(key string) bool { return w.RuntimeConfig[key] == "true" }
+
 // Config is the validated worker list plus where it came from.
 type Config struct {
 	Path     string `json:"path"`
@@ -148,7 +153,7 @@ var removedKeys = map[string]string{
 	"system_prompt_file":       "agent identity now lives in relay: move the file's text into the agent's instructions_md (update_agent, or the relay agent console)",
 	"min_run_interval_seconds": "replaced by a fixed 60s relaunch cooldown. To make a worker act less often, lower max_runs_per_hour",
 	"permission_mode":          "a headless run is always fully autonomous — there is no prompt it could answer",
-	"codex_mcp_transport":      "export CODEX_MCP_TRANSPORT=mcp-remote before launching instead",
+	"codex_mcp_transport":      "there is no transport to choose: a codex worker is given relay as a streamable-HTTP MCP server directly, with no stdio bridge in between",
 	"runtime_args":             "removed. Raw argv could silently override the flags this harness depends on. Every setting a runtime accepts is now a declared key in \"runtime_config\"",
 	"mcp_endpoint":             "renamed to \"relay_mcp\"",
 	"model":                    "moved into \"runtime_config\": it is spelled in the runtime's own vocabulary, not relay-cli's",
@@ -724,6 +729,13 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 		}
 
 		switch f.Kind {
+		case fieldBool:
+			var b bool
+			if json.Unmarshal(v, &b) != nil {
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s must be true or false, unquoted — %s", label, f.Key, f.Doc))
+				continue
+			}
+			out[f.Key] = strconv.FormatBool(b)
 		case fieldNumber:
 			var n float64
 			switch {
@@ -752,6 +764,25 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 					"      runtime verbatim, so write it as %q", label, f.Key, strings.TrimSpace(s)))
 				continue
 			}
+			// A value outside a declared set is a typo the CLI would only reject
+			// from inside a run. `workspace_write` for `workspace-write` is the
+			// shape of it: plausible, wrong, and expensive to find out later.
+			//
+			// An alias resolves HERE rather than being handed on, so everything
+			// downstream — the argv, worker.log, the dashboard — names the model
+			// that actually ran rather than a family whose latest member moves.
+			if canonical, ok := f.Aliases[s]; ok {
+				s = canonical
+			}
+			if len(f.Enum) > 0 && !contains(f.Enum, s) {
+				if by := movingEnumStoodDownBy(f); by != "" {
+					warnUnlistedValue(label, runtimeName, f, s, by)
+					out[f.Key] = s
+					continue
+				}
+				problems = append(problems, unlistedValueProblem(label, runtimeName, f, s))
+				continue
+			}
 			out[f.Key] = s
 		}
 	}
@@ -769,6 +800,109 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 	}
 
 	return out, problems
+}
+
+// modelCheckEnv stands down a check on a list this repo does not own.
+//
+// The model names a runtime declares are a snapshot: a provider can ship one
+// between two relay-cli releases, and an operator who reads that announcement
+// should not have to wait for a release here to run it. Without an escape
+// hatch, a check meant to save one paid run would cost every run until someone
+// cut a version — which is the check causing the outage it exists to prevent,
+// the same trap the CLI capability probe is written around.
+//
+// It is deliberately not the default. A name outside the list is a typo far
+// more often than it is tomorrow's model, and the operator setting this has
+// said out loud which one they have.
+const modelCheckEnv = "RELAY_CLI_SKIP_MODEL_CHECK"
+
+// movingEnumStoodDownBy names the variable letting an unlisted value through,
+// or "" when the check stands.
+//
+// RELAY_CLI_SKIP_RUNTIME_CHECK counts too: it already means "this install is
+// newer or stranger than this build knows", and someone who set it to get past
+// a reshaped --help should not then be stopped by a stale model list for the
+// same reason.
+func movingEnumStoodDownBy(f runtimeField) string {
+	if !f.EnumMoves {
+		return ""
+	}
+	for _, name := range []string{modelCheckEnv, "RELAY_CLI_SKIP_RUNTIME_CHECK"} {
+		if os.Getenv(name) != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+// unlistedValueProblem reports a value outside a declared set, and for a set
+// that MOVES it also carries the way past it. Naming the escape hatch in the
+// error is the whole reason a snapshot can be enforced at all: the alternative
+// is an operator with a valid new model and a fleet that will not start,
+// reading the source to find out why.
+func unlistedValueProblem(label, runtimeName string, f runtimeField, s string) string {
+	msg := fmt.Sprintf("  %s: runtime_config.%s is %q — it takes one of: %s",
+		label, f.Key, s, strings.Join(f.Enum, ", "))
+	if aliases := aliasNames(f); len(aliases) > 0 {
+		msg += fmt.Sprintf("\n      or one of these, which relay-cli pins to the id beside it: %s",
+			strings.Join(aliases, ", "))
+	}
+	if f.EnumMoves {
+		msg += fmt.Sprintf("\n      That is the list runtime %q offered when this relay-cli was built. If\n"+
+			"      %q is newer than this build, set %s=1 to run it anyway.",
+			runtimeName, s, modelCheckEnv)
+	}
+	return msg
+}
+
+// warnUnlistedValue says out loud what was let through and why, for the same
+// reason the sign-in stand-down does: relay-cli is trusting something it cannot
+// verify. Silence here would turn a typo into a fleet that fails every cycle
+// with the answer sitting in an environment variable nobody remembers setting.
+func warnUnlistedValue(label, runtimeName string, f runtimeField, s, by string) {
+	fmt.Fprintf(warnOut, "warning: %s sets runtime_config.%s to %q, which is not one runtime %q offered when\n"+
+		"         this relay-cli was built (%s) — %s is set, so it is passed through\n"+
+		"         unchecked. If the name is a typo, every run will fail on it.\n",
+		label, f.Key, s, runtimeName, strings.Join(f.Enum, ", "), by)
+}
+
+// aliasNames lists a field's aliases as "alias (id)", ordered by the value they
+// resolve to so the line reads in the same order as the one above it. Sorted
+// rather than ranged over directly: a map order would reshuffle the error text
+// between two runs against the same config.
+func aliasNames(f runtimeField) []string {
+	out := make([]string, 0, len(f.Aliases))
+	for a := range f.Aliases {
+		out = append(out, a)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if ii, jj := indexOf(f.Enum, f.Aliases[out[i]]), indexOf(f.Enum, f.Aliases[out[j]]); ii != jj {
+			return ii < jj
+		}
+		return out[i] < out[j]
+	})
+	for i, a := range out {
+		out[i] = fmt.Sprintf("%s (%s)", a, f.Aliases[a])
+	}
+	return out
+}
+
+func indexOf(list []string, s string) int {
+	for i, v := range list {
+		if v == s {
+			return i
+		}
+	}
+	return len(list)
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func fieldKeys(fields []runtimeField) []string {

@@ -55,13 +55,42 @@ func (c *claudeRuntime) ConfigFields() []runtimeField {
 	return []runtimeField{
 		{
 			Key: "model", Kind: fieldString, Required: true,
-			Doc: "which model to run: opus, sonnet or haiku, or a full id like claude-opus-5 to pin one",
+			Enum: claudeModels, Aliases: claudeModelAliases, EnumMoves: true,
+			Doc: "which model to run: claude-opus-5, claude-sonnet-5 or claude-haiku-4-5, or the alias opus, sonnet or haiku",
 		},
 		{
 			Key: "max_usd_per_run", Kind: fieldNumber, Default: "5",
 			Doc: "hard dollar cap INSIDE one run, enforced by the CLI. 0 removes it",
 		},
 	}
+}
+
+// claudeModels is every model a claude worker may run, most capable first.
+//
+// Checked when the config loads for the same reason codex's list is: the CLI
+// takes whatever --model it is handed and a wrong name is not an error until
+// the model call inside a session that has already started, so a fleet spends
+// its hour finding out. This one is a SNAPSHOT too — see EnumMoves — and
+// modelCheckEnv is how an operator runs a model newer than their relay-cli.
+var claudeModels = []string{
+	"claude-opus-5",    // open-ended briefs, wide blast radius, work you review closely
+	"claude-sonnet-5",  // the usual default — capable, and cheaper per run
+	"claude-haiku-4-5", // mechanical, well-specified work where turnaround is the win
+}
+
+// claudeModelAliases are the short names the CLI itself offers, kept because
+// they are what everyone writes — and PINNED, which the CLI's own are not.
+//
+// `claude --model sonnet` means "the latest Sonnet", so a config saying sonnet
+// runs a different model the week after one ships, with nothing in the file
+// changed. That is precisely the drift that makes "model" a required field
+// here, so relay-cli resolves an alias to the id below before the CLI sees it:
+// the argv, the log and the dashboard all name the model that actually ran.
+// Moving one of these to a new release is a decision this table records.
+var claudeModelAliases = map[string]string{
+	"opus":   "claude-opus-5",
+	"sonnet": "claude-sonnet-5",
+	"haiku":  "claude-haiku-4-5",
 }
 
 // requiredFlags is what this adapter actually depends on, each with the reason
@@ -91,6 +120,13 @@ var requiredClaudeFlags = []struct{ flag, why string }{
 func (c *claudeRuntime) Check() error {
 	c.once.Do(c.probe)
 	return c.err
+}
+
+// Installed reports whether the CLI is on PATH — "is it here", not Check()'s
+// "will it run". `relay init` writes a worker for a runtime that answers yes.
+func (c *claudeRuntime) Installed() bool {
+	_, err := exec.LookPath("claude")
+	return err == nil
 }
 
 // Version is the installed CLI's version, for diagnostics. Empty if unknown.
@@ -123,15 +159,17 @@ func (c *claudeRuntime) probe() {
 		return
 	}
 
-	missing := missingClaudeFlags(help)
-	if len(missing) > 0 {
+	if missing := missingClaudeFlags(help); len(missing) > 0 {
 		c.err = fmt.Errorf("the installed claude (%s at %s) does not support what relay-cli needs.\n"+
 			"       Its --help does not offer:\n%s\n"+
 			"       Upgrade Claude Code (https://claude.com/claude-code), then try again.\n"+
 			"       To run anyway, set RELAY_CLI_SKIP_RUNTIME_CHECK=1 — each session will\n"+
 			"       then fail on the missing flag instead of failing here, once.",
 			orDefault(c.version, "version unknown"), path, strings.Join(missing, "\n"))
+		return
 	}
+
+	c.err = claudeLoginError()
 }
 
 // missingClaudeFlags reports which of this adapter's requirements the installed
@@ -151,6 +189,67 @@ func missingClaudeFlags(help []byte) []string {
 		missing = append(missing, fmt.Sprintf("         %-28s %s", "--output-format stream-json", "the live session feed — the reason relay-cli exists"))
 	}
 	return missing
+}
+
+// claudeLoginError asks the CLI whether it is signed in.
+//
+// `claude auth status --json` reads the local credentials and prints
+// {"loggedIn":true,…} without calling the API, so this costs nothing. It is the
+// reason the manual no longer says a claude sign-in cannot be verified: it can,
+// and a fleet whose CLI is signed out should not start. Signed out, every worker
+// launches a session that fails in the same second and costs the setup, once a
+// cycle, in a log nobody is watching.
+//
+// Three answers, not two. Signed in passes; signed out fails the start; and
+// "cannot tell" — an older build with no `auth status`, or one that will not run
+// here — warns and continues, because unverifiable is not the same as unusable.
+func claudeLoginError() error {
+	out, err := exec.Command("claude", "auth", "status", "--json").CombinedOutput()
+
+	var status struct {
+		LoggedIn   *bool  `json:"loggedIn"`
+		AuthMethod string `json:"authMethod"`
+	}
+	if json.Unmarshal(jsonObject(out), &status) != nil || status.LoggedIn == nil {
+		warnUnverifiedSignIn("claude", orDefault(errText(err), "its auth status could not be read"))
+		return nil
+	}
+	if *status.LoggedIn {
+		return nil
+	}
+	// A key in the environment authenticates a run whatever the cached sign-in
+	// says, and refusing to start a fleet that would have worked is the worse
+	// failure. Third-party providers carry their own credentials the same way.
+	// Standing down is said out loud, because relay-cli is trusting a variable it
+	// cannot validate.
+	if name := envCredentialName("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+		"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"); name != "" {
+		warnSignInStandDown("claude", name, "claude auth login")
+		return nil
+	}
+	return fmt.Errorf("the installed claude is not signed in.\n" +
+		"       Run `claude auth login` as the user this fleet runs as — a worker\n" +
+		"       launches the CLI as you, so it authenticates the way your own sessions\n" +
+		"       do. relay-cli never writes or moves those credentials.")
+}
+
+// jsonObject picks the JSON object out of a command's output, since a CLI may
+// print a notice or an update banner around it. Empty when there is none, which
+// unmarshals as a failure and reads as "cannot tell".
+func jsonObject(out []byte) []byte {
+	start := bytes.IndexByte(out, '{')
+	end := bytes.LastIndexByte(out, '}')
+	if start < 0 || end < start {
+		return nil
+	}
+	return out[start : end+1]
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // claudeVersion is best effort: it is shown in the startup banner and in error
@@ -186,7 +285,7 @@ func (c *claudeRuntime) InspectWorkdir(dir string) string {
 	if n := countSkills(filepath.Join(dir, ".claude", "skills")); n > 0 {
 		parts = append(parts, plural(n, "skill", "skills"))
 	}
-	if n := countSubagents(filepath.Join(dir, ".claude", "agents")); n > 0 {
+	if n := countFilesWithSuffix(filepath.Join(dir, ".claude", "agents"), ".md"); n > 0 {
 		parts = append(parts, plural(n, "subagent", "subagents"))
 	}
 	if s := describeSettings(filepath.Join(dir, ".claude", "settings.json")); s != "" {
@@ -236,14 +335,17 @@ func hasFileNamed(dir, name string) bool {
 	return false
 }
 
-func countSubagents(dir string) int {
+// countFilesWithSuffix counts the plain files in dir with a given extension —
+// claude's subagents are .md, codex's agents are .toml. Shared because the
+// question is the same one; what differs is only where each CLI looks.
+func countFilesWithSuffix(dir, suffix string) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
 	}
 	n := 0
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), suffix) {
 			n++
 		}
 	}

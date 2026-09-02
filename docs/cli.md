@@ -8,23 +8,35 @@ needs neither `jq` nor `curl`.
 ## Commands
 
 ```bash
-relay                 # print the full manual
+relay                 # one-screen summary of everything below
 relay init            # write ~/.relay/config (never overwrites an existing one)
 relay check           # validate the config and test every credential
 relay run             # start every worker and open the dashboard
 relay version         # print the version
+relay help            # the full manual
 ```
 
 | Command | |
 |---|---|
-| `init` | write a starting config. Takes no flags. |
+| `init` | write a starting config — one worker per coding CLI found on `PATH`, the rest commented out. Takes no flags. |
 | `check` | validate the config, probe every credential and report what each `repo_dir` holds, launching nothing and spending nothing |
 | `run` | start every worker in the config and open the dashboard |
 | `version` | print the version |
-| `help` | the full manual — also what a bare invocation prints |
+| `help` | the full manual — every field, default and safeguard, in the binary |
 
 Starting is asked for by name rather than being the default, because it launches
 autonomous sessions that spend money.
+
+## Help comes in two sizes
+
+| Invocation | Prints |
+|---|---|
+| `relay`, `relay -h` | one screen: the commands, the flags, and the four fields a worker requires |
+| `relay help`, `relay --help` | the manual — config reference, model lists, runtimes, environment variables, safeguards |
+
+A bare invocation is asking "which commands are there", so it is answered in one
+screen. The manual carries this directory's content inside the binary, for
+anyone who downloaded a release and has no checkout.
 
 `version` prints one line, and it is the line to quote in a bug report:
 
@@ -47,6 +59,11 @@ relay 0.1.1 (beta) — checking 2 worker(s) from /Users/you/.relay/config
   orchestrator-claude      ok    queue: resume 0 · attention 0 · todo 0
     repo /Users/you/relay/orchestrator   nothing to load — the agent arrives with its task and its tools
 ```
+
+The `repo` line is written in that worker's own runtime vocabulary: a codex
+worker reports what codex loads — `AGENTS.md`, `.codex/agents/*.toml`, a project
+`.codex/config.toml` — so a file written for the wrong CLI is visible here rather
+than after a day of sessions that never read it.
 
 Two questions, one pass. The queue line proves the credential works and relay is
 reachable.
@@ -92,8 +109,8 @@ directory, with `state/` and `logs/` beside it.
 
 ## What the dashboard shows
 
-It runs the CLI with `--output-format stream-json`, so a session arrives line by
-line while it happens:
+It asks each CLI for its event stream — `--output-format stream-json` for claude,
+`--json` for codex — so a session arrives line by line while it happens:
 
 ```text
 14:22:08  wizhub-claude   poll  resume 0 · attention 0 · todo 1
@@ -102,24 +119,32 @@ line while it happens:
 14:22:13  wizhub-claude   → relay:claim_task   task_id=42
 14:22:31  wizhub-claude   → Edit   src/handlers.go
 14:23:02  wizhub-claude   ■ run ok   status 0 · $0.31 · 7 turns · 54.1s
+14:24:40  app-codex       ▶ run started   codex · /Users/you/code/app
+14:24:44  app-codex       → relay:claim_task
+14:25:19  app-codex       → Bash   bash -lc 'go test ./...'
+14:26:02  app-codex       ■ run ok   status 0 · 41.2k tok · 82.0s
 ```
+
+A codex run shows **tokens rather than dollars**: that CLI reports usage and no
+cost, so a cost figure would have to be invented. A claude run shows the cost the
+CLI reports. Both appear in the same place on the cards and in the run lines.
 
 - **Worker cards** — state (`idle · polling · running · cooldown · ceiling ·
   paused · probe failing`), the last poll's three buckets, runs used against the
-  hourly ceiling, cost so far, and a countdown to the next poll.
+  hourly ceiling, cost or tokens so far, and a countdown to the next poll.
 - **Every poll, including the empty ones** — which is how you tell "idle" from
   "wedged". Consecutive empty polls collapse to one line.
 - **The live session** — each tool call with its target, and the result envelope
-  with its cost. Which MCP servers came up is on the session line: a relay that
-  is `needs-auth` produces a run that looks healthy and does nothing.
+  with its cost or its token usage. For claude, which MCP servers came up is on
+  the session line: a relay that is `needs-auth` produces a run that looks
+  healthy and does nothing.
 - **The effective config**, every default resolved — the one question reading the
   config file cannot answer.
 
 ## It cannot change anything
 
-No route pauses a worker, starts a run, or edits a ceiling. A page that can spend
-money is a different thing to reason about than one that only shows what already
-happened. Pausing stays a file:
+No route pauses a worker, starts a run, or edits a ceiling — the page only shows
+what already happened. Pausing stays a file:
 
 ```bash
 touch ~/.relay/state/<name>/PAUSED
@@ -134,17 +159,19 @@ endpoint is never in an HTTP response.
 ```text
 relay 0.1.1 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
+  runtime codex    codex-cli 0.60.0 /Users/you/.local/bin/codex
   wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
 
 dashboard: http://127.0.0.1:7717/
 stop with Ctrl-C (workers stop, logs are archived to logs/)
 ```
 
-The banner names which CLI it resolved and where, so "which `claude` is this
-using?" has an answer before the first run.
+The banner names each CLI it resolved and where — one line per distinct runtime
+in the config — so "which `claude` is this using?" has an answer before the first
+run.
 
-Workers run in the foreground of that one process — nothing to `disown`, nothing
-to find again later. Ctrl-C stops every worker, archives each log to
+Workers run in the foreground of that one process — nothing to `disown`. Ctrl-C
+stops every worker, archives each log to
 `logs/<name>-<timestamp>.log`, and deletes `state/`, which is what removes the
 generated MCP configs holding your connector secrets.
 

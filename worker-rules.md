@@ -9,7 +9,8 @@ instructions arrive with it and are repeated in every `get_task_context`. Follow
 those. What is below is only what *this harness* adds, because it is true of the
 process you are running in and relay cannot know it.
 
-If a repository is your working directory, treat its `CLAUDE.md` as binding.
+If a repository is your working directory, treat its instructions file —
+`AGENTS.md`, `CLAUDE.md`, or whatever your CLI loads from there — as binding.
 
 ## The four rules of this harness
 

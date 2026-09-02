@@ -162,6 +162,7 @@ func TestCheckSurfacesConfigErrors(t *testing.T) {
 // placeholders, and both commands stop on them by name.
 func TestCommandsRefuseTheUntouchedInitConfig(t *testing.T) {
 	noRuntimeCheck(t)
+	withInstalledRuntimes(t, "claude", "codex")
 	dir := filepath.Join(t.TempDir(), relayDirName)
 	if err := initConfig(dir, io.Discard); err != nil {
 		t.Fatal(err)
