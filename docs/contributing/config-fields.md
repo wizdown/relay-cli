@@ -74,6 +74,11 @@ Add a row to the worker table. Keep the default in the **last** column as
 Add it to the `THE CONFIG FILE` block. `relay help` has to stand alone:
 someone running a downloaded binary with no checkout has only this.
 
+If the field is **required**, add it to `shortHelp` too — that is the list a bare
+`relay` prints, and it exists to name every decision the config will demand. An
+optional field does not belong there; it has a bounded default, which is the
+whole reason the summary can leave it out.
+
 Then `make check`. If you missed a surface, the failure names it.
 
 Note what is **not** on this list. `relay init` writes a deliberately short

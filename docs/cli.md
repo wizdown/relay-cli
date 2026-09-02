@@ -8,11 +8,12 @@ needs neither `jq` nor `curl`.
 ## Commands
 
 ```bash
-relay                 # print the full manual
+relay                 # one-screen summary of everything below
 relay init            # write ~/.relay/config (never overwrites an existing one)
 relay check           # validate the config and test every credential
 relay run             # start every worker and open the dashboard
 relay version         # print the version
+relay help            # the full manual
 ```
 
 | Command | |
@@ -21,10 +22,21 @@ relay version         # print the version
 | `check` | validate the config, probe every credential and report what each `repo_dir` holds, launching nothing and spending nothing |
 | `run` | start every worker in the config and open the dashboard |
 | `version` | print the version |
-| `help` | the full manual — also what a bare invocation prints |
+| `help` | the full manual — every field, default and safeguard, in the binary |
 
 Starting is asked for by name rather than being the default, because it launches
 autonomous sessions that spend money.
+
+## Help comes in two sizes
+
+| Invocation | Prints |
+|---|---|
+| `relay`, `relay -h` | one screen: the commands, the flags, and the four fields a worker requires |
+| `relay help`, `relay --help` | the manual — config reference, model lists, runtimes, environment variables, safeguards |
+
+A bare invocation is asking "which commands are there", so it is answered in one
+screen. The manual carries this directory's content inside the binary, for
+anyone who downloaded a release and has no checkout.
 
 `version` prints one line, and it is the line to quote in a bug report:
 
@@ -131,9 +143,8 @@ CLI reports. Both appear in the same place on the cards and in the run lines.
 
 ## It cannot change anything
 
-No route pauses a worker, starts a run, or edits a ceiling. A page that can spend
-money is a different thing to reason about than one that only shows what already
-happened. Pausing stays a file:
+No route pauses a worker, starts a run, or edits a ceiling — the page only shows
+what already happened. Pausing stays a file:
 
 ```bash
 touch ~/.relay/state/<name>/PAUSED
@@ -159,8 +170,8 @@ The banner names each CLI it resolved and where — one line per distinct runtim
 in the config — so "which `claude` is this using?" has an answer before the first
 run.
 
-Workers run in the foreground of that one process — nothing to `disown`, nothing
-to find again later. Ctrl-C stops every worker, archives each log to
+Workers run in the foreground of that one process — nothing to `disown`. Ctrl-C
+stops every worker, archives each log to
 `logs/<name>-<timestamp>.log`, and deletes `state/`, which is what removes the
 generated MCP configs holding your connector secrets.
 

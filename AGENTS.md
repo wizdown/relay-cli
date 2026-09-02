@@ -49,7 +49,7 @@ the suite — and the pre-commit hook knows it.
 
 | File | Owns |
 |---|---|
-| `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, the `version` constant, and `helpText` — the full manual |
+| `main.go` | commands (`run`, `check`, `version`, `help`), flags, the supervisor, startup checks, log archiving, the `version` constant, `shortHelp` (the one-screen summary a bare `relay` prints) and `helpText` (the full manual) |
 | `init.go` | `relay init` and the short starting config it writes |
 | `config.go` | config parse, defaults, and every validation done before launch — problems are accumulated and reported together |
 | `probe.go` | MCP JSON-RPC over `net/http` — the token-free gate, no model anywhere |
@@ -82,8 +82,9 @@ relay check    # validate config + test every credential — launches nothing, s
 relay run      # start the fleet, open the dashboard on 127.0.0.1:7717
 ```
 
-A bare `relay` prints the whole manual — starting is asked for by name because it
-launches autonomous sessions that spend money.
+A bare `relay` prints a one-screen summary and `relay help` prints the whole
+manual — starting is asked for by name because it launches autonomous sessions
+that spend money.
 
 Every command reads `~/.relay/config`. **One location, and no flag moves it** —
 `state/` and `logs/` sit beside it. Don't add a path flag back without a reason
@@ -253,7 +254,7 @@ a reader will look and be wrong:
 |---|---|
 | a config field or its default | the tables in `docs/configuration.md`, the `THE CONFIG FILE` block in `helpText`, and `docs/contributing/config-fields.md` if the loop itself moved |
 | a field you **removed** | delete every mention from `docs/configuration.md` and `helpText`; add it to `removedKeys` with what to use instead — the error carries the migration, the docs do not |
-| a command or a flag | `helpText`, `docs/cli.md`, and the quickstart in `readme.md` if it appears there |
+| a command or a flag | `shortHelp` **and** `helpText`, `docs/cli.md`, and the quickstart in `readme.md` if it appears there |
 | a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` **and** the summary list under `## Safeguards` in `readme.md` |
 | what the dashboard shows or serves | `docs/cli.md` |
 | a runtime's support status or its startup check | `docs/runtimes.md`, and the runtime table in this file |
@@ -270,8 +271,9 @@ Some of that is enforced and the rest is not, so know which is which:
   default or a removed key is missing from `docs/configuration.md`, and when the
   `jsonc` example there no longer validates.
 - `TestHelpQuotesTheRealDefaults` and the flag/command tests hold `helpText` to
-  the code, and `docs_pages_test.go` holds `docs/cli.md` to the same command and
-  flag lists — a flag now has to be documented in both places or the build fails.
+  the code, `TestShortHelp*` holds `shortHelp` to the same command and flag lists
+  and to a 40-line ceiling, and `docs_pages_test.go` holds `docs/cli.md` to those
+  lists too — a flag has to be documented in all three or the build fails.
 - `docs_pages_test.go` also fails when a **link** between two markdown files
   points at a file or a heading anchor that does not exist, and when **sample
   output** quotes a version the code has never been: every page must show the
@@ -305,7 +307,8 @@ secret shapes in the message.
    in the commit message. Same for a PR title and body, which no hook can see.
 2. `make check` passes.
 3. If you changed a config field → [the config loop](docs/contributing/config-fields.md).
-4. If you added a flag or command, `helpText` documents it — a test enforces it.
+4. If you added a flag or command, `shortHelp` and `helpText` both document it —
+   a test enforces both.
 5. Docs updated in the same commit — walk [the table above](#documentation-is-part-of-the-change-not-a-follow-up).
 6. **Do not touch the version constant** — [Versions](#versions-and-the-snapshot-marker).
 

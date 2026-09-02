@@ -23,10 +23,10 @@ What each accepts in `runtime_config` is in Configuration —
 [claude](configuration.md#runtime_config-for-claude) takes `model` and
 `max_usd_per_run`, [codex](configuration.md#runtime_config-for-codex) takes
 `model`, `reasoning_effort`, `sandbox`, `network_access` and `web_search`. Every
-one of those keys has a declared set of values or a type, checked when the config
-loads — neither CLI rejects a bad setting until it is already inside a run you
-have paid for. `model` is the sharp end of that, and it works the same for both:
-a list this build knows, short [aliases pinned to one id each](configuration.md#aliases-are-pinned-not-tracked),
+key has a declared set of values or a type, checked when the config loads:
+neither CLI rejects a bad setting until it is already inside a run you paid for.
+`model` works the same on both — a list this build knows, short
+[names pinned to one id each](configuration.md#aliases-are-pinned-not-tracked),
 and an [escape hatch](configuration.md#a-model-this-build-has-not-heard-of) for a
 model newer than your relay-cli.
 
@@ -75,11 +75,8 @@ depends on those flags, not on a release, and a version gate would block working
 installs whenever it guessed high.
 
 `RELAY_CLI_SKIP_RUNTIME_CHECK=1` skips the flag and sign-in checks — not the
-does-it-exist check — if a future CLI reshapes its help text or its status
-output. It also covers the model-name check on either runtime's config, which is
-the same problem one layer up: a list this build knows and a CLI that has moved
-past it.
-That one has its own switch,
+does-it-exist check — for a future CLI that reshapes its help or status output.
+It covers the model-name check too, which has its own switch,
 [`RELAY_CLI_SKIP_MODEL_CHECK`](configuration.md#a-model-this-build-has-not-heard-of).
 
 ### The CLI is not signed in
@@ -90,9 +87,8 @@ never writes, moves or copies those credentials, and it sets no API key.
 
 **A signed-out CLI stops the start.** Both can be asked from their own stored
 credentials without spending anything (`claude auth status --json`,
-`codex login status`), so this is a startup error rather than something every
-cycle rediscovers: a fleet whose CLI is signed out would launch a session per
-worker per cycle, fail in the same second each time, and say so only in
+`codex login status`), so it is caught once at startup rather than by every
+cycle launching a session that fails in the same second and says so only in
 `worker.log`.
 
 ```text

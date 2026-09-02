@@ -38,7 +38,7 @@ replacing it is the right move, is in
 
       // handed to the runtime named above — that CLI's own vocabulary
       "runtime_config": {
-        "model":           "claude-sonnet-5",  // or the alias "sonnet"
+        "model":           "sonnet",           // pinned to claude-sonnet-5
         "max_usd_per_run": 5
       }
     }
@@ -71,7 +71,7 @@ orchestrator binary, and nothing here that says which worker is which.
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME_2",
       "repo_dir":  "~/code/app",
       "runtime":   "codex",
-      "runtime_config": { "model": "gpt-5.6-terra" }
+      "runtime_config": { "model": "terra" }
     }
   ]
 }
@@ -83,12 +83,10 @@ work happens in and which CLI does it. There is no mapping table to keep in
 sync.
 
 What an agent is *for* — its instructions, whether it can split work into
-subtasks and route them, how many tasks it may hold at once — lives on the relay
-agent rather than here, because instructions delivered over MCP reach a session
-that is **already running** and stay correct when relay changes. So an
-orchestrator and a worker are two relay agents holding different capabilities,
-and locally they are two ordinary workers. Set that side up in the
-[relay docs](https://relay.bytecurio.com/).
+subtasks, how many tasks it may hold — lives on the relay agent, not here: those
+reach a session that is **already running**. So an orchestrator and a worker are
+two relay agents with different capabilities, and locally two ordinary workers.
+Set that side up in the [relay docs](https://relay.bytecurio.com/).
 
 Four things that only matter once there is more than one:
 
@@ -156,7 +154,7 @@ the worker keeps ticking, stops launching, and says so:
 
 | Key | Required | What it does | Default |
 | --- | --- | --- | --- |
-| `model` | **yes** | Which model to run: `claude-opus-5`, `claude-sonnet-5` or `claude-haiku-4-5`. The aliases `opus`, `sonnet` and `haiku` are accepted and **pinned** to those ids — see [Aliases are pinned, not tracked](#aliases-are-pinned-not-tracked). Anything else is refused when the config loads, because the CLI takes whatever it is handed and a typo would otherwise fail inside a session you have already paid for. Required rather than defaulted, because the CLI's own default moves between versions and an unattended worker should say what it runs. | — |
+| `model` | **yes** | Which model to run. Write `opus`, `sonnet` or `haiku` — each is **pinned** to an id (see [Aliases are pinned, not tracked](#aliases-are-pinned-not-tracked)), and the ids `claude-opus-5`, `claude-sonnet-5` and `claude-haiku-4-5` are accepted too. Anything else is refused when the config loads: the CLI takes whatever it is handed, so a typo would fail inside a session you have already paid for. Required rather than defaulted, because the CLI's own default moves between versions. | — |
 | `max_usd_per_run` | no | Hard dollar cap inside one run, enforced by the CLI. It does not apply across runs — `max_runs_per_hour` is the only ceiling on how many there are. `0` removes it. | `5` |
 
 Two runs killed by the spend cap in a row pause the worker: retrying unchanged
@@ -166,7 +164,7 @@ restarts the same task and hits the same wall at the same point.
 
 | Key | Required | What it does | Default |
 | --- | --- | --- | --- |
-| `model` | **yes** | Which model to run: `gpt-5.6-sol`, `gpt-5.6-terra` or `gpt-5.6-luna`. The tier names `sol`, `terra` and `luna` are accepted as aliases for them — see [Aliases are pinned, not tracked](#aliases-are-pinned-not-tracked). Anything else is refused when the config loads: codex takes whatever it is handed, so a typo would otherwise fail inside a session you have already paid for, once a cycle. Required rather than defaulted, for the same reason it is for claude: the CLI's own default moves between versions, and an unattended worker should say what it runs. | — |
+| `model` | **yes** | Which model to run. Write `sol`, `terra` or `luna` — each is **pinned** to an id (see [Aliases are pinned, not tracked](#aliases-are-pinned-not-tracked)), and the ids `gpt-5.6-sol`, `gpt-5.6-terra` and `gpt-5.6-luna` are accepted too. Anything else is refused when the config loads, for the same reason it is on claude. | — |
 | `reasoning_effort` | no | How hard the model thinks before acting: `minimal`, `low`, `medium`, `high` or `xhigh`. The largest influence on what a run costs, and since codex enforces no spend cap it is the dial you have. | `medium` |
 | `sandbox` | no | What a run may write. `read-only` writes nothing, `workspace-write` writes inside `repo_dir` and temporary directories, `danger-full-access` writes anywhere you can. Relay tools are unaffected — a `read-only` worker can still update a Task Context. | `workspace-write` |
 | `network_access` | no | Whether commands the agent runs may reach the network. With it off, `git push`, dependency installs and anything else that talks to a server fail inside the run. | `true` |
@@ -188,11 +186,10 @@ things about that list are worth knowing before you write one.
 
 ### Aliases are pinned, not tracked
 
-Both CLIs read a bare `sonnet` or `opus` as *the latest model in that family*, so
-a worker configured that way runs something different the week after a new one
-ships — from a config nobody edited. That is the drift `model` is required to
-prevent, so relay-cli resolves an alias to one pinned id and hands the CLI the
-id:
+Write the short name. Both CLIs read a bare `sonnet` or `opus` as *the latest
+model in that family*, so a worker configured that way in the CLI runs something
+different the week after a new one ships — from a config nobody edited. relay-cli
+resolves each short name to one pinned id instead, and hands the CLI that id:
 
 | Write | It runs |
 | --- | --- |
@@ -203,11 +200,9 @@ id:
 | `terra` | `gpt-5.6-terra` |
 | `luna` | `gpt-5.6-luna` |
 
-Which model an alias means changes only when a release of relay-cli changes it.
-`relay check` and the dashboard show the resolved id, not the alias, so what a
-worker is running is never a question about which version you are on. The codex
-tier names are relay-cli's own: `codex --model` takes a full slug and nothing
-else.
+What a short name means changes only when a release of relay-cli changes it, and
+`relay check` and the dashboard show the resolved id. The codex tier names are
+relay-cli's own: `codex --model` takes a full slug and nothing else.
 
 ### A model this build has not heard of
 
@@ -225,11 +220,9 @@ relay: ~/.relay/config needs 1 fix(es):
 ```
 
 Set `RELAY_CLI_SKIP_MODEL_CHECK=1` and the name is passed to the CLI unchecked.
-It is not silent: the start prints which worker was let through and with what,
-because a typo now fails once a cycle instead of once at startup, and the reason
-should not be an environment variable you set last month.
-`RELAY_CLI_SKIP_RUNTIME_CHECK=1` covers this too — it already means "this install
-is newer than this build knows".
+It is not silent: the start names which worker was let through, and with what —
+past that point a typo fails once a cycle instead of once at startup.
+`RELAY_CLI_SKIP_RUNTIME_CHECK=1` covers this too.
 
 It applies to `model` on both runtimes and to nothing else. `sandbox` and
 `reasoning_effort` are printed in codex's own `--help` and move only when the

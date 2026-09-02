@@ -172,11 +172,9 @@ Two parts of this file apply to a worker run:
   fires with nobody watching it.
 
 **`permissions` in this file has no effect on a worker.** A headless run skips
-the workspace-trust step, so the directory's own permission rules are ignored.
-What the agent is allowed to do is decided by relay-cli, which pre-allows
-relay's tools and the ordinary coding tools before the session starts. Rules in
-your personal `~/.claude/settings.json` do still apply, and a `deny` rule there
-still wins.
+the workspace-trust step, so the directory's own rules are ignored — relay-cli
+pre-allows relay's tools and the ordinary coding tools instead. Your personal
+`~/.claude/settings.json` still applies, and a `deny` rule there still wins.
 
 ## What codex loads instead
 

@@ -200,6 +200,9 @@ rm ~/.relay/state/worker-1/PAUSED      # resume it
 | [Runtimes](docs/runtimes.md) | The supported CLIs, what each run does, and what bounds it |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → where to look |
 
+The binary carries its own copy: `relay` prints a one-screen summary, `relay
+help` the full manual.
+
 ## Versioning
 
 This is **0.x** and stays there until the interface settles. A release may

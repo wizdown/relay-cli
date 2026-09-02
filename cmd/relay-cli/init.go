@@ -72,7 +72,7 @@ const initConfigTemplate = `{
       "max_seconds_per_run": 900, // wall-clock kill for one run
 
       "runtime_config": {         // claude's own vocabulary
-        "model": "claude-sonnet-5", // required — or the alias "sonnet"
+        "model": "sonnet",        // required — pinned to claude-sonnet-5
         "max_usd_per_run": 5      // hard cap inside one run
       }
     }
