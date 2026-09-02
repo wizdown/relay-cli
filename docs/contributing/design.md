@@ -144,6 +144,7 @@ relay-cli/
     events.go                    event bus → worker.log, events.ndjson, SSE
     server.go                    /api/snapshot, /api/stream, the embedded page. Read-only
     redact.go                    Scrub and RedactURL
+    awake.go                     --keep-awake: the macOS power assertion
     ui/index.html                the dashboard, one file
     assets/worker-rules.md       the embedded copy of the contract
     docs_test.go                 the config reference is held to the code

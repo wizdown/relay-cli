@@ -53,6 +53,9 @@ An idle worker prints nothing. "No output" is the healthy steady state.
 | A codex worker cannot `git push`, or an install hangs | `runtime_config.network_access` is `false`. Set it to `true`. |
 | A codex worker reports edits it did not make | `runtime_config.sandbox` is `read-only`. The default `workspace-write` lets it edit `repo_dir`. |
 | Logs name a model you did not write | You wrote an alias, and relay-cli pins it to an id. See [Model names](configuration.md#model-names). |
+| A Mac left alone stops claiming work | It slept between polls. Start with `relay run --keep-awake`, and keep the lid open. |
+| `--keep-awake holds off sleep on macOS only` | The flag does nothing on this machine. The warning is printed once and the fleet runs. |
+| `--keep-awake needs …` | The system `caffeinate` is missing from `/usr/bin`. The fleet runs without the assertion. |
 
 Claim and lease behaviour belongs to Relay, not this CLI. A task that
 ping-pongs between cycles, or a parent that never wakes, is answered in the
