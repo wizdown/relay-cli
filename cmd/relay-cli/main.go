@@ -167,6 +167,7 @@ COMMANDS ───────────────────────�
 
 FLAGS ──────────────────────────────────────────────────────────────────
   run     --port N (default 7717)  --no-open  --quiet  --no-archive
+          --keep-awake  macOS: hold off sleep while on AC power
   check   --timeout N seconds (default 15)
   init    takes none
 
@@ -230,6 +231,9 @@ FLAGS ────────────────────────�
          --quiet        do not echo worker logs to stdout. The dashboard and
                         state/<name>/worker.log are unaffected
          --no-archive   do not archive worker logs to logs/ on shutdown
+         --keep-awake   macOS: hold off system sleep for as long as the fleet
+                        runs, while the Mac is on AC power. Closing the lid
+                        still sleeps it. Ignored with a warning elsewhere
   check  --timeout N    seconds to wait for each credential probe. Default 15
   init   none           and it never overwrites an existing config
 
@@ -635,6 +639,7 @@ type runOpts struct {
 	noOpen    bool
 	noArchive bool
 	quiet     bool
+	keepAwake bool
 }
 
 func runFlags(o *runOpts) *flag.FlagSet {
@@ -644,7 +649,7 @@ func runFlags(o *runOpts) *flag.FlagSet {
 	// lines after a one-word typo buries the error that explains it.
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, `
-usage: relay run [--port N] [--no-open] [--quiet] [--no-archive]
+usage: relay run [--port N] [--no-open] [--quiet] [--no-archive] [--keep-awake]
 
   Reads %s. Run "relay help" for the full manual.
 `, displayConfigPath())
@@ -654,6 +659,7 @@ usage: relay run [--port N] [--no-open] [--quiet] [--no-archive]
 	fs.BoolVar(&o.noOpen, "no-open", false, "do not open a browser at startup")
 	fs.BoolVar(&o.noArchive, "no-archive", false, "do not archive worker logs to logs/ on shutdown")
 	fs.BoolVar(&o.quiet, "quiet", false, "do not echo worker logs to stdout")
+	fs.BoolVar(&o.keepAwake, "keep-awake", false, "macOS: hold off system sleep while on AC power")
 	return fs
 }
 
@@ -674,13 +680,13 @@ func runCommand(args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	if err := run(path, o.port, o.noOpen, o.noArchive, o.quiet); err != nil {
+	if err := run(path, o.port, o.noOpen, o.noArchive, o.quiet, o.keepAwake); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string, port int, noOpen, noArchive, quiet bool) error {
+func run(configPath string, port int, noOpen, noArchive, quiet, keepAwake bool) error {
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		return err
@@ -752,6 +758,11 @@ func run(configPath string, port int, noOpen, noArchive, quiet bool) error {
 	for _, w := range cfg.Workers {
 		fmt.Printf("  %-24s runtime %-8s runs/h %d  repo %s\n",
 			w.Name, w.Runtime, w.MaxRunsPerHour, w.RepoDir)
+	}
+	if keepAwake {
+		// The call runs now and reports on the banner; the release it hands back
+		// is what the defer holds until shutdown.
+		defer announceKeepAwake(os.Stdout, os.Stderr)()
 	}
 	fmt.Printf("\ndashboard: %s\n", url)
 	fmt.Printf("stop with Ctrl-C (workers stop, logs are archived to logs/)\n\n")

@@ -32,6 +32,7 @@ Every command reads `~/.relay/config`. There is no `--config` flag.
 | `--no-open` | off | Do not open a browser. |
 | `--quiet` | off | Do not echo worker logs to stdout. The dashboard and `worker.log` are unaffected. |
 | `--no-archive` | off | Do not archive logs to `~/.relay/logs/` on shutdown. |
+| `--keep-awake` | off | macOS: hold off system sleep for as long as the fleet runs, while the Mac is on AC power. Closing the lid still sleeps it. On any other machine it warns and the fleet runs. |
 
 | Flag (`check`) | Default | |
 |---|---|---|

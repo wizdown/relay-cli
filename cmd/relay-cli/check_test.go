@@ -173,7 +173,7 @@ func TestCommandsRefuseTheUntouchedInitConfig(t *testing.T) {
 	checkErr := check(path, time.Second, &out)
 	// port 0 and no-open: run must fail on the config long before it would
 	// listen on anything or start a worker.
-	runErr := run(path, 0, true, true, true)
+	runErr := run(path, 0, true, true, true, false)
 
 	for name, err := range map[string]error{"check": checkErr, "run": runErr} {
 		if err == nil {
@@ -199,7 +199,7 @@ func TestCommandsWithNoConfigPointAtInit(t *testing.T) {
 	var out bytes.Buffer
 	for name, err := range map[string]error{
 		"check": check(path, time.Second, &out),
-		"run":   run(path, 0, true, true, true),
+		"run":   run(path, 0, true, true, true, false),
 	} {
 		if err == nil {
 			t.Fatalf("%s ran with no config at all", name)

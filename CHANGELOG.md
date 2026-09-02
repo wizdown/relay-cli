@@ -5,6 +5,10 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- `relay run --keep-awake` holds off macOS system sleep for as long as the
+  fleet runs, while the Mac is on AC power. Closing the lid still sleeps it.
+  On a machine that cannot hold the assertion the flag warns and the fleet
+  runs.
 - The documentation and `relay help` were rewritten to be shorter, and tests
   now hold the prose to the code. No behaviour changed.
 
