@@ -225,6 +225,13 @@ const el = (tag, cls, text) => {
 // mcp__relay__claim_task reads as relay:claim_task, which is what it is.
 const shortTool = (t) => (t || "").replace(/^mcp__([a-z0-9_-]+)__/i, "$1:");
 const money = (n) => "$" + (n || 0).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+// Tokens, for a runtime that reports those instead of dollars — codex has no
+// cost figure to show, and a blank where the spend goes reads as "free".
+const tokens = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M tok"
+  : n >= 1e3 ? (n / 1e3).toFixed(1) + "k tok" : n + " tok";
+// What one run or one worker spent, in whichever unit its runtime reports.
+const spend = (usd, usage) => usd ? money(usd)
+  : usage && (usage.input || usage.output) ? tokens((usage.input || 0) + (usage.output || 0)) : "";
 const secs = (ms) => (ms / 1000).toFixed(1) + "s";
 
 // ── worker cards ─────────────────────────────────────────────────────────────
@@ -271,7 +278,8 @@ function renderCards() {
     const l2 = el("div", "card-line");
     const rcModel = (c.runtime_config || {}).model;
     l2.append(el("span", "", c.runtime + (rcModel ? " · " + rcModel : "")));
-    l2.append(el("span", "", w.total_cost_usd ? money(w.total_cost_usd) : ""));
+    l2.append(el("span", "", w.total_cost_usd ? money(w.total_cost_usd)
+      : w.total_tokens ? tokens(w.total_tokens) : ""));
     card.append(l2);
 
     const cd = countdown(w);
@@ -393,7 +401,7 @@ function renderEvent(e) {
     const cls = c.outcome === "ok" ? "oktext" : c.outcome === "budget_exhausted" ? "errtext" : "warntext";
     let head = "<b>■ " + esc(e.worker) + " — run " + esc(c.outcome || "ended") + "</b> " +
       "<span class='dimtext'>status " + c.status +
-      (c.cost_usd ? " · " + money(c.cost_usd) : "") +
+      (spend(c.cost_usd, c.usage) ? " · " + spend(c.cost_usd, c.usage) : "") +
       (c.num_turns ? " · " + c.num_turns + " turns" : "") +
       (c.duration_ms ? " · " + secs(c.duration_ms) : "") + "</span>";
     d.innerHTML = "<span class='" + cls + "'>" + head + "</span>";
@@ -481,8 +489,10 @@ function renderSession(e, row, body) {
       return row;
     case "result": {
       body.className = "b";
-      body.innerHTML = "<span class='oktext'>result</span> <span class='dimtext'>" +
-        money(s.cost_usd) + (s.num_turns ? " · " + s.num_turns + " turns" : "") + "</span>";
+      body.innerHTML = "<span class='" + (s.is_error ? "errtext'>result failed" : "oktext'>result") +
+        "</span> <span class='dimtext'>" +
+        (spend(s.cost_usd, s.usage) || money(0)) +
+        (s.num_turns ? " · " + s.num_turns + " turns" : "") + "</span>";
       if (s.text) { const p = el("pre", "block"); p.textContent = s.text; body.append(p); }
       return row;
     }

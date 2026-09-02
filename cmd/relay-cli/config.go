@@ -113,6 +113,11 @@ func (w *Worker) RCFloat(key string) float64 {
 	return n
 }
 
+// RCBool reads one runtime_config value as a boolean. Values are canonicalised
+// to "true"/"false" when the config is validated, so anything else is a key the
+// worker's runtime does not declare and reads as false.
+func (w *Worker) RCBool(key string) bool { return w.RuntimeConfig[key] == "true" }
+
 // Config is the validated worker list plus where it came from.
 type Config struct {
 	Path     string `json:"path"`
@@ -148,7 +153,7 @@ var removedKeys = map[string]string{
 	"system_prompt_file":       "agent identity now lives in relay: move the file's text into the agent's instructions_md (update_agent, or the relay agent console)",
 	"min_run_interval_seconds": "replaced by a fixed 60s relaunch cooldown. To make a worker act less often, lower max_runs_per_hour",
 	"permission_mode":          "a headless run is always fully autonomous — there is no prompt it could answer",
-	"codex_mcp_transport":      "export CODEX_MCP_TRANSPORT=mcp-remote before launching instead",
+	"codex_mcp_transport":      "there is no transport to choose: a codex worker is given relay as a streamable-HTTP MCP server directly, with no stdio bridge in between",
 	"runtime_args":             "removed. Raw argv could silently override the flags this harness depends on. Every setting a runtime accepts is now a declared key in \"runtime_config\"",
 	"mcp_endpoint":             "renamed to \"relay_mcp\"",
 	"model":                    "moved into \"runtime_config\": it is spelled in the runtime's own vocabulary, not relay-cli's",
@@ -724,6 +729,13 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 		}
 
 		switch f.Kind {
+		case fieldBool:
+			var b bool
+			if json.Unmarshal(v, &b) != nil {
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s must be true or false, unquoted — %s", label, f.Key, f.Doc))
+				continue
+			}
+			out[f.Key] = strconv.FormatBool(b)
 		case fieldNumber:
 			var n float64
 			switch {
@@ -752,6 +764,14 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 					"      runtime verbatim, so write it as %q", label, f.Key, strings.TrimSpace(s)))
 				continue
 			}
+			// A value outside a declared set is a typo the CLI would only reject
+			// from inside a run. `workspace_write` for `workspace-write` is the
+			// shape of it: plausible, wrong, and expensive to find out later.
+			if len(f.Enum) > 0 && !contains(f.Enum, s) {
+				problems = append(problems, fmt.Sprintf("  %s: runtime_config.%s is %q — it takes one of: %s",
+					label, f.Key, s, strings.Join(f.Enum, ", ")))
+				continue
+			}
 			out[f.Key] = s
 		}
 	}
@@ -769,6 +789,15 @@ func validateRuntimeConfig(label, runtimeName string, raw rawWorker, fields []ru
 	}
 
 	return out, problems
+}
+
+func contains(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func fieldKeys(fields []runtimeField) []string {

@@ -56,6 +56,7 @@ the suite — and the pre-commit hook knows it.
 | `worker.go` | the poll loop: ceilings, the three circuit breakers, locking, timeouts |
 | `runtime.go` | the `Runtime` interface, `runtimeField` (what each runtime accepts in `runtime_config`), and the bash-adapter bridge |
 | `runtime_claude.go` | the native claude adapter: argv, `stream-json` parsing, exit classification |
+| `runtime_codex.go` | the native codex adapter: `codex exec` argv, `--json` event parsing, exit classification, and the sign-in check |
 | `events.go` | the event bus → `worker.log`, `events.ndjson`, SSE |
 | `server.go` | `/api/snapshot`, `/api/stream`, and the embedded page. **Read-only by design** |
 | `redact.go` | `Scrub` / `RedactURL`. Everything user-facing goes through these |
@@ -98,9 +99,10 @@ relay init
 
 Four fields per worker are required — `name`, `relay_mcp`, `repo_dir`,
 `runtime` — because each is a decision relay-cli cannot make for anyone, plus
-whatever the named runtime requires inside `runtime_config` (`model`, for
-claude). Everything else is already bounded: 12 runs/hour, $5 per run, a
-15-minute kill, a 30-second fleet poll with a fixed 5-second floor. The full
+whatever the named runtime requires inside `runtime_config` (`model`, for both
+claude and codex). Everything else is already bounded: 12 runs/hour, $5 per run
+(claude only), a 15-minute kill, a 30-second fleet poll with a fixed 5-second
+floor. The full
 reference for users is **[docs/configuration.md](docs/configuration.md)**.
 
 The split is the thing to preserve: fields **outside** `runtime_config` are
@@ -150,18 +152,35 @@ is still the right way to prove a config parses.
 
 | | |
 |---|---|
-| `claude` | **The only supported runtime.** Adapter compiled in. `runtime_config.model` is REQUIRED — `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`. |
-| `codex` | **Coming soon, not offered.** Refused at config load. Don't document it as usable, and don't add a `codex` branch anywhere outside `ResolveRuntime`. |
+| `claude` | **Supported**, adapter compiled in and native. `runtime_config.model` is REQUIRED — `opus`, `sonnet`, `haiku`, or a pinned id like `claude-opus-5` — because the CLI's own default moves between versions and an unattended worker should say what it runs. Also takes `max_usd_per_run`, which the CLI enforces itself. |
+| `codex` | **Supported**, adapter compiled in and native. Takes `model` (REQUIRED, same reason), `reasoning_effort`, `sandbox`, `network_access`, `web_search`. **It has no per-run spend cap** — none exists in the CLI — so `max_usd_per_run` is claude's alone and a codex worker is bounded by `max_seconds_per_run`, `max_runs_per_hour` and its account's plan limits. Say that plainly wherever the runtimes are compared; it is the one thing someone choosing between them needs. |
 
 No CLI is bundled. The adapter ships; the CLI is installed separately, found on
 `PATH`, and proves itself at startup by its `--help` rather than by a version.
+codex also proves it is signed in, because `codex login status` costs nothing —
+claude cannot be asked that without spending a model call.
 
-The bash-adapter path (`bashRuntime`) is **complete but gated off** by
-`bashAdaptersEnabled` in `runtime.go`, and is the half of codex support that
-already exists. Keep it compiling and keep its test passing — it is not dead
-code, it is unreleased code. Shipping codex means flipping that constant and
-adding a `runtimes/` directory back; nothing else should need to change. The
-contract is **[docs/contributing/adapters.md](docs/contributing/adapters.md)**.
+Two codex-specific trades are deliberate and documented in
+[docs/runtimes.md](docs/runtimes.md); don't quietly reverse either:
+
+- **The harness contract rides in the prompt**, not in a system prompt, because
+  `codex exec` has no flag for one and its config key for the job has not
+  reliably applied in non-interactive runs. A contract that silently does not
+  arrive is a worker that claims two tasks in a session and tells nobody.
+- **The connector URL is a `-c` override**, so it is visible in `ps`. The
+  isolated alternative is a private `CODEX_HOME`, which breaks a ChatGPT sign-in:
+  `auth.json` lives there and its refresh tokens are single-use. Working sign-in
+  beat the smaller exposure. Everything else about that URL still goes through
+  `Scrub`.
+
+Both shipped adapters are native for the same reason: only a native adapter can
+parse a CLI's event stream into session events, and only a native one can declare
+`ConfigFields()`. The bash-adapter path (`bashRuntime`) is **complete but gated
+off** by `bashAdaptersEnabled` in `runtime.go` — it is the extension point for a
+CLI nobody here has written an adapter for, not the pattern a shipped runtime
+follows. Keep it compiling and keep its test passing: it is not dead code, it is
+unreleased code. The contract is
+**[docs/contributing/adapters.md](docs/contributing/adapters.md)**.
 
 ## Documentation rules
 
@@ -170,6 +189,7 @@ Docs drift because nobody decides where a sentence belongs. Here it is decided:
 | Question | Where it is answered |
 |---|---|
 | How do I install and run one worker? | `readme.md` — and nothing else lives there |
+| Which runtime should I pick, and what bounds it? | `docs/runtimes.md` — the comparison lives there, not in the readme |
 | What does this config field do? | `docs/configuration.md`, the only field reference |
 | What commands and flags exist? | `docs/cli.md` |
 | How do I run several workers? | `docs/configuration.md` — the CLI side only |

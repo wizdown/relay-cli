@@ -67,11 +67,11 @@ orchestrator binary, and nothing here that says which worker is which.
       "runtime_config": { "model": "opus" }
     },
     {
-      "name":      "app-claude",
+      "name":      "app-codex",
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME_2",
       "repo_dir":  "~/code/app",
-      "runtime":   "claude",
-      "runtime_config": { "model": "sonnet" }
+      "runtime":   "codex",
+      "runtime_config": { "model": "gpt-5.1-codex" }
     }
   ]
 }
@@ -125,7 +125,7 @@ Every ceiling here counts **runs**. Nothing counts, limits or bills for polls.
 | What it is | one HTTP request asking relay "do I have a task?" | one headless CLI session, claiming and working exactly one task |
 | Runs a model | no — zero tokens | yes; this is the part that costs money |
 | How often | every `poll_seconds` | only when a poll comes back with work |
-| Bounded by | `poll_seconds` alone | `max_runs_per_hour`, `max_seconds_per_run`, `max_usd_per_run`, a fixed 60s cooldown |
+| Bounded by | `poll_seconds` alone | `max_runs_per_hour`, `max_seconds_per_run`, `max_usd_per_run` (claude), a fixed 60s cooldown |
 
 So `"max_runs_per_hour": 6` caps CLI sessions, not polling. Once it is reached
 the worker keeps ticking, stops launching, and says so:
@@ -147,10 +147,10 @@ the worker keeps ticking, stops launching, and says so:
 | `name` | **yes** | Unique, and a single path segment — it becomes `~/.relay/state/<name>/`, which is how you pause, tail and find logs for this worker. `<repo>-<runtime>` reads well. | — |
 | `relay_mcp` | **yes** | Unique. The `connector_url` relay issued for this agent, secret included, and it must be a full `http(s)` URL. Shown by relay exactly once. | — |
 | `repo_dir` | **yes** | The directory this worker's CLI runs inside, so its `CLAUDE.md`, skills and tooling load as they would for you — see [The working directory](working-directory.md). An empty directory is valid; a checkout is what makes the worker able to change code. `~` is expanded; the path must be absolute — a relative one would resolve against wherever `relay run` was started from — and the directory must exist at startup. A headless run is autonomous and cannot answer a prompt — point it somewhere you are willing to have rewritten. | — |
-| `runtime` | **yes** | Which CLI drives this worker, and which `runtime_config` keys apply. `claude` is the only supported value — see [Runtimes](runtimes.md). | — |
+| `runtime` | **yes** | Which CLI drives this worker, and which `runtime_config` keys apply. `claude` or `codex` — see [Runtimes](runtimes.md). | — |
 | `max_runs_per_hour` | no | Maximum CLI launches per rolling hour — not polls. The only ceiling on how many sessions start, so it is the one that caps spend. A whole number; `0` means no ceiling. | `12` |
 | `max_seconds_per_run` | no | Wall-clock kill for one session, enforced by relay-cli. The only guard that catches a hung run — one spending nothing while holding the worker lock and the task's relay lease. A whole number of seconds, and at least `30` when set: a shorter kill ends every session before it can claim anything, and the run is still paid for. `0` removes it. | `900` |
-| `runtime_config` | depends | Settings the named runtime understands. Required when that runtime has a required key, which `claude` does. | — |
+| `runtime_config` | depends | Settings the named runtime understands. Required when that runtime has a required key, which both `claude` and `codex` do. | — |
 
 ## `runtime_config` for `claude`
 
@@ -162,6 +162,25 @@ the worker keeps ticking, stops launching, and says so:
 Two runs killed by the spend cap in a row pause the worker: retrying unchanged
 restarts the same task and hits the same wall at the same point.
 
+## `runtime_config` for `codex`
+
+| Key | Required | What it does | Default |
+| --- | --- | --- | --- |
+| `model` | **yes** | Passed to the CLI verbatim as `--model`, so it is taken exactly as written. Required rather than defaulted, for the same reason it is for claude: the CLI's own default moves between versions, and an unattended worker should say what it runs. `codex --help` is the authority on what it accepts. | — |
+| `reasoning_effort` | no | How hard the model thinks before acting: `minimal`, `low`, `medium`, `high` or `xhigh`. The largest influence on what a run costs, and since codex enforces no spend cap it is the dial you have. | `medium` |
+| `sandbox` | no | What a run may write. `read-only` writes nothing, `workspace-write` writes inside `repo_dir` and temporary directories, `danger-full-access` writes anywhere you can. Relay tools are unaffected — a `read-only` worker can still update a Task Context. | `workspace-write` |
+| `network_access` | no | Whether commands the agent runs may reach the network. With it off, `git push`, dependency installs and anything else that talks to a server fail inside the run. | `true` |
+| `web_search` | no | Whether the agent may search the web, as a claude worker can. | `true` |
+
+**A codex worker has no per-run spend cap**, because the CLI has none: nothing
+can cut a run off at a dollar figure. What bounds it is `max_seconds_per_run`,
+`max_runs_per_hour`, `reasoning_effort`, and the plan limits of the account the
+CLI is signed in as. A run stopped by those plan limits is reported the way a
+spend cap is, and two in a row pause the worker.
+
+Codex reports tokens rather than dollars, so that is what the dashboard and the
+logs show for a codex worker.
+
 ## Safeguards
 
 Defaults are already bounded — a worker configured no further than its required
@@ -170,7 +189,7 @@ fields is still a safe worker.
 | Guard | Default | What it bounds |
 |---|---|---|
 | `max_runs_per_hour` | `12` | How many CLI sessions may *start*. Everything else bounds a single session. |
-| `max_usd_per_run` | `5` | Spend inside one run. claude only. |
+| `max_usd_per_run` | `5` | Spend inside one run. **claude only** — codex has no equivalent, so a codex worker is bounded by the row above and the row below. |
 | `max_seconds_per_run` | `900` | Wall-clock for one run; the only guard that catches a hang. |
 | relaunch cooldown | 60s, fixed | Two launches can't go back-to-back, so a task that fails immediately isn't picked straight back up. |
 

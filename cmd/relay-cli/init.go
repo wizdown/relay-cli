@@ -65,7 +65,7 @@ const initConfigTemplate = `{
       //   ` + docsBase + `working-directory.md
       "repo_dir": "` + repoDirPlaceholder + `",   // "~" is expanded; it must exist
 
-      "runtime": "claude",        // the only runtime today
+      "runtime": "claude",        // or "codex"
 
       // Ceilings — delete any one and its default applies, bounded either way.
       "max_runs_per_hour": 6,     // CLI launches, not polls. Default 12.

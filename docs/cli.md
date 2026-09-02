@@ -48,6 +48,11 @@ relay 0.1.1 (beta) — checking 2 worker(s) from /Users/you/.relay/config
     repo /Users/you/relay/orchestrator   nothing to load — the agent arrives with its task and its tools
 ```
 
+The `repo` line is written in that worker's own runtime vocabulary: a codex
+worker reports what codex loads — `AGENTS.md`, `.codex/agents/*.toml`, a project
+`.codex/config.toml` — so a file written for the wrong CLI is visible here rather
+than after a day of sessions that never read it.
+
 Two questions, one pass. The queue line proves the credential works and relay is
 reachable.
 
@@ -92,8 +97,8 @@ directory, with `state/` and `logs/` beside it.
 
 ## What the dashboard shows
 
-It runs the CLI with `--output-format stream-json`, so a session arrives line by
-line while it happens:
+It asks each CLI for its event stream — `--output-format stream-json` for claude,
+`--json` for codex — so a session arrives line by line while it happens:
 
 ```text
 14:22:08  wizhub-claude   poll  resume 0 · attention 0 · todo 1
@@ -102,16 +107,25 @@ line while it happens:
 14:22:13  wizhub-claude   → relay:claim_task   task_id=42
 14:22:31  wizhub-claude   → Edit   src/handlers.go
 14:23:02  wizhub-claude   ■ run ok   status 0 · $0.31 · 7 turns · 54.1s
+14:24:40  app-codex       ▶ run started   codex · /Users/you/code/app
+14:24:44  app-codex       → relay:claim_task
+14:25:19  app-codex       → Bash   bash -lc 'go test ./...'
+14:26:02  app-codex       ■ run ok   status 0 · 41.2k tok · 82.0s
 ```
+
+A codex run shows **tokens rather than dollars**: that CLI reports usage and no
+cost, so a cost figure would have to be invented. A claude run shows the cost the
+CLI reports. Both appear in the same place on the cards and in the run lines.
 
 - **Worker cards** — state (`idle · polling · running · cooldown · ceiling ·
   paused · probe failing`), the last poll's three buckets, runs used against the
-  hourly ceiling, cost so far, and a countdown to the next poll.
+  hourly ceiling, cost or tokens so far, and a countdown to the next poll.
 - **Every poll, including the empty ones** — which is how you tell "idle" from
   "wedged". Consecutive empty polls collapse to one line.
 - **The live session** — each tool call with its target, and the result envelope
-  with its cost. Which MCP servers came up is on the session line: a relay that
-  is `needs-auth` produces a run that looks healthy and does nothing.
+  with its cost or its token usage. For claude, which MCP servers came up is on
+  the session line: a relay that is `needs-auth` produces a run that looks
+  healthy and does nothing.
 - **The effective config**, every default resolved — the one question reading the
   config file cannot answer.
 
@@ -134,14 +148,16 @@ endpoint is never in an HTTP response.
 ```text
 relay 0.1.1 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
+  runtime codex    codex-cli 0.60.0 /Users/you/.local/bin/codex
   wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
 
 dashboard: http://127.0.0.1:7717/
 stop with Ctrl-C (workers stop, logs are archived to logs/)
 ```
 
-The banner names which CLI it resolved and where, so "which `claude` is this
-using?" has an answer before the first run.
+The banner names each CLI it resolved and where — one line per distinct runtime
+in the config — so "which `claude` is this using?" has an answer before the first
+run.
 
 Workers run in the foreground of that one process — nothing to `disown`, nothing
 to find again later. Ctrl-C stops every worker, archives each log to

@@ -186,7 +186,7 @@ func (c *claudeRuntime) InspectWorkdir(dir string) string {
 	if n := countSkills(filepath.Join(dir, ".claude", "skills")); n > 0 {
 		parts = append(parts, plural(n, "skill", "skills"))
 	}
-	if n := countSubagents(filepath.Join(dir, ".claude", "agents")); n > 0 {
+	if n := countFilesWithSuffix(filepath.Join(dir, ".claude", "agents"), ".md"); n > 0 {
 		parts = append(parts, plural(n, "subagent", "subagents"))
 	}
 	if s := describeSettings(filepath.Join(dir, ".claude", "settings.json")); s != "" {
@@ -236,14 +236,17 @@ func hasFileNamed(dir, name string) bool {
 	return false
 }
 
-func countSubagents(dir string) int {
+// countFilesWithSuffix counts the plain files in dir with a given extension —
+// claude's subagents are .md, codex's agents are .toml. Shared because the
+// question is the same one; what differs is only where each CLI looks.
+func countFilesWithSuffix(dir, suffix string) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0
 	}
 	n := 0
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), suffix) {
 			n++
 		}
 	}

@@ -16,18 +16,23 @@ the answer is yes. An idle worker costs one HTTP handshake and zero tokens.
 
 **Beta, and 0.x.** Spend is bounded by default, but configuration and the worker
 contract may still change between releases — see [Versioning](#versioning).
-[Claude Code](https://claude.com/claude-code) is the only supported runtime
-today; no CLI is bundled.
+[Claude Code](https://claude.com/claude-code) and the
+[Codex CLI](https://developers.openai.com/codex/cli) are the supported runtimes;
+no CLI is bundled.
 
 ## Prerequisites
 
 - A [Relay](https://relay.bytecurio.com/) workspace, where your tasks and agents
   live. Sign in with Google or Microsoft; the free workspace is enough.
-- [Claude Code](https://claude.com/claude-code) on your `PATH`, **and signed
-  in** — run `claude` once and log in. A worker launches it as you.
-  - `relay check` does not catch this: proving a CLI can authenticate costs a
-    model call, and `check` spends nothing.
-  - So an unauthenticated CLI fails on the first run, not before it.
+- A coding CLI on your `PATH`, **and signed in** — a worker launches it as you.
+  Either [Claude Code](https://claude.com/claude-code) (`claude`, then log in) or
+  the [Codex CLI](https://developers.openai.com/codex/cli) (`codex login`, with
+  your ChatGPT account).
+  - For codex, `relay check` verifies the sign-in — the CLI can answer that
+    without spending anything.
+  - For claude it cannot: proving that CLI can authenticate costs a model call,
+    and `check` spends nothing. An unauthenticated claude fails on the first run,
+    not before it.
 - Nothing else — one static binary. Go 1.22+ only to build it yourself.
 
 ## Install
@@ -107,14 +112,18 @@ That is the file with its comments and ceilings stripped out. Both placeholders
 are rejected by name, so an unfinished config fails in `check` rather than
 inside a run you have already paid for.
 
-- **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md`, skills
-  and tooling. An empty one is a valid start;
+- **`repo_dir` is what the agent gets** — that directory's `CLAUDE.md` (or
+  `AGENTS.md` for codex), skills and tooling. An empty one is a valid start;
   [The working directory](docs/working-directory.md) is the ladder from there.
 - **Point it somewhere you are willing to have rewritten** — a headless run is
   autonomous and can never answer an approval prompt.
 - **The ceilings are written for you, and bounded** — 6 runs/hour, $5 per run, a
   15-minute kill, a poll every 30s. Delete one and its default applies, bounded
   too (12 runs/hour). [Configuration](docs/configuration.md) has the rest.
+- **Which runtime, and what it costs to be wrong** — `claude` enforces the $5
+  per-run cap itself; `codex` has no such cap, so a codex worker is bounded by
+  the kill, the hourly ceiling and its plan limits. [Runtimes](docs/runtimes.md)
+  is the comparison.
 
 ### 3. Check it, then run it
 
@@ -167,7 +176,8 @@ state, not a symptom.
 Defaults are bounded without configuring anything:
 
 - **12 runs/hour** — the ceiling that actually caps spend.
-- **$5 per run**, and a **15-minute** wall-clock kill.
+- **$5 per run** (claude; codex has no per-run cap), and a **15-minute**
+  wall-clock kill for either.
 - **60s relaunch cooldown**, fixed — two launches never go back-to-back.
 - **Three circuit breakers**, which pause a worker rather than let it fail
   forever.
@@ -188,7 +198,7 @@ rm ~/.relay/state/worker-1/PAUSED      # resume it
 | [Configuration](docs/configuration.md) | Every config field, per runtime, with defaults — and what changes with more than one worker |
 | [The working directory](docs/working-directory.md) | What a `repo_dir` gives the agent: `CLAUDE.md`, skills, subagents, settings |
 | [Commands & dashboard](docs/cli.md) | Commands, flags, and what the page shows |
-| [Runtimes](docs/runtimes.md) | Supported CLIs, and where codex stands |
+| [Runtimes](docs/runtimes.md) | The supported CLIs, what each run does, and what bounds it |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → where to look |
 
 ## Versioning

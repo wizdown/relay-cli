@@ -269,7 +269,20 @@ THE CONFIG FILE
     }
 
   The fields outside "runtime_config" are enforced by relay-cli and mean the
-  same thing for every runtime. The ones inside are that CLI's own vocabulary.
+  same thing for every runtime. The ones inside are that CLI's own vocabulary,
+  so they differ per runtime. A codex worker's block reads:
+
+          "runtime_config": {
+            "model": "gpt-5.1-codex",       // REQUIRED for codex
+            "reasoning_effort": "medium",   // default medium
+            "sandbox": "workspace-write",   // default workspace-write
+            "network_access": true,         // default true
+            "web_search": true              // default true
+          }
+
+  codex has no per-run spend cap to set: "max_usd_per_run" is claude's, and a
+  codex worker is bounded by max_seconds_per_run, max_runs_per_hour and the
+  plan limits of the account it is signed in as.
 
   EVERY key is checked by name, at every level of the file, and one this version
   does not accept is refused when the config loads — with the key you probably
@@ -306,6 +319,12 @@ CHOOSING A MODEL
   max_usd_per_run. A wrong model name fails inside the run, not at startup, so
   "claude --help" is the authority on what is currently accepted.
 
+  For codex, "model" is required for the same reason and passed through the same
+  way, with "codex --help" as the authority. The dial beside it is
+  "reasoning_effort" — minimal, low, medium, high or xhigh. It is the largest
+  influence on what a codex run costs, and since codex enforces no spend cap,
+  effort and max_runs_per_hour are the two knobs you have.
+
 TWO CLOCKS
   A POLL is curl-equivalent: it asks relay "do I have a task?" and runs no
   model, so an idle worker costs nothing however often it ticks.
@@ -332,30 +351,33 @@ RUNTIMES — no CLI is bundled, install them yourself
   invoke one coding CLI and read what it prints; the CLI itself is a separate
   program you install, and relay-cli finds it on PATH.
 
-    claude    SUPPORTED — the only runtime supported today. Its adapter is
-              compiled in, and it is the one that produces the live session
-              feed. Install the CLI separately: https://claude.com/claude-code
-    codex     COMING SOON. Not offered yet: it is unverified against current
-              codex builds and has no per-run spend cap, and shipping a runtime
-              that cannot be bounded is not something this will do quietly. A
-              worker asking for it is refused at startup, by name.
+    claude    SUPPORTED. Adapter compiled in, live session feed, and a hard
+              per-run spend cap the CLI enforces itself.
+              Install the CLI separately: https://claude.com/claude-code
+    codex     SUPPORTED. Adapter compiled in, live session feed — and NO per-run
+              spend cap, because the CLI has none to set. A codex worker is
+              bounded by max_seconds_per_run, max_runs_per_hour and its
+              account's plan limits, and nothing here can cut a run off at a
+              dollar figure. Install the CLI separately:
+              https://developers.openai.com/codex/cli
     <other>   nothing else is offered today. An unsupported "runtime" value is
               refused when the config loads, rather than failing inside a run
               you have already paid for.
 
   At startup, every worker's runtime must prove its CLI is installed and usable,
   and relay-cli refuses to start if one is not — a missing CLI is reported once,
-  by name, rather than failing on every cycle in a background log. For claude it
-  also checks that the installed build accepts the flags this adapter needs
-  (streaming output, the MCP config, the spend cap); set
+  by name, rather than failing on every cycle in a background log. Each adapter
+  also checks that the installed build accepts the flags it needs (streaming
+  output, the MCP wiring, the sandbox or the spend cap); set
   RELAY_CLI_SKIP_RUNTIME_CHECK=1 to bypass that flag check.
 
   SIGN IN TO THE CLI FIRST. A worker launches it as you, so it authenticates the
-  way your own sessions do — run it once yourself and log in. That is the one
-  prerequisite neither "check" nor startup can verify for you: proving a CLI can
-  authenticate costs a model call, and check spends nothing. A CLI that is
-  installed but not signed in starts, fails immediately, and says so in
-  state/<name>/worker.log.
+  way your own sessions do — run it once yourself and log in. For codex that is
+  "codex login" with your ChatGPT account, and "check" verifies it for you: the
+  CLI can say whether it is signed in without spending anything. For claude it
+  cannot — proving that CLI can authenticate costs a model call, and check spends
+  nothing — so a claude CLI that is installed but not signed in starts, fails
+  immediately, and says so in state/<name>/worker.log.
 
 EVERYTHING COSTS WHAT IT SAYS
   Polls are free and runs are not, and every ceiling here counts runs. The

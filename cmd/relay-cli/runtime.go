@@ -11,15 +11,19 @@
 // alone is relay's per-agent instructions_md, which the agent receives over MCP.
 // An adapter passes along the runtime contract and nothing more.
 //
-// `claude` is the only runtime offered today, and its adapter is native Go —
-// which is what lets relay run with no jq, no curl and no scripts on disk.
+// `claude` and `codex` are the runtimes offered today, and both adapters are
+// native Go — which is what lets relay run with no jq, no curl and no scripts
+// on disk. A native adapter is what buys the live session feed: both CLIs emit
+// one JSON object per event, and only Go in this repo can turn those into the
+// events the dashboard draws.
 //
-// A second kind exists in this file and does not run: bashRuntime drives a
+// A third kind exists in this file and does not run: bashRuntime drives a
 // runtimes/<name>.sh through the contract documented on bashAdapterEnv below.
-// It is complete and tested, but bashAdaptersEnabled is false, because nothing
-// but claude has been verified against a current CLI and an extension point
-// that cannot be supported is a promise this repo is not ready to keep. Codex
-// support is the reason it is kept rather than deleted.
+// It is complete and tested, but bashAdaptersEnabled is false, because a bash
+// adapter contributes an argv and nothing else — no stream parsing and no
+// declared config keys — and an extension point that cannot be supported is a
+// promise this repo is not ready to keep. It is kept for the CLI nobody has
+// written an adapter for yet.
 package main
 
 import (
@@ -115,6 +119,11 @@ type runtimeField struct {
 	// Default applies when the key is absent and not required. Empty means the
 	// setting simply goes unset, which is not the same as zero.
 	Default string
+	// Enum, when set, is the complete list of values this key accepts. A value
+	// outside it is refused when the config loads rather than by the CLI inside
+	// a run that has already been paid for — which is the whole reason this
+	// table exists.
+	Enum []string
 	// Doc is one line, used in the error a missing required field produces and
 	// in the generated reference table.
 	Doc string
@@ -125,6 +134,11 @@ type fieldKind int
 const (
 	fieldString fieldKind = iota
 	fieldNumber
+	// fieldBool is a JSON true/false, canonicalised to "true"/"false". Written
+	// as a boolean rather than as a string because that is what someone editing
+	// a JSON file expects to write, and "false" quoted is the value that reads
+	// as on.
+	fieldBool
 )
 
 // Runtime is one CLI, wrapped.
@@ -170,18 +184,21 @@ type versioned interface {
 	Path() string
 }
 
-// bashAdaptersEnabled gates every runtime that is not claude.
+// bashAdaptersEnabled gates every runtime that has no adapter compiled in.
 //
 // The bash-adapter path below is complete and covered by tests; what it is
 // missing is verification against a real CLI, which is the whole of what
-// "supported" means here. Flipping this to true is one half of shipping codex
-// support — the other is restoring runtimes/ with an adapter in it.
+// "supported" means here. It is also the weaker half of the contract: a script
+// gets no stream parsing and declares no config keys, so a worker driven by one
+// cannot even be told which model to run. Both compiled-in runtimes are native
+// for that reason; flipping this constant is for a third-party CLI, not for
+// anything this repo ships.
 const bashAdaptersEnabled = false
 
 // supportedRuntimes is every runtime a config may name today. The reference
 // tables in docs/configuration.md and the test that guards them are both
 // written from this, so a new adapter is documented by existing.
-func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter} }
+func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter, codexAdapter} }
 
 // ResolveRuntime maps a worker's "runtime" field to an adapter.
 //
@@ -191,20 +208,14 @@ func supportedRuntimes() []Runtime { return []Runtime{claudeAdapter} }
 // is installed separately and found on PATH, and its adapter is asked to prove
 // that at startup.
 func ResolveRuntime(name, relayDir string) (Runtime, error) {
-	if name == "claude" {
-		return claudeAdapter, nil
+	for _, rt := range supportedRuntimes() {
+		if rt.Name() == name {
+			return rt, nil
+		}
 	}
 	if !bashAdaptersEnabled {
-		// Naming codex specifically matters: "unknown runtime" would read as a
-		// typo, and someone who deliberately wrote "codex" would go looking for
-		// the spelling mistake rather than learning that the runtime is simply
-		// not offered yet.
-		if name == "codex" {
-			return nil, fmt.Errorf("claude is the only supported runtime today, and codex support is coming soon.\n" +
-				"       Set \"runtime\": \"claude\".")
-		}
-		return nil, fmt.Errorf("relay-cli supports one runtime: claude.\n"+
-			"       %q is not offered. Set \"runtime\": \"claude\".", name)
+		return nil, fmt.Errorf("relay-cli supports two runtimes: claude and codex.\n"+
+			"       %q is not offered. Set \"runtime\" to one of those.", name)
 	}
 	script := filepath.Join(relayDir, "runtimes", name+".sh")
 	if _, err := os.Stat(script); err != nil {

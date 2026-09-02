@@ -164,40 +164,37 @@ func TestBypassSkipsFlagCheckButNotExistence(t *testing.T) {
 	}
 }
 
-// codex is not offered yet, and the error has to say that rather than describe
-// a missing file — someone who deliberately wrote "codex" would otherwise go
-// hunting for a typo.
-func TestCodexSaysComingSoon(t *testing.T) {
-	_, err := ResolveRuntime("codex", t.TempDir())
-	if err == nil {
-		t.Fatal("codex is not a supported runtime yet")
-	}
-	for _, want := range []string{"coming soon", `"runtime": "claude"`} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error should mention %q: %v", want, err)
+// Both compiled-in runtimes resolve without touching the disk: resolving is
+// pure, and the tests that parse configs have to run where no CLI is installed.
+func TestBothRuntimesResolve(t *testing.T) {
+	for _, name := range []string{"claude", "codex"} {
+		rt, err := ResolveRuntime(name, t.TempDir())
+		if err != nil {
+			t.Fatalf("%s should resolve: %v", name, err)
+		}
+		if rt.Name() != name {
+			t.Errorf("resolved %q to the %q adapter", name, rt.Name())
 		}
 	}
-	// The old error described a missing adapter file and an npm install. Both
-	// would now be a lie: no adapter path is consulted at all.
-	if strings.Contains(err.Error(), "runtimes/") || strings.Contains(err.Error(), "npm i -g") {
-		t.Errorf("should not describe an adapter that cannot be loaded: %v", err)
-	}
 }
 
-// Any other name gets the shorter answer, and it still names the one runtime
-// that works rather than only saying what does not.
-func TestUnknownRuntimeNamesTheSupportedOne(t *testing.T) {
+// Any other name is refused, and the error names the runtimes that do work
+// rather than only saying what does not.
+func TestUnknownRuntimeNamesTheSupportedOnes(t *testing.T) {
 	_, err := ResolveRuntime("aider", t.TempDir())
 	if err == nil {
-		t.Fatal("only claude resolves while bash adapters are gated")
+		t.Fatal("only the compiled-in adapters resolve while bash adapters are gated")
 	}
-	if !strings.Contains(err.Error(), "claude") {
-		t.Errorf("error should name claude: %v", err)
+	for _, want := range []string{"claude", "codex"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should name %s: %v", want, err)
+		}
 	}
 }
 
-// The bash-adapter path is shipped disabled, not deleted — codex support is the
-// reason it is kept. Unreachable code rots silently, so this exercises it
+// The bash-adapter path is shipped disabled, not deleted — a CLI nobody has
+// written an adapter for is the reason it is kept. Unreachable code rots
+// silently, so this exercises it
 // directly: it has to still build an argv the day bashAdaptersEnabled flips.
 func TestBashAdapterStillBuildsACommand(t *testing.T) {
 	dir := t.TempDir()

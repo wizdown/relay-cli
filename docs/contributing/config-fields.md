@@ -19,21 +19,27 @@ This is the decision that matters, and it is the one the layout is built around.
 | Enforced by | relay-cli itself | the CLI, via its adapter |
 | Means the same for every runtime | yes | no — it is that CLI's vocabulary |
 | Declared in | the `Worker` struct, `config.go` | that runtime's `ConfigFields()` |
-| Examples | `max_runs_per_hour`, `max_seconds_per_run` | `model`, `max_usd_per_run` |
+| Examples | `max_runs_per_hour`, `max_seconds_per_run` | `model`, `max_usd_per_run` (claude), `sandbox` (codex) |
 
 `max_seconds_per_run` and `max_usd_per_run` read like a matched pair and are
 deliberately on opposite sides of that line: the wall-clock kill is relay-cli's
 `context.WithTimeout` and works everywhere, while the dollar cap becomes
-`--max-budget-usd` and only claude can enforce it. The placement is the answer to
-"who kills this run?".
+`--max-budget-usd` and only claude can enforce it — codex has no equivalent at
+all, which is why it declares no such key rather than accepting one it would
+ignore. The placement is the answer to "who kills this run?".
 
 ## Adding a runtime setting
 
 One place. In that adapter's `ConfigFields()`, add a `runtimeField` with its
-`Key`, `Kind`, whether it is `Required`, its `Default` if it has one, and a `Doc`
-line. That table is read by the config parser (which validates against it and
-rejects unknown keys), by `bashAdapterEnv` (which exports each key as
-`RUNTIME_<KEY>`), and by the docs test.
+`Key`, `Kind` (`fieldString`, `fieldNumber` or `fieldBool`), whether it is
+`Required`, its `Default` if it has one, an `Enum` if only a fixed set of values
+is meaningful, and a `Doc` line. That table is read by the config parser (which
+validates against it and rejects unknown keys and values), by `bashAdapterEnv`
+(which exports each key as `RUNTIME_<KEY>`), and by the docs test.
+
+An `Enum` is worth setting whenever the CLI would reject a wrong value: refusing
+`workspace_write` when the config loads costs a startup error, and discovering it
+inside a run costs a run.
 
 Then add a row to that runtime's table in `docs/configuration.md` and use the
 value in the adapter's `BuildCmd`. `make check` names anything you missed.
@@ -145,9 +151,11 @@ not a stylistic preference: agent identity delivered over MCP reaches a session
 that is **already running**, and stays correct when relay changes. A file here
 could do neither.
 
-`system_prompt`, `system_prompt_file`, `min_run_interval_seconds`,
-`permission_mode` and `codex_mcp_transport` were removed for exactly this reason
-and are rejected by name.
+`system_prompt`, `system_prompt_file`, `min_run_interval_seconds` and
+`permission_mode` were removed for exactly this reason and are rejected by name.
+So is `codex_mcp_transport`, for a different one: there is no transport left to
+choose, because a codex worker is handed relay as a streamable-HTTP MCP server
+directly.
 
 `runtime_args` was removed for a related one: raw argv passthrough could silently
 override flags the harness depends on — including `--permission-mode`, which is

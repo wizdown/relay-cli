@@ -4,9 +4,10 @@ Every worker has a `repo_dir`, and the coding CLI starts inside it. That
 directory is the whole of what the agent knows about your world: relay tells it
 *what* to do, and this directory decides *what it can do it with*.
 
-`claude` is the only supported runtime, so this page is about preparing a
-directory for [Claude Code](https://claude.com/claude-code) — the same
-`CLAUDE.md`, skills and subagents you would use yourself.
+The ladder below is written for [Claude Code](https://claude.com/claude-code) —
+the same `CLAUDE.md`, skills and subagents you would use yourself. A `codex`
+worker reads the same directory in its own layout, and
+[what codex loads instead](#what-codex-loads-instead) maps each rung across.
 
 Read it as a ladder. An empty directory already works; everything after the
 first step is optional, and you add a rung only when you want the capability it
@@ -177,13 +178,40 @@ relay's tools and the ordinary coding tools before the session starts. Rules in
 your personal `~/.claude/settings.json` do still apply, and a `deny` rule there
 still wins.
 
+## What codex loads instead
+
+A `codex` worker starts in the same `repo_dir` and the ladder above still
+applies — only the filenames change, and one rung has no equivalent:
+
+| Step | claude | codex |
+|---|---|---|
+| Tell it about the project | `CLAUDE.md` | `AGENTS.md` |
+| Give it a procedure | `.claude/skills/<name>/SKILL.md` | — |
+| Give it a specialist | `.claude/agents/<name>.md` | `.codex/agents/<name>.toml` |
+| Give it an environment | `.claude/settings.json` | `.codex/config.toml` |
+
+`relay check` prints what it found under each worker, in that worker's own
+layout, so a file written for the wrong CLI shows up before the first run rather
+than after a day of sessions that never read it.
+
+Two differences worth knowing:
+
+- **A project `.codex/config.toml` does apply.** A worker runs with
+  `--ignore-user-config`, which drops *your* `~/.codex/config.toml` — but a
+  config committed in the checkout is still read. It is the one file in the
+  directory that can change how the run itself behaves.
+- **What the agent may write is a sandbox, not a rules file.** It is
+  `runtime_config.sandbox` and `network_access` in the worker's config; see
+  [Runtimes](runtimes.md#what-a-codex-run-does).
+
 ## What a worker will not pick up: MCP servers
 
-This is the one thing in the directory that does not load. A worker session runs
-with `--strict-mcp-config`, which means:
+This is the one thing in the directory that does not load. A claude worker runs
+with `--strict-mcp-config` and a codex worker with `--ignore-user-config`, and
+both mean:
 
 - an `.mcp.json` in the working directory is **ignored**;
-- the MCP servers in your own Claude Code config are **ignored**.
+- the MCP servers in your own CLI config are **ignored**.
 
 The session's only MCP server is this worker's relay connector. An unattended
 agent gets the credentials the operator chose for it deliberately, not whatever
@@ -192,9 +220,14 @@ give the agent a script or a CLI it can run instead.
 
 ## What comes along from your machine
 
-The isolation above is about MCP servers only. Your personal Claude Code setup
-is otherwise still there: skills and subagents in `~/.claude/` are visible to
-the worker, and so are the permission rules in `~/.claude/settings.json`.
+For claude, the isolation above is about MCP servers only. Your personal Claude
+Code setup is otherwise still there: skills and subagents in `~/.claude/` are
+visible to the worker, and so are the permission rules in
+`~/.claude/settings.json`.
+
+For codex it is broader: `--ignore-user-config` drops your `~/.codex/config.toml`
+entirely, so a codex worker behaves the same whatever you have configured for
+yourself. Your sign-in is the one thing it does share.
 
 If you want a worker to behave the same way on someone else's machine, keep what
 it depends on in the working directory.
