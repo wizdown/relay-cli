@@ -5,9 +5,13 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- The documentation and `relay help` were rewritten to be shorter, and tests
+  now hold the prose to the code. No behaviour changed.
+
+## v0.2.0
+
 - `codex` is a second supported runtime, with `model`, `reasoning_effort`,
   `sandbox`, `network_access` and `web_search` in its `runtime_config`.
-- The documentation was rewritten to be shorter. No behaviour changed.
 
 ## v0.1.1
 
