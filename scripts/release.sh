@@ -14,9 +14,11 @@
 #
 # What it does, in order, so the failure modes are readable:
 #
-#   1. refuses unless master is clean, current and untagged for this version
-#   2. writes the version, runs `make check` and `make dist` — and puts the
-#      tree back if either fails, so a failed release leaves no trace
+#   1. refuses unless master is clean, current and untagged for this version,
+#      and CHANGELOG.md has something under Unreleased to release
+#   2. writes the version into the constant, the docs and the changelog, runs
+#      `make check` and `make dist` — and puts the tree back if either fails,
+#      so a failed release leaves no trace
 #   3. commits the release, tags it, commits the next -SNAPSHOT
 #   4. pushes all three refs with --atomic
 #
@@ -34,6 +36,7 @@ cd "$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 
 MAIN_GO=cmd/relay-cli/main.go
+CHANGELOG=CHANGELOG.md
 BRANCH=master
 
 die() {
@@ -57,6 +60,13 @@ semver_gt() {
 }
 
 last_tag() { git describe --tags --abbrev=0 2>/dev/null || true; }
+
+# The entries under `## Unreleased` in the changelog, blank lines dropped. Empty
+# when the section is missing or has nothing in it.
+unreleased() {
+	awk '/^## Unreleased$/ { in_section = 1; next } /^## / { in_section = 0 } in_section' "$CHANGELOG" |
+		grep -v '^[[:space:]]*$' || true
+}
 
 # What someone needs in order to choose the number: the range, and what it
 # contains. This is the whole reason the argument is mandatory rather than
@@ -137,6 +147,18 @@ git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null &&
 	die "$TAG already exists locally. A tag that never published is re-runnable with:
        gh workflow run release.yml -f tag=$TAG"
 
+# The changelog is what a user reads to learn what changed, and a test holds
+# the docs' version to a heading in it — so the release writes that heading
+# from the Unreleased section, and there has to be something in it to write.
+grep -q '^## Unreleased$' "$CHANGELOG" 2>/dev/null ||
+	die "$CHANGELOG has no '## Unreleased' section. The release moves its entries
+       under '## $TAG'; add the section back, with what changed, and re-run."
+
+[ -n "$(unreleased)" ] ||
+	die "$CHANGELOG has nothing under Unreleased. A release says what changed, so
+       add at least one line there — for a fix or docs-only batch, say that —
+       commit it, and re-run."
+
 [ -z "$(git status --porcelain)" ] ||
 	die "the working tree is dirty. A release commit should contain the version
        bump and nothing else."
@@ -165,7 +187,7 @@ note "ok — releasing $TAG from $(git rev-parse --short HEAD)"
 # what makes "the docs match this release" a thing the suite can answer.
 
 # set_version <x.y.z[-SNAPSHOT]> — the constant, plus the sample `relay x.y.z`
-# lines in the user docs, which a test holds to it.
+# lines in the user docs and the changelog heading, which a test holds to it.
 set_version() {
 	local v="$1"
 	perl -pi -e "s/^(\t*version = \")[^\"]*(\")/\${1}$v\${2}/" "$MAIN_GO"
@@ -178,6 +200,10 @@ set_version() {
 	for f in readme.md docs/*.md; do
 		perl -pi -e "s/\brelay \d+\.\d+\.\d+/relay $v/g" "$f"
 	done
+	# The Unreleased entries become this release's, under a fresh Unreleased
+	# heading for the next batch. The next -SNAPSHOT leaves it alone: that empty
+	# section is already the place its changes go.
+	perl -0pi -e "s/^## Unreleased\n/## Unreleased\n\n## v$v\n/m" "$CHANGELOG"
 }
 
 # Only the files set_version writes. Narrow on purpose: this runs on a tree the
@@ -185,7 +211,7 @@ set_version() {
 # anyone might run from a dirty checkout is a footgun waiting for the one time
 # the clean check is moved.
 restore() {
-	git checkout -- "$MAIN_GO" readme.md docs 2>/dev/null
+	git checkout -- "$MAIN_GO" "$CHANGELOG" readme.md docs 2>/dev/null
 }
 
 set_version "$VERSION"
@@ -212,6 +238,10 @@ step "about to release"
 note "tag        $TAG"
 note "commit     $(git rev-parse --short HEAD) on $BRANCH"
 note "artifacts  $(ls dist/ | tr '\n' ' ')"
+echo
+note "changelog, now under ## $TAG:"
+awk -v tag="$TAG" '$0 == "## " tag { in_section = 1; next } /^## / { in_section = 0 } in_section' "$CHANGELOG" |
+	grep -v '^[[:space:]]*$' | sed 's/^/    /'
 echo
 git --no-pager diff --stat | sed 's/^/  /'
 echo
