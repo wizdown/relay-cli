@@ -1,0 +1,933 @@
+<title>Relay Fleet Mockups</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+/* ---------------------------------------------------------------------------
+   Five mockups for the relay-cli dashboard. The palette, the type and the
+   component vocabulary inside every frame are the ones already in
+   cmd/relay-cli/ui/index.html: these are proposals for that page, not a new
+   look. The chrome around the frames is a shade warmer and darker so an
+   artboard reads as a window sitting on a board.
+   Every number below is invented, but every FIELD it stands for is named in
+   the brief above its frame.
+--------------------------------------------------------------------------- */
+:root {
+  /* board chrome */
+  --page: #eeeae2; --board: #e6e1d7; --ink: #1f1e1c; --muted: #6f6c66;
+  --faint: #97938c; --rule: #dcd7cd; --shadow: rgba(31, 30, 28, .13);
+  /* the product's own tokens, copied from ui/index.html */
+  --p-bg: #fbfbfa; --p-panel: #ffffff; --p-border: #e4e2dd; --p-text: #1f1e1c;
+  --p-dim: #6f6c66; --p-faint: #97938c; --p-accent: #b4552d; --p-ok: #2f7d4f;
+  --p-warn: #a8710f; --p-err: #b3382c; --p-run: #2f6ba8;
+  --p-wash: rgba(180, 85, 45, .10); --p-grid: rgba(31, 30, 28, .07);
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0e0d0c; --board: #141311; --ink: #eceae5; --muted: #9d9992;
+    --faint: #6f6c66; --rule: #2b2a26; --shadow: rgba(0, 0, 0, .5);
+    --p-bg: #171614; --p-panel: #1e1d1a; --p-border: #34322d; --p-text: #eceae5;
+    --p-dim: #9d9992; --p-faint: #6f6c66; --p-accent: #e0794a; --p-ok: #63b083;
+    --p-warn: #d8a13f; --p-err: #e0736a; --p-run: #6da3d8;
+    --p-wash: rgba(224, 121, 74, .13); --p-grid: rgba(236, 234, 229, .08);
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0e0d0c; --board: #141311; --ink: #eceae5; --muted: #9d9992;
+  --faint: #6f6c66; --rule: #2b2a26; --shadow: rgba(0, 0, 0, .5);
+  --p-bg: #171614; --p-panel: #1e1d1a; --p-border: #34322d; --p-text: #eceae5;
+  --p-dim: #9d9992; --p-faint: #6f6c66; --p-accent: #e0794a; --p-ok: #63b083;
+  --p-warn: #d8a13f; --p-err: #e0736a; --p-run: #6da3d8;
+  --p-wash: rgba(224, 121, 74, .13); --p-grid: rgba(236, 234, 229, .08);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.55 var(--sans); }
+h2, h3 { text-wrap: balance; }
+
+/* ── board chrome ───────────────────────────────────────────────────────── */
+.bar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center;
+  gap: 10px; flex-wrap: wrap; padding: 10px 22px;
+  background: color-mix(in srgb, var(--page) 92%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--rule);
+}
+.brand { font: 600 14px/1 var(--mono); letter-spacing: .01em; }
+.brand em { color: var(--p-accent); font-style: normal; }
+.brand span { color: var(--faint); font-weight: 400; margin-left: 8px; }
+.grow { flex: 1; }
+.tab {
+  font: 500 12px/1 var(--mono); padding: 6px 11px; border-radius: 20px; cursor: pointer;
+  border: 1px solid var(--rule); background: none; color: var(--muted);
+}
+.tab:hover { border-color: var(--muted); color: var(--ink); }
+.tab[aria-selected="true"] { border-color: var(--p-accent); color: var(--p-accent); background: var(--p-wash); }
+.tab:focus-visible, .frame [tabindex]:focus-visible { outline: 2px solid var(--p-accent); outline-offset: 2px; }
+
+.stage { max-width: 1180px; margin: 0 auto; padding: 26px 22px 90px; }
+.lede { max-width: 66ch; color: var(--muted); font-size: 14px; margin: 0 0 22px; }
+.lede b { color: var(--ink); font-weight: 600; }
+
+/* ── the brief above each frame ─────────────────────────────────────────── */
+.eyebrow {
+  font: 600 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--p-accent); margin: 0 0 10px;
+}
+.opt > h2 { margin: 0 0 6px; font-size: 25px; letter-spacing: -.015em; font-weight: 640; }
+.opt > p.intent { margin: 0 0 20px; max-width: 68ch; color: var(--muted); font-size: 14px; }
+.spec { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin: 0 0 20px; border-top: 1px solid var(--rule); }
+.spec > div { padding: 12px 16px 12px 0; border-right: 1px solid var(--rule); }
+.spec > div:last-child { border-right: 0; padding-right: 0; }
+.spec > div + div { padding-left: 16px; }
+.spec dt {
+  font: 600 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 7px;
+}
+.spec dd { margin: 0; font-size: 13px; color: var(--muted); }
+.spec code { font: 500 12px/1.4 var(--mono); color: var(--ink); background: var(--board); padding: 1px 4px; border-radius: 3px; }
+.note {
+  margin: 18px 0 0; padding: 11px 15px; border-left: 2px solid var(--p-warn);
+  background: color-mix(in srgb, var(--p-warn) 9%, transparent);
+  font-size: 13px; color: var(--muted); max-width: 78ch;
+}
+.note b { color: var(--ink); }
+
+/* ── the window ─────────────────────────────────────────────────────────── */
+.frame {
+  border: 1px solid var(--p-border); border-radius: 10px; overflow: hidden;
+  background: var(--p-bg); color: var(--p-text); font-size: 14px;
+  box-shadow: 0 1px 2px var(--shadow), 0 18px 40px -26px var(--shadow);
+}
+.frame .fhead {
+  display: flex; align-items: baseline; gap: 13px; padding: 9px 14px;
+  border-bottom: 1px solid var(--p-border); background: var(--p-panel);
+}
+.fhead .t1 { font: 650 14px/1 var(--sans); }
+.fhead .t1 i { color: var(--p-accent); font-style: normal; }
+.fhead .path, .fhead .up { font: 400 11px/1 var(--mono); color: var(--p-faint); }
+.fhead .live { font-size: 11px; color: var(--p-dim); display: flex; align-items: center; gap: 6px; }
+.fhead .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--p-ok); }
+.fbody { display: flex; min-height: 380px; }
+.side { width: 210px; flex: none; border-right: 1px solid var(--p-border); background: var(--p-panel); padding: 10px 0; }
+.pane { flex: 1; min-width: 0; }
+.shead {
+  padding: 4px 13px 7px; font: 500 10px/1 var(--mono); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--p-faint);
+}
+.mono { font-family: var(--mono); }
+.pill {
+  font: 400 10px/1.6 var(--mono); padding: 1px 7px; border-radius: 20px;
+  border: 1px solid currentColor; white-space: nowrap; display: inline-block;
+}
+.s-running { color: var(--p-accent); } .s-idle { color: var(--p-dim); }
+.s-polling { color: var(--p-run); } .s-ok { color: var(--p-ok); }
+.s-warn { color: var(--p-warn); } .s-err { color: var(--p-err); }
+.task {
+  font: 500 11px/1.6 var(--mono); padding: 1px 7px; border-radius: 4px;
+  background: var(--p-wash); color: var(--p-accent); white-space: nowrap; display: inline-block;
+}
+.tnum { font-variant-numeric: tabular-nums; }
+</style>
+<style>
+/* ── A: fleet board ─────────────────────────────────────────────────────── */
+.tiles { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--p-border); background: var(--p-panel); }
+.tile { padding: 11px 14px 12px; border-right: 1px solid var(--p-border); }
+.tile:last-child { border-right: 0; }
+.tile .k { font: 500 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--p-faint); }
+.tile .v { font: 600 21px/1.2 var(--mono); margin-top: 7px; letter-spacing: -.02em; }
+.tile .v small { font-size: 12px; margin-left: 5px; font-weight: 400; color: var(--p-dim); letter-spacing: 0; }
+.tile .sub { font: 400 11px/1.4 var(--mono); color: var(--p-dim); margin-top: 3px; }
+.tile .sub.warn { color: var(--p-warn); }
+.spark { display: block; margin-top: 6px; }
+
+.wrow { display: grid; grid-template-columns: 168px 1fr 248px; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--p-border); align-items: start; }
+.wrow:last-child { border-bottom: 0; }
+.wrow.hot { background: var(--p-wash); }
+.wname { font: 600 13px/1.3 var(--sans); }
+.wmeta { font: 400 11px/1.6 var(--mono); color: var(--p-faint); margin-top: 2px; }
+.doing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.doing .title { font-size: 13px; }
+.tool { font: 400 12px/1.5 var(--mono); color: var(--p-dim); margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool b { color: var(--p-text); font-weight: 500; }
+.facts { display: flex; gap: 14px; margin-top: 7px; font: 400 11px/1 var(--mono); color: var(--p-faint); flex-wrap: wrap; }
+.facts b { color: var(--p-dim); font-weight: 500; }
+.meters { display: grid; gap: 7px; }
+.meter .lab { display: flex; justify-content: space-between; font: 400 11px/1.4 var(--mono); color: var(--p-dim); }
+.meter .lab b { color: var(--p-text); font-weight: 500; }
+.track { height: 5px; border-radius: 3px; background: var(--p-border); overflow: hidden; display: flex; margin-top: 3px; }
+.track i { display: block; height: 100%; }
+.fill-accent { background: var(--p-accent); } .fill-run { background: var(--p-run); }
+.fill-ok { background: var(--p-ok); } .fill-warn { background: var(--p-warn); }
+.fill-err { background: var(--p-err); } .fill-mute { background: var(--p-faint); opacity: .55; }
+
+/* ── B: timeline ────────────────────────────────────────────────────────── */
+.tlwrap { padding: 6px 4px 0; overflow-x: auto; }
+.tl { display: block; width: 100%; min-width: 900px; height: auto; }
+.tl .lane-label { font: 500 12px var(--mono); fill: var(--p-text); }
+.tl .lane-sub { font: 400 10px var(--mono); fill: var(--p-faint); }
+.tl .axis { font: 400 10px var(--mono); fill: var(--p-faint); }
+.tl .grid { stroke: var(--p-grid); stroke-width: 1; }
+.tl .lane-bg { fill: var(--p-panel); }
+.tl .bar-claude { fill: var(--p-wash); stroke: var(--p-accent); stroke-width: 1; }
+.tl .bar-codex { fill: color-mix(in srgb, var(--p-run) 12%, transparent); stroke: var(--p-run); stroke-width: 1; }
+.tl .bar-ghost { fill: none; stroke: var(--p-faint); stroke-width: 1; stroke-dasharray: 3 3; }
+.tl .tick-claude { fill: var(--p-accent); opacity: .55; }
+.tl .tick-codex { fill: var(--p-run); opacity: .55; }
+.tl .hand { fill: none; stroke: var(--p-ok); stroke-width: 1.4; }
+.tl .hand-label { font: 500 10px var(--mono); fill: var(--p-ok); }
+.tl .bar-label { font: 500 11px var(--mono); fill: var(--p-text); }
+.tl .bar-cost { font: 400 10px var(--mono); fill: var(--p-dim); }
+.tl .ghost-label { font: 400 10px var(--mono); fill: var(--p-faint); }
+.tl .now { stroke: var(--p-err); stroke-width: 1; stroke-dasharray: 2 3; }
+.tl .now-label { font: 500 10px var(--mono); fill: var(--p-err); }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 16px 12px; font: 400 11px/1 var(--mono); color: var(--p-dim); }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.swatch { width: 16px; height: 9px; border-radius: 2px; border: 1px solid currentColor; }
+.tipcard {
+  position: absolute; width: 232px; border: 1px solid var(--p-border); border-radius: 7px;
+  background: var(--p-panel); box-shadow: 0 10px 24px -14px var(--shadow); padding: 9px 11px;
+  font-size: 12px;
+}
+.tipcard .th { font: 600 12px/1.3 var(--mono); display: flex; justify-content: space-between; gap: 8px; }
+.tipcard dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 7px 0 0; font: 400 11px/1.5 var(--mono); }
+.tipcard dt { color: var(--p-faint); } .tipcard dd { margin: 0; text-align: right; color: var(--p-text); }
+.tiphost { position: relative; }
+
+/* ── C: fan-out tree ────────────────────────────────────────────────────── */
+.tree { padding: 14px 16px 18px; }
+.node {
+  border: 1px solid var(--p-border); border-radius: 8px; background: var(--p-panel);
+  padding: 10px 12px; display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start;
+}
+.node.root { border-color: var(--p-accent); }
+.node .nt { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.node .ntitle { font-weight: 600; font-size: 13px; }
+.node .nline { font: 400 11px/1.6 var(--mono); color: var(--p-dim); margin-top: 4px; }
+.node .nnum { text-align: right; font: 400 11px/1.6 var(--mono); color: var(--p-dim); white-space: nowrap; }
+.node .nnum b { color: var(--p-text); font-weight: 600; font-size: 13px; }
+.kids { margin: 0 0 0 26px; padding: 0; list-style: none; position: relative; }
+.kids::before { content: ""; position: absolute; left: 0; top: -10px; bottom: 26px; width: 1px; background: var(--p-border); }
+.kids > li { position: relative; padding-left: 24px; margin-top: 10px; }
+.kids > li::before { content: ""; position: absolute; left: 0; top: 24px; width: 18px; height: 1px; background: var(--p-border); }
+.kids > li.queued .node { border-style: dashed; }
+.ledger { border-top: 1px solid var(--p-border); padding: 10px 16px 14px; }
+.ledger .lrow { display: grid; grid-template-columns: 62px 120px 1fr; gap: 12px; padding: 3px 0; font: 400 12px/1.6 var(--mono); }
+.ledger .lrow .who { color: var(--p-dim); overflow: hidden; text-overflow: ellipsis; }
+.ledger .lrow time { color: var(--p-faint); font-size: 11px; }
+
+/* ── D: run inspector ───────────────────────────────────────────────────── */
+.rail { width: 268px; flex: none; border-right: 1px solid var(--p-border); background: var(--p-panel); padding: 12px 14px; display: grid; gap: 14px; align-content: start; }
+.block .bh { font: 500 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--p-faint); margin-bottom: 8px; }
+.big { font: 600 26px/1 var(--mono); letter-spacing: -.02em; }
+.big small { font-size: 12px; font-weight: 400; color: var(--p-dim); letter-spacing: 0; margin-left: 6px; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font: 400 11px/1.6 var(--mono); }
+.kv dt { color: var(--p-faint); } .kv dd { margin: 0; text-align: right; }
+.hist { display: grid; gap: 4px; font: 400 11px/1.4 var(--mono); }
+.hist .hrow { display: grid; grid-template-columns: 74px 1fr 22px; gap: 8px; align-items: center; }
+.hist .hbar { height: 7px; border-radius: 2px; background: var(--p-accent); opacity: .8; }
+.hist .n { text-align: right; color: var(--p-dim); }
+.feed { padding: 8px 0 20px; }
+.frow { display: flex; gap: 10px; padding: 2px 16px; align-items: baseline; }
+.frow .ft { font: 400 11px var(--mono); color: var(--p-faint); flex: none; width: 58px; }
+.frow .fb { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.frow .fb.mono { font: 400 12px/1.5 var(--mono); }
+.frow.rule { margin: 8px 16px 6px; padding: 5px 10px; border-left: 3px solid var(--p-accent); background: var(--p-wash); border-radius: 0 5px 5px 0; }
+.dim { color: var(--p-dim); } .faint { color: var(--p-faint); }
+.ok { color: var(--p-ok); } .warn { color: var(--p-warn); } .err { color: var(--p-err); } .run { color: var(--p-run); } .acc { color: var(--p-accent); }
+
+/* ── E: ledger ──────────────────────────────────────────────────────────── */
+table.led { border-collapse: collapse; width: 100%; font: 400 12px/1.5 var(--mono); }
+table.led th, table.led td { padding: 7px 12px; border-bottom: 1px solid var(--p-border); text-align: right; white-space: nowrap; }
+table.led th { font: 500 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--p-faint); text-align: right; }
+table.led th:first-child, table.led td:first-child { text-align: left; }
+table.led td.name { font-family: var(--sans); font-weight: 600; font-size: 13px; }
+table.led tfoot td { border-bottom: 0; color: var(--p-dim); }
+table.led tfoot td b { color: var(--p-text); }
+.mix { display: inline-flex; width: 74px; height: 7px; border-radius: 2px; overflow: hidden; vertical-align: middle; }
+.mix i { display: block; height: 100%; }
+.bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 7px; align-items: end; padding: 14px 16px 6px; height: 132px; }
+.bars .col { display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; height: 100%; }
+.bars .col i { display: block; width: 42px; margin: 0 auto; border-radius: 2px 2px 0 0; }
+.bars .col span { font: 400 9px/1.4 var(--mono); color: var(--p-faint); text-align: center;
+  border-top: 1px solid var(--p-border); padding-top: 4px; margin-top: 2px; }
+.charthead { display: flex; align-items: baseline; gap: 12px; padding: 12px 16px 0; }
+.charthead h4 { margin: 0; font: 600 13px/1 var(--sans); }
+.charthead p { margin: 0; font: 400 11px/1 var(--mono); color: var(--p-faint); }
+.foot { padding: 10px 16px 14px; font: 400 11px/1.6 var(--mono); color: var(--p-faint); border-top: 1px solid var(--p-border); }
+
+@media (max-width: 860px) {
+  .spec { grid-template-columns: 1fr; }
+  .spec > div { border-right: 0; border-bottom: 1px solid var(--rule); padding-left: 0 !important; }
+  .tiles { grid-template-columns: repeat(2, 1fr); }
+  .wrow { grid-template-columns: 1fr; }
+  .side, .rail { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+<div class="bar">
+  <span class="brand">relay<em>-</em>cli<span>dashboard mockups</span></span>
+  <span class="grow"></span>
+  <button class="tab" role="tab" aria-selected="true" data-opt="a">A &middot; fleet board</button>
+  <button class="tab" role="tab" aria-selected="false" data-opt="b">B &middot; timeline</button>
+  <button class="tab" role="tab" aria-selected="false" data-opt="c">C &middot; fan-out</button>
+  <button class="tab" role="tab" aria-selected="false" data-opt="d">D &middot; run inspector</button>
+  <button class="tab" role="tab" aria-selected="false" data-opt="e">E &middot; ledger</button>
+  <button class="tab" id="theme" title="Light or dark">dark</button>
+</div>
+
+<div class="stage">
+  <p class="lede">Five ways to answer the three questions the current page cannot: <b>what is each agent
+  actually working on</b>, <b>what is it costing</b>, and <b>who handed work to whom</b>. All five keep the
+  existing palette, the existing type and the read-only rule &mdash; nothing here starts, stops or pauses
+  anything. One invented fleet at one moment, 22:09:14, is drawn across all five so they can be compared.
+  Each frame names the fields it reads today and the ones that need new plumbing.</p>
+
+<!-- ══ A ══════════════════════════════════════════════════════════════════ -->
+<section class="opt" id="opt-a">
+  <p class="eyebrow">Option A</p>
+  <h2>Fleet board</h2>
+  <p class="intent">The smallest change with the largest payoff: the sidebar card grows into a row that
+  says what the agent is doing, how far into its budget it is, and how hard it is working. Money and
+  tokens stop being a single running total and become a meter against the ceiling the config already
+  sets.</p>
+  <dl class="spec">
+    <div><dt>Answers</dt><dd>Which agent is on which task, how close a run is to <code>max_usd_per_run</code>,
+      how much of the token spend was cache, and whether work is sitting unclaimed.</dd></div>
+    <div><dt>Reads today</dt><dd><code>runs_last_hour</code>, <code>max_runs_per_hour</code>,
+      <code>cost_usd</code>, <code>usage.cached_input</code>, <code>num_turns</code>,
+      <code>tool_calls</code>, <code>next_poll_at</code>, the live <code>tool_use</code> stream.</dd></div>
+    <div><dt>Needs plumbing</dt><dd>A <code>task_id</code> on <code>RunSummary</code>, captured from the
+      <code>relay:claim_task</code> call the run already makes. A fleet rollup in <code>Snapshot</code>.
+      Per-worker hourly buckets for the sparkline (client-side from <code>runs</code>).</dd></div>
+  </dl>
+
+  <div class="frame">
+    <div class="fhead">
+      <span class="t1">relay<i>-</i>cli</span>
+      <span class="path">/Users/abhishekgupta/.relay/config</span>
+      <span class="grow"></span><span class="up mono">up 22m</span><span class="live">live</span>
+    </div>
+    <div class="tiles">
+      <div class="tile">
+        <div class="k">Spend this hour</div>
+        <div class="v tnum">$2.73</div>
+        <svg class="spark" width="124" height="28" viewBox="0 0 124 28" role="img" aria-label="Spend per five minutes over the last hour, rising to 62 cents">
+          <path d="M0,24 L10.9,18.2 L21.8,4 L32.7,24 L43.6,14 L54.5,9.8 L65.5,7.2 L76.4,17.9 L87.3,15 L98.2,12.4 L109.1,19.5 L120,19.2 L120,26 L0,26 Z" fill="var(--p-accent)" opacity=".14"></path>
+          <polyline points="0,24 10.9,18.2 21.8,4 32.7,24 43.6,14 54.5,9.8 65.5,7.2 76.4,17.9 87.3,15 98.2,12.4 109.1,19.5 120,19.2" fill="none" stroke="var(--p-accent)" stroke-width="1.3"></polyline>
+          <circle cx="120" cy="19.2" r="2.4" fill="var(--p-accent)"></circle>
+        </svg>
+      </div>
+      <div class="tile">
+        <div class="k">Burn rate</div>
+        <div class="v tnum">$7.45<small>/h</small></div>
+        <div class="sub">4 claude runs &middot; $0.68 each</div>
+      </div>
+      <div class="tile">
+        <div class="k">Tokens</div>
+        <div class="v tnum">605.5k</div>
+        <div class="sub">27.5k/min &middot; 69% cached</div>
+      </div>
+      <div class="tile">
+        <div class="k">Runs vs ceiling</div>
+        <div class="v tnum">6<small>of 18</small></div>
+        <div class="track" style="margin-top:7px"><i class="fill-accent" style="width:33%"></i><i class="fill-mute" style="width:67%"></i></div>
+        <div class="sub">hour resets 22:41</div>
+      </div>
+      <div class="tile">
+        <div class="k">Queue</div>
+        <div class="v tnum">1<small>todo</small></div>
+        <div class="sub">0 resume &middot; 0 attention</div>
+        <div class="sub warn">T-415 unclaimed 9m40s</div>
+      </div>
+    </div>
+
+    <div class="wrow hot">
+      <div>
+        <div class="wname">falcon</div>
+        <div class="wmeta">claude &middot; claude-opus-5</div>
+        <div style="margin-top:6px"><span class="pill s-running">running</span></div>
+      </div>
+      <div>
+        <div class="doing">
+          <span class="task">T-413</span>
+          <span class="title">API: single-use invite tokens</span>
+          <span class="faint mono" style="font-size:11px">claimed 22:00:27</span>
+        </div>
+        <div class="tool">&rarr; <b>Edit</b> internal/invite/token.go</div>
+        <div class="facts"><span><b>8m47s</b> elapsed</span><span><b>9</b> turns</span><span><b>41</b> tool calls</span><span class="err">1 tool error</span><span>run 527s of 900s</span></div>
+      </div>
+      <div class="meters">
+        <div class="meter">
+          <div class="lab"><span>spend this run</span><b class="tnum">$1.18 / $5.00</b></div>
+          <div class="track"><i class="fill-accent" style="width:24%"></i></div>
+        </div>
+        <div class="meter">
+          <div class="lab"><span>tokens</span><b class="tnum">92.5k</b></div>
+          <div class="track"><i class="fill-mute" style="width:64%"></i><i class="fill-run" style="width:27%"></i><i class="fill-accent" style="width:9%"></i></div>
+          <div class="lab faint" style="margin-top:2px"><span>71% cached</span><span>8.4k out</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrow">
+      <div>
+        <div class="wname">worker</div>
+        <div class="wmeta">codex &middot; gpt-5.6-luna</div>
+        <div style="margin-top:6px"><span class="pill s-idle">idle</span></div>
+      </div>
+      <div>
+        <div class="doing">
+          <span class="task">T-414</span>
+          <span class="title">Web: invite redemption screen</span>
+          <span class="pill s-ok">reported done 22:06:41</span>
+        </div>
+        <div class="tool dim">last run 6m10s &middot; 12 turns &middot; 63 tool calls &middot; exit 0</div>
+        <div class="facts"><span>next poll in <b>2s</b></span><span>resume 0 &middot; attn 0 &middot; todo 1</span><span class="faint">skips T-415: no capability match</span></div>
+      </div>
+      <div class="meters">
+        <div class="meter">
+          <div class="lab"><span>spend this run</span><b>&mdash;</b></div>
+          <div class="track"><i class="fill-mute" style="width:100%"></i></div>
+          <div class="lab faint" style="margin-top:2px"><span>codex reports no cost</span></div>
+        </div>
+        <div class="meter">
+          <div class="lab"><span>tokens</span><b class="tnum">246.7k</b></div>
+          <div class="track"><i class="fill-mute" style="width:77%"></i><i class="fill-run" style="width:17%"></i><i class="fill-accent" style="width:6%"></i></div>
+          <div class="lab faint" style="margin-top:2px"><span>82% cached</span><span>15.3k out</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wrow">
+      <div>
+        <div class="wname">orchestrator</div>
+        <div class="wmeta">claude &middot; claude-sonnet-5</div>
+        <div style="margin-top:6px"><span class="pill s-idle">idle</span></div>
+      </div>
+      <div>
+        <div class="doing">
+          <span class="task">T-412</span>
+          <span class="title">Ship the invite-flow rework</span>
+          <span class="faint mono" style="font-size:11px">holding &middot; 3 subtasks out</span>
+        </div>
+        <div class="tool dim">waiting on T-413 &middot; woke twice on attention, last 22:06:51</div>
+        <div class="facts"><span>next poll in <b>2s</b></span><span><b>2</b> runs this hour</span><span><b>14</b> turns</span><span>2/6 ceiling</span></div>
+      </div>
+      <div class="meters">
+        <div class="meter">
+          <div class="lab"><span>spend on T-412</span><b class="tnum">$0.93</b></div>
+          <div class="track"><i class="fill-warn" style="width:19%"></i></div>
+          <div class="lab faint" style="margin-top:2px"><span>subtree: $2.11 + 247k tok</span></div>
+        </div>
+        <div class="meter">
+          <div class="lab"><span>tokens</span><b class="tnum">61.4k</b></div>
+          <div class="track"><i class="fill-mute" style="width:58%"></i><i class="fill-run" style="width:31%"></i><i class="fill-accent" style="width:11%"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>Kept from today:</b> the row is still a filter &mdash; clicking one takes its lines out
+  of the feed below. Nothing on it is a button that acts.</p>
+</section>
+
+<!-- ══ B ══════════════════════════════════════════════════════════════════ -->
+<section class="opt" id="opt-b" hidden>
+  <p class="eyebrow">Option B</p>
+  <h2>Handshake timeline</h2>
+  <p class="intent">One lane per worker on a shared clock. A run is a bar, its tool calls are the ticks
+  inside it, and the arrows are the handshakes: the moment an orchestrator spawned a subtask and the
+  moment the agent that took it woke the orchestrator back up. The fourth lane is work Relay is holding
+  that no worker has claimed, which today is a number in a poll line and nothing more.</p>
+  <dl class="spec">
+    <div><dt>Answers</dt><dd>Who handed what to whom, how long each hop took, where the fan-out went wide,
+      and what has been sitting unclaimed while the fleet was busy elsewhere.</dd></div>
+    <div><dt>Reads today</dt><dd>Every bar: <code>RunSummary.started_at</code>/<code>ended_at</code>,
+      <code>outcome</code>, <code>cost_usd</code>, <code>usage</code>, <code>num_turns</code>. Every tick:
+      a <code>session</code> event of type <code>tool_use</code>. <code>Bus.History</code> already
+      interleaves all workers by sequence.</dd></div>
+    <div><dt>Needs plumbing</dt><dd>The arrows: parent and child ids from the <code>task_id=</code> and
+      <code>subtask_id=</code> targets <code>toolTarget</code> already extracts, joined across workers.
+      The unclaimed lane needs the ids behind <code>todo_total</code>, which the probe does not ask
+      for &mdash; <code>attention_ids</code> is the precedent.</dd></div>
+  </dl>
+
+  <div class="frame">
+    <div class="fhead">
+      <span class="t1">Fleet timeline</span>
+      <span class="path">21:58 &rarr; 22:09 &middot; 3 workers &middot; 5 runs</span>
+      <span class="grow"></span><span class="up mono">now 22:09:14</span><span class="live">live</span>
+    </div>
+    <div class="tlwrap">
+      <svg class="tl" viewBox="0 0 1120 292" role="img" aria-label="Timeline: the orchestrator claims task 412 at 21:58 and spawns three subtasks, falcon has been running task 413 for nine minutes, the codex worker finished task 414 at 22:06 and woke the orchestrator, and task 415 has stayed unclaimed">
+        <defs>
+          <marker id="ah" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0,0 L8,4 L0,8 z" fill="var(--p-ok)"></path>
+          </marker>
+        </defs>
+
+        <rect class="lane-bg" x="96" y="50" width="984" height="40"></rect>
+        <rect class="lane-bg" x="96" y="110" width="984" height="40"></rect>
+        <rect class="lane-bg" x="96" y="170" width="984" height="40"></rect>
+        <rect class="lane-bg" x="96" y="216" width="984" height="40"></rect>
+
+        <g class="grid">
+          <line x1="96" y1="44" x2="96" y2="258"></line>
+          <line x1="260" y1="44" x2="260" y2="258"></line>
+          <line x1="424" y1="44" x2="424" y2="258"></line>
+          <line x1="588" y1="44" x2="588" y2="258"></line>
+          <line x1="752" y1="44" x2="752" y2="258"></line>
+          <line x1="916" y1="44" x2="916" y2="258"></line>
+          <line x1="1080" y1="44" x2="1080" y2="258"></line>
+        </g>
+        <g class="axis" text-anchor="middle">
+          <text x="96" y="272">21:58</text><text x="260" y="272">22:00</text>
+          <text x="424" y="272">22:02</text><text x="588" y="272">22:04</text>
+          <text x="752" y="272">22:06</text><text x="916" y="272">22:08</text>
+          <text x="1080" y="272">22:10</text>
+        </g>
+
+        <g>
+          <text class="lane-label" x="8" y="68">orchestrator</text><text class="lane-sub" x="8" y="80">sonnet-5</text>
+          <text class="lane-label" x="8" y="128">falcon</text><text class="lane-sub" x="8" y="140">opus-5</text>
+          <text class="lane-label" x="8" y="188">worker</text><text class="lane-sub" x="8" y="200">gpt-5.6-luna</text>
+          <text class="lane-label" x="8" y="234">unclaimed</text><text class="lane-sub" x="8" y="246">relay queue</text>
+        </g>
+
+        <text class="bar-label" x="102" y="60">T-412 claim + fan-out<tspan class="bar-cost" dx="12">$0.62 &middot; 6 turns &middot; 2m08s &middot; ok</tspan></text>
+        <rect class="bar-claude" x="102" y="64" width="175" height="20" rx="3"></rect>
+        <g class="tick-claude">
+          <rect x="110" y="64" width="1.5" height="20"></rect>
+          <rect x="124" y="64" width="1.5" height="20"></rect>
+          <rect x="139" y="64" width="1.5" height="20"></rect>
+          <rect x="158" y="64" width="1.5" height="20"></rect>
+          <rect x="176" y="64" width="1.5" height="20"></rect>
+          <rect x="199" y="64" width="1.5" height="20"></rect>
+          <rect x="221" y="64" width="1.5" height="20"></rect>
+          <rect x="244" y="64" width="1.5" height="20"></rect>
+          <rect x="262" y="64" width="1.5" height="20"></rect>
+        </g>
+
+        <text class="bar-label" x="822" y="60">attention wake<tspan class="bar-cost" dx="12">$0.31 &middot; 48s</tspan></text>
+        <rect class="bar-claude" x="822" y="64" width="66" height="20" rx="3"></rect>
+        <g class="tick-claude">
+          <rect x="828" y="64" width="1.5" height="20"></rect>
+          <rect x="838" y="64" width="1.5" height="20"></rect>
+          <rect x="850" y="64" width="1.5" height="20"></rect>
+          <rect x="862" y="64" width="1.5" height="20"></rect>
+          <rect x="875" y="64" width="1.5" height="20"></rect>
+        </g>
+
+        <text class="bar-label" x="297" y="120">T-413 API: single-use invite tokens</text>
+        <text class="bar-cost" x="1017" y="120" text-anchor="end">$1.18 &middot; 41 tools &middot; running</text>
+        <rect class="bar-claude" x="297" y="124" width="720" height="20" rx="3"></rect>
+        <g class="tick-claude">
+          <rect x="308" y="124" width="1.5" height="20"></rect>
+          <rect x="321" y="124" width="1.5" height="20"></rect>
+          <rect x="337" y="124" width="1.5" height="20"></rect>
+          <rect x="352" y="124" width="1.5" height="20"></rect>
+          <rect x="369" y="124" width="1.5" height="20"></rect>
+          <rect x="392" y="124" width="1.5" height="20"></rect>
+          <rect x="418" y="124" width="1.5" height="20"></rect>
+          <rect x="441" y="124" width="1.5" height="20"></rect>
+          <rect x="468" y="124" width="1.5" height="20"></rect>
+          <rect x="489" y="124" width="1.5" height="20"></rect>
+          <rect x="512" y="124" width="1.5" height="20"></rect>
+          <rect x="538" y="124" width="1.5" height="20"></rect>
+          <rect x="566" y="124" width="1.5" height="20"></rect>
+          <rect x="597" y="124" width="1.5" height="20"></rect>
+          <rect x="631" y="124" width="1.5" height="20"></rect>
+          <rect x="664" y="124" width="1.5" height="20"></rect>
+          <rect x="701" y="124" width="1.5" height="20"></rect>
+          <rect x="740" y="124" width="1.5" height="20"></rect>
+          <rect x="779" y="124" width="1.5" height="20"></rect>
+          <rect x="812" y="124" width="1.5" height="20"></rect>
+          <rect x="846" y="124" width="1.5" height="20"></rect>
+          <rect x="878" y="124" width="1.5" height="20"></rect>
+          <rect x="905" y="124" width="1.5" height="20"></rect>
+          <rect x="933" y="124" width="1.5" height="20"></rect>
+          <rect x="961" y="124" width="1.5" height="20"></rect>
+          <rect x="989" y="124" width="1.5" height="20"></rect>
+        </g>
+
+        <text class="bar-label" x="303" y="180">T-414 Web: invite redemption screen<tspan class="bar-cost" dx="12">246.7k tok &middot; 12 turns &middot; ok</tspan></text>
+        <rect class="bar-codex" x="303" y="184" width="505" height="20" rx="3"></rect>
+        <g class="tick-codex">
+          <rect x="309" y="184" width="1.5" height="20"></rect>
+          <rect x="318" y="184" width="1.5" height="20"></rect>
+          <rect x="331" y="184" width="1.5" height="20"></rect>
+          <rect x="344" y="184" width="1.5" height="20"></rect>
+          <rect x="358" y="184" width="1.5" height="20"></rect>
+          <rect x="371" y="184" width="1.5" height="20"></rect>
+          <rect x="389" y="184" width="1.5" height="20"></rect>
+          <rect x="405" y="184" width="1.5" height="20"></rect>
+          <rect x="422" y="184" width="1.5" height="20"></rect>
+          <rect x="441" y="184" width="1.5" height="20"></rect>
+          <rect x="459" y="184" width="1.5" height="20"></rect>
+          <rect x="478" y="184" width="1.5" height="20"></rect>
+          <rect x="497" y="184" width="1.5" height="20"></rect>
+          <rect x="519" y="184" width="1.5" height="20"></rect>
+          <rect x="540" y="184" width="1.5" height="20"></rect>
+          <rect x="562" y="184" width="1.5" height="20"></rect>
+          <rect x="585" y="184" width="1.5" height="20"></rect>
+          <rect x="608" y="184" width="1.5" height="20"></rect>
+          <rect x="631" y="184" width="1.5" height="20"></rect>
+          <rect x="655" y="184" width="1.5" height="20"></rect>
+          <rect x="679" y="184" width="1.5" height="20"></rect>
+          <rect x="702" y="184" width="1.5" height="20"></rect>
+          <rect x="726" y="184" width="1.5" height="20"></rect>
+          <rect x="749" y="184" width="1.5" height="20"></rect>
+          <rect x="771" y="184" width="1.5" height="20"></rect>
+          <rect x="793" y="184" width="1.5" height="20"></rect>
+        </g>
+
+        <text class="ghost-label" x="231" y="226">T-415 Docs: invite flow &mdash; unclaimed for 9m40s, no worker matched it</text>
+        <rect class="bar-ghost" x="231" y="230" width="786" height="20" rx="3"></rect>
+
+        <g>
+          <path d="M190,84 C190,102 240,106 293,124" stroke="var(--p-bg)" stroke-width="4" fill="none"></path>
+          <path class="hand" d="M190,84 C190,102 240,106 293,124" marker-end="url(#ah)"></path>
+          <text class="hand-label" x="234" y="107">spawn T-413</text>
+
+          <path d="M218,84 C218,150 250,164 299,184" stroke="var(--p-bg)" stroke-width="4" fill="none"></path>
+          <path class="hand" d="M218,84 C218,150 250,164 299,184" marker-end="url(#ah)"></path>
+          <text class="hand-label" x="248" y="167">spawn T-414</text>
+
+          <path d="M808,184 C852,184 858,134 824,90" stroke="var(--p-bg)" stroke-width="4" fill="none"></path>
+          <path class="hand" d="M808,184 C852,184 858,134 824,90" marker-end="url(#ah)"></path>
+          <text class="hand-label" x="866" y="164">attention: T-414 done</text>
+        </g>
+
+        <line class="now" x1="1017" y1="40" x2="1017" y2="262"></line>
+        <text class="now-label" x="1013" y="36" text-anchor="end">now</text>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="swatch" style="color:var(--p-accent);background:var(--p-wash)"></i> claude run</span>
+      <span><i class="swatch" style="color:var(--p-run);background:color-mix(in srgb,var(--p-run) 12%,transparent)"></i> codex run</span>
+      <span><i class="swatch" style="color:var(--p-faint);background:none;border-style:dashed"></i> unclaimed task</span>
+      <span class="ok">&rarr; handshake</span>
+      <span>| tick = one tool call</span>
+      <span class="err">| now</span>
+    </div>
+    <div class="ledger" style="border-top:1px solid var(--p-border)">
+      <div class="charthead" style="padding:0 0 8px"><h4>Hovering a bar</h4><p>the same run summary, without leaving the timeline</p></div>
+      <div class="tipcard" style="position:static;width:280px">
+        <div class="th"><span>T-413 &middot; falcon</span><span class="acc">running</span></div>
+        <dl>
+          <dt>started</dt><dd>22:00:27 &middot; 8m47s ago</dd>
+          <dt>spend</dt><dd>$1.18 of $5.00 cap</dd>
+          <dt>tokens</dt><dd>92.5k &middot; 71% cached</dd>
+          <dt>turns / tools</dt><dd>9 / 41 &middot; 1 error</dd>
+          <dt>model</dt><dd>claude-opus-5</dd>
+          <dt>session</dt><dd>9f31c8a2</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>The honest caveat:</b> relay-cli tracks no task state on purpose &mdash; Relay owns
+  that. These arrows are drawn from tool calls the fleet was seen making, so the lane reads
+  &ldquo;as observed here&rdquo;, never as Relay's own record of the task graph.</p>
+</section>
+
+<!-- ══ C ══════════════════════════════════════════════════════════════════ -->
+<section class="opt" id="opt-c" hidden>
+  <p class="eyebrow">Option C</p>
+  <h2>Fan-out view</h2>
+  <p class="intent">The timeline answers &ldquo;when&rdquo;; this answers &ldquo;what came from what&rdquo;.
+  One held task at the root, the subtasks it spawned beneath it, each carrying the agent that took it and
+  what it has cost so far &mdash; and a rolled-up figure at the root, which is the number worth knowing
+  before an orchestrator fans out again. Underneath, the handshakes as a plain list, which is often all
+  anyone needs.</p>
+  <dl class="spec">
+    <div><dt>Answers</dt><dd>What did this one instruction actually cost, end to end, across every agent it
+      pulled in? Which branch is stalled? Which agent is doing the expensive part?</dd></div>
+    <div><dt>Reads today</dt><dd>Per-run cost, tokens, turns and outcome; the <code>relay:create_task</code>
+      and <code>relay:claim_task</code> calls with their targets; <code>attention_ids</code>, which is
+      already how a parent learns a child moved.</dd></div>
+    <div><dt>Needs plumbing</dt><dd>Task titles &mdash; visible only when an agent passes
+      <code>title=</code> or <code>description=</code> to a tool call. A parent/child map held per fleet
+      run, and a rollup that adds claude dollars and codex tokens without mixing them.</dd></div>
+  </dl>
+
+  <div class="frame">
+    <div class="fhead">
+      <span class="t1">T-412</span><span class="path">held by orchestrator since 21:58:04</span>
+      <span class="grow"></span><span class="up mono">3 agents &middot; 4 runs &middot; 11m10s</span><span class="live">live</span>
+    </div>
+    <div class="tree">
+      <div class="node root">
+        <div>
+          <div class="nt"><span class="task">T-412</span><span class="ntitle">Ship the invite-flow rework</span><span class="pill s-warn">holding</span></div>
+          <div class="nline">orchestrator &middot; claude-sonnet-5 &middot; 2 runs &middot; woke once on attention &middot; 3 subtasks out, 1 back</div>
+        </div>
+        <div class="nnum"><b>$2.11</b> + 246.7k tok<br><span class="faint">subtree, 3 agents</span></div>
+      </div>
+      <ul class="kids">
+        <li>
+          <div class="node">
+            <div>
+              <div class="nt"><span class="task">T-413</span><span class="ntitle">API: single-use invite tokens</span><span class="pill s-running">running 8m47s</span></div>
+              <div class="nline">falcon &middot; claude-opus-5 &middot; 9 turns &middot; 41 tool calls &middot; 1 error &middot; &rarr; Edit internal/invite/token.go</div>
+            </div>
+            <div class="nnum"><b>$1.18</b> / $5.00<br><span class="faint">92.5k tok &middot; 71% cached</span></div>
+          </div>
+        </li>
+        <li>
+          <div class="node">
+            <div>
+              <div class="nt"><span class="task">T-414</span><span class="ntitle">Web: invite redemption screen</span><span class="pill s-ok">done 22:06:41</span></div>
+              <div class="nline">worker &middot; codex &middot; gpt-5.6-luna &middot; 12 turns &middot; 63 tool calls &middot; 6m10s &middot; exit 0</div>
+            </div>
+            <div class="nnum"><b>246.7k tok</b><br><span class="faint">no cost reported</span></div>
+          </div>
+        </li>
+        <li class="queued">
+          <div class="node">
+            <div>
+              <div class="nt"><span class="task">T-415</span><span class="ntitle">Docs: invite flow</span><span class="pill s-idle">unclaimed 9m40s</span></div>
+              <div class="nline">spawned 21:59:40 &middot; seen in every poll since as <span class="mono">todo 1</span> &middot; no worker has claimed it</div>
+            </div>
+            <div class="nnum"><b>&mdash;</b><br><span class="faint">not started</span></div>
+          </div>
+        </li>
+      </ul>
+    </div>
+    <div class="ledger">
+      <div class="charthead" style="padding:0 0 8px"><h4>Handshakes</h4><p>every claim, spawn and wake, in order</p></div>
+      <div class="lrow"><time>21:58:04</time><span class="who">orchestrator</span><span><span class="acc">claim</span> T-412</span></div>
+      <div class="lrow"><time>21:59:10</time><span class="who">orchestrator</span><span><span class="acc">spawn</span> T-413 &rarr; capability <span class="dim">api</span></span></div>
+      <div class="lrow"><time>21:59:28</time><span class="who">orchestrator</span><span><span class="acc">spawn</span> T-414 &rarr; capability <span class="dim">web</span></span></div>
+      <div class="lrow"><time>21:59:40</time><span class="who">orchestrator</span><span><span class="acc">spawn</span> T-415 &rarr; capability <span class="dim">docs</span> <span class="warn">&middot; still unclaimed</span></span></div>
+      <div class="lrow"><time>22:00:27</time><span class="who">falcon</span><span><span class="run">claim</span> T-413 &middot; 1m17s after it was spawned</span></div>
+      <div class="lrow"><time>22:00:31</time><span class="who">worker</span><span><span class="run">claim</span> T-414 &middot; 1m03s after it was spawned</span></div>
+      <div class="lrow"><time>22:06:41</time><span class="who">worker</span><span><span class="ok">report</span> T-414 done &middot; 6m10s of work</span></div>
+      <div class="lrow"><time>22:06:46</time><span class="who">orchestrator</span><span><span class="ok">attention</span> 1 &middot; woke 5s later</span></div>
+      <div class="lrow"><time>22:07:39</time><span class="who">orchestrator</span><span><span class="dim">accepted T-414, kept holding T-412</span></span></div>
+    </div>
+  </div>
+  <p class="note"><b>Where this is thin:</b> a worker only sees the calls its own agent makes. A subtask
+  claimed by an agent outside this fleet shows as spawned and then goes quiet &mdash; the row stays, marked
+  unseen, rather than being dropped.</p>
+</section>
+
+<!-- ══ D ══════════════════════════════════════════════════════════════════ -->
+<section class="opt" id="opt-d" hidden>
+  <p class="eyebrow">Option D</p>
+  <h2>Run inspector</h2>
+  <p class="intent">The current feed is the right thing to watch and the wrong thing to read: everything
+  streams past at the same weight. Here the narration keeps the whole width it has now, and a rail holds
+  the numbers that only make sense against a ceiling &mdash; dollars against the per-run cap, seconds
+  against the timeout, and the cache share that explains why a long run can still be cheap.</p>
+  <dl class="spec">
+    <div><dt>Answers</dt><dd>Is this run about to hit a cap? Is it working or looping? Where did the money
+      go &mdash; more turns, or bigger ones?</dd></div>
+    <div><dt>Reads today</dt><dd>All of it, except the histogram grouping: <code>cost_usd</code>,
+      <code>usage.input</code>/<code>cached_input</code>/<code>output</code>, <code>num_turns</code>,
+      <code>tool_calls</code>, <code>max_usd_per_run</code>, <code>max_seconds_per_run</code>, and the
+      <code>tool_use</code> events themselves.</dd></div>
+    <div><dt>Needs plumbing</dt><dd>Counting tools by name, and the gap between consecutive events. Both are
+      client-side arithmetic over events the page already holds in its ring.</dd></div>
+  </dl>
+
+  <div class="frame">
+    <div class="fhead">
+      <span class="t1">falcon</span>
+      <span class="path">run 4e0c &middot; session 9f31c8a2 &middot; claude-opus-5</span>
+      <span class="grow"></span><span class="task">T-413</span><span class="live">running 8m47s</span>
+    </div>
+    <div class="fbody">
+      <div class="rail">
+        <div class="block">
+          <div class="bh">Spend</div>
+          <div class="big tnum">$1.18<small>of $5.00</small></div>
+          <div class="track" style="margin-top:8px"><i class="fill-accent" style="width:24%"></i></div>
+          <dl class="kv" style="margin-top:9px">
+            <dt>per turn</dt><dd>$0.13</dd>
+            <dt>cap reached in</dt><dd>~29 turns</dd>
+            <dt>worker this hour</dt><dd>$1.80</dd>
+          </dl>
+        </div>
+        <div class="block">
+          <div class="bh">Tokens</div>
+          <div class="big tnum">92.5k</div>
+          <div class="track" style="margin-top:8px"><i class="fill-mute" style="width:64%"></i><i class="fill-run" style="width:27%"></i><i class="fill-accent" style="width:9%"></i></div>
+          <dl class="kv" style="margin-top:9px">
+            <dt>cached input</dt><dd>59.7k</dd>
+            <dt>fresh input</dt><dd>24.4k</dd>
+            <dt>output</dt><dd>8.4k</dd>
+            <dt>cache share</dt><dd>71%</dd>
+          </dl>
+        </div>
+        <div class="block">
+          <div class="bh">Clock</div>
+          <div class="big tnum">8m47s<small>of 15m</small></div>
+          <div class="track" style="margin-top:8px"><i class="fill-warn" style="width:59%"></i></div>
+          <dl class="kv" style="margin-top:9px">
+            <dt>first tool at</dt><dd>2.4s</dd>
+            <dt>longest gap</dt><dd>41s</dd>
+            <dt>turns</dt><dd>9</dd>
+            <dt>tool errors</dt><dd class="err">1</dd>
+          </dl>
+        </div>
+        <div class="block">
+          <div class="bh">41 tool calls</div>
+          <div class="hist">
+            <div class="hrow"><span class="dim">Read</span><i class="hbar" style="width:100%"></i><span class="n">14</span></div>
+            <div class="hrow"><span class="dim">Edit</span><i class="hbar" style="width:64%"></i><span class="n">9</span></div>
+            <div class="hrow"><span class="dim">Bash</span><i class="hbar" style="width:50%"></i><span class="n">7</span></div>
+            <div class="hrow"><span class="dim">Grep</span><i class="hbar" style="width:36%"></i><span class="n">5</span></div>
+            <div class="hrow"><span class="dim">relay:*</span><i class="hbar" style="width:29%"></i><span class="n">4</span></div>
+            <div class="hrow"><span class="dim">Write</span><i class="hbar" style="width:14%"></i><span class="n">2</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="feed">
+          <div class="frow rule"><span class="ft mono">22:00:27</span><span class="fb mono">&#9654; run started &middot; claude &middot; /Users/abhishekgupta/Developer/relay_agents_workspace/jarvis</span></div>
+          <div class="frow"><span class="ft mono">22:00:29</span><span class="fb mono dim">session 9f31c8a2 &middot; claude-opus-5 &middot; mcp: relay connected</span></div>
+          <div class="frow"><span class="ft mono">22:00:31</span><span class="fb mono">&rarr; <span class="acc">relay:claim_task</span> task_id=413</span></div>
+          <div class="frow"><span class="ft mono">22:00:34</span><span class="fb">Taking the API half of the invite rework. Tokens need to be single-use, so the redemption path has to be the only writer.</span></div>
+          <div class="frow"><span class="ft mono">22:00:41</span><span class="fb mono">&rarr; <span class="dim">Grep</span> pattern=invite_token</span></div>
+          <div class="frow"><span class="ft mono">22:00:52</span><span class="fb mono">&rarr; <span class="dim">Read</span> internal/invite/token.go</span></div>
+          <div class="frow"><span class="ft mono">22:01:18</span><span class="fb mono">&rarr; <span class="dim">Read</span> internal/invite/store.go</span></div>
+          <div class="frow"><span class="ft mono">22:02:03</span><span class="fb mono">&rarr; <span class="dim">Bash</span> go test ./internal/invite/...</span></div>
+          <div class="frow"><span class="ft mono">22:02:44</span><span class="fb mono err">&#10007; FAIL invite: TestRedeemTwice expected ErrSpent, got nil</span></div>
+          <div class="frow"><span class="ft mono">22:03:02</span><span class="fb">That failure is the bug, not a flake &mdash; redemption never marks the row spent.</span></div>
+          <div class="frow"><span class="ft mono">22:04:11</span><span class="fb mono">&rarr; <span class="dim">Edit</span> internal/invite/token.go</span></div>
+          <div class="frow"><span class="ft mono">22:06:12</span><span class="fb mono">&rarr; <span class="dim">Bash</span> go test ./internal/invite/...</span></div>
+          <div class="frow"><span class="ft mono">22:06:58</span><span class="fb mono ok">ok internal/invite 1.284s</span></div>
+          <div class="frow"><span class="ft mono">22:08:40</span><span class="fb mono">&rarr; <span class="dim">Edit</span> internal/invite/store.go</span></div>
+          <div class="frow"><span class="ft mono">22:09:11</span><span class="fb faint">thinking &#9656; 41s &middot; weighing whether the redemption lock belongs in the store</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note"><b>The one number this adds that nothing else can:</b> $1.18 against a $5.00 cap is a
+  fact about a run in flight. A total after the fact is only a receipt.</p>
+</section>
+
+<!-- ══ E ══════════════════════════════════════════════════════════════════ -->
+<section class="opt" id="opt-e" hidden>
+  <p class="eyebrow">Option E</p>
+  <h2>Spend ledger</h2>
+  <p class="intent">A fourth sidebar entry next to Configuration, for the question asked after the fleet has
+  been running a while rather than during. Cost per run and per turn, the outcome mix, the cache share, and
+  where the hour went. The two runtimes stay in their own units: claude reports dollars, codex reports
+  tokens, and nothing here converts one into the other.</p>
+  <dl class="spec">
+    <div><dt>Answers</dt><dd>What did the last hour cost, which worker or model is expensive, how much of
+      the spend went to runs that timed out, and is the cache doing its job?</dd></div>
+    <div><dt>Reads today</dt><dd>Entirely <code>WorkerStatus.runs</code>, which already carries
+      <code>cost_usd</code>, <code>usage</code>, <code>num_turns</code>, <code>tool_calls</code>,
+      <code>outcome</code> and both timestamps for every retained run.</dd></div>
+    <div><dt>Needs plumbing</dt><dd>Nothing on the wire for the table or the chart. The per-task column
+      needs the same <code>task_id</code> on <code>RunSummary</code> that A, B and C want; it is the one
+      new field all four share.</dd></div>
+  </dl>
+
+  <div class="frame">
+    <div class="fhead">
+      <span class="t1">Ledger</span><span class="path">last hour &middot; 21:09 &rarr; 22:09</span>
+      <span class="grow"></span><span class="up mono">6 runs &middot; 0 failed</span><span class="live">live</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="led">
+        <thead>
+          <tr><th>Worker</th><th>Runs</th><th>Outcomes</th><th>Turns</th><th>Tools</th><th>Tokens</th><th>Cached</th><th>Cost</th><th>Per run</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">falcon<div class="faint mono" style="font-weight:400;font-size:11px">claude &middot; opus-5</div></td>
+            <td class="tnum">2 <span class="faint">of 6</span></td>
+            <td><span class="mix"><i class="fill-ok" style="width:50%"></i><i class="fill-accent" style="width:50%"></i></span> <span class="faint">1 ok, 1 running</span></td>
+            <td class="tnum">21</td><td class="tnum">74</td><td class="tnum">154.9k</td><td class="tnum">68%</td>
+            <td class="tnum">$1.80</td><td class="tnum">$0.90</td>
+          </tr>
+          <tr>
+            <td class="name">orchestrator<div class="faint mono" style="font-weight:400;font-size:11px">claude &middot; sonnet-5</div></td>
+            <td class="tnum">2 <span class="faint">of 6</span></td>
+            <td><span class="mix"><i class="fill-ok" style="width:100%"></i></span> <span class="faint">2 ok</span></td>
+            <td class="tnum">14</td><td class="tnum">22</td><td class="tnum">61.4k</td><td class="tnum">58%</td>
+            <td class="tnum">$0.93</td><td class="tnum">$0.47</td>
+          </tr>
+          <tr>
+            <td class="name">worker<div class="faint mono" style="font-weight:400;font-size:11px">codex &middot; gpt-5.6-luna</div></td>
+            <td class="tnum">2 <span class="faint">of 6</span></td>
+            <td><span class="mix"><i class="fill-ok" style="width:100%"></i></span> <span class="faint">2 ok</span></td>
+            <td class="tnum">24</td><td class="tnum">121</td><td class="tnum">389.2k</td><td class="tnum">79%</td>
+            <td class="faint">&mdash;</td><td class="faint">&mdash;</td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="name">Fleet</td><td class="tnum">6 <span class="faint">of 18</span></td><td></td>
+            <td class="tnum">59</td><td class="tnum">217</td><td class="tnum"><b>605.5k</b></td><td class="tnum">69%</td>
+            <td class="tnum"><b>$2.73</b></td><td class="tnum">$0.68</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="charthead"><h4>Claude spend by five minutes</h4><p>$2.73 in the last hour &middot; peak $0.75 at 22:05</p></div>
+    <div class="bars">
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:15</span></div>
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:20</span></div>
+      <div class="col"><i class="fill-accent" style="height:62px"></i><span>21:25</span></div>
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:30</span></div>
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:35</span></div>
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:40</span></div>
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:45</span></div>
+      <div class="col"><i class="fill-accent" style="height:0"></i><span>21:50</span></div>
+      <div class="col"><i class="fill-warn" style="height:30px"></i><span>21:55</span></div>
+      <div class="col"><i class="fill-accent" style="height:38px"></i><i class="fill-warn" style="height:32px"></i><span>22:00</span></div>
+      <div class="col"><i class="fill-accent" style="height:44px"></i><i class="fill-warn" style="height:31px"></i><span>22:05</span></div>
+      <div class="col"><i class="fill-accent" style="height:36px"></i><span>22:10</span></div>
+    </div>
+    <div class="legend" style="padding-top:2px">
+      <span><i class="swatch" style="color:var(--p-accent);background:var(--p-accent)"></i> falcon</span>
+      <span><i class="swatch" style="color:var(--p-warn);background:var(--p-warn)"></i> orchestrator</span>
+      <span class="faint">100px = $1.00</span>
+    </div>
+    <div class="foot">
+      by task &nbsp; <span class="task">T-412</span> subtree $2.11 + 246.7k tok &middot;
+      <span class="task">T-409</span> $0.62 (closed 21:29) &nbsp;&nbsp;|&nbsp;&nbsp;
+      codex runs are absent from the chart on purpose: that CLI reports no cost, and a dollar figure
+      relay-cli invented would be worse than a blank.
+    </div>
+  </div>
+  <p class="note"><b>Cheapest to build:</b> every figure above except the task grouping is already in the
+  snapshot the page fetches on load.</p>
+</section>
+</div>
+
+<script>
+"use strict";
+// Tabs swap which artboard is mounted; the theme button mirrors the product's,
+// including the localStorage key shape, so the mockup behaves like the page it
+// is proposing changes to.
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab[data-opt]"));
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute("aria-selected", on ? "true" : "false");
+        document.getElementById("opt-" + t.dataset.opt).hidden = !on;
+      });
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+
+  var root = document.documentElement;
+  var btn = document.getElementById("theme");
+  function dark() {
+    var set = root.getAttribute("data-theme");
+    if (set) return set === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function label() { btn.textContent = dark() ? "light" : "dark"; }
+  btn.addEventListener("click", function () {
+    root.setAttribute("data-theme", dark() ? "light" : "dark");
+    label();
+  });
+  label();
+})();
+</script>
