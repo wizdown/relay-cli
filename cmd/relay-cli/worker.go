@@ -63,6 +63,11 @@ type RunSummary struct {
 	NumTurns  int        `json:"num_turns"`
 	ToolCalls int        `json:"tool_calls"`
 	Queue     QueueState `json:"queue"`
+	// TaskID is which task this run is on, as observed here. Relay owns task
+	// state; this is only the id the agent was seen passing to a tool call, kept
+	// so the fleet board and the ledger can say what a run was working on. A run
+	// whose agent never named one carries none, and that is not an error.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 // WorkerStatus is everything the dashboard shows about one worker. It is a
@@ -80,7 +85,13 @@ type WorkerStatus struct {
 	NextPollAt    *time.Time  `json:"next_poll_at,omitempty"`
 	ProbeFailures int         `json:"probe_failures"`
 
-	RunsLastHour int     `json:"runs_last_hour"`
+	RunsLastHour int `json:"runs_last_hour"`
+	// CeilingResetsAt is when the oldest run in the window ages out and the
+	// hourly ceiling frees a slot. The window rolls rather than resetting on the
+	// hour, so a worker sitting at its ceiling has no reset time to show without
+	// it. Unset when the worker has no ceiling or no runs in the last hour.
+	CeilingResetsAt *time.Time `json:"ceiling_resets_at,omitempty"`
+
 	TotalCostUSD float64 `json:"total_cost_usd"`
 	// TotalTokens is the same running total for a runtime that reports tokens
 	// rather than dollars. One of the two is always zero for a given worker.
@@ -309,13 +320,22 @@ func (r *WorkerRunner) withinCeilings() bool {
 
 	recent := 0
 	cutoff := now.Add(-time.Hour)
+	var oldest time.Time
 	for _, t := range runs {
 		if t.After(cutoff) {
 			recent++
+			if oldest.IsZero() || t.Before(oldest) {
+				oldest = t
+			}
 		}
 	}
 	r.mu.Lock()
 	r.status.RunsLastHour = recent
+	r.status.CeilingResetsAt = nil
+	if r.w.MaxRunsPerHour > 0 && !oldest.IsZero() {
+		at := oldest.Add(time.Hour).UTC()
+		r.status.CeilingResetsAt = &at
+	}
 	r.mu.Unlock()
 
 	if r.w.MaxRunsPerHour > 0 && recent >= r.w.MaxRunsPerHour {
@@ -584,6 +604,11 @@ func (r *WorkerRunner) applySessionEvent(runID string, summary *RunSummary, ev S
 		summary.Model = ev.Model
 	case "tool_use":
 		summary.ToolCalls++
+		// First id wins: that is the claim. A subtask id passed later in the
+		// same run says what the agent handed out, not what it is working on.
+		if summary.TaskID == "" {
+			summary.TaskID = taskIDFromTarget(ev.Target)
+		}
 	case "result":
 		summary.CostUSD = ev.CostUSD
 		summary.NumTurns = ev.NumTurns
@@ -600,6 +625,20 @@ func (r *WorkerRunner) applySessionEvent(runID string, summary *RunSummary, ev S
 
 	e := ev
 	r.bus.Publish(Event{Worker: r.w.Name, Kind: KindSession, RunID: runID, Session: &e})
+}
+
+// taskIDFromTarget reads a task id out of a tool target that names one.
+//
+// An adapter renders a labelled tool argument as "key=value", and `task_id` is
+// the one label that says which task a run is on. Nothing here validates the id
+// or asks relay about it: an id this worker never saw an agent pass simply does
+// not appear.
+func taskIDFromTarget(target string) string {
+	id, ok := strings.CutPrefix(target, "task_id=")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(id)
 }
 
 // ── circuit breakers ─────────────────────────────────────────────────────────

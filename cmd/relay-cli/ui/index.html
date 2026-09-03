@@ -139,6 +139,78 @@
   table.cfg th { color: var(--faint); font-weight: 500; text-transform: uppercase; font-size: 10px; letter-spacing: .08em; }
   .cfgwrap { padding: 10px 16px; overflow-x: auto; }
   .empty { padding: 40px 16px; text-align: center; color: var(--faint); font-size: 13px; }
+
+  /* ── fleet board ──────────────────────────────────────────────────────────
+     A worker row is the sidebar card given the width to say what the agent is
+     doing. Every number on it sits against the bound it is measured by: that is
+     the whole reason the row exists, and why a bare running total is not on it. */
+  .feed.board { padding: 0 0 32px; }
+  .tiles {
+    display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  .tile { padding: 10px 13px 11px; border-right: 1px solid var(--border); min-width: 0; }
+  .tile:last-child { border-right: 0; }
+  .tile .k {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .tile .v { font-family: var(--mono); font-size: 20px; font-weight: 600; margin-top: 6px; letter-spacing: -.02em; }
+  .tile .v small { font-size: 12px; font-weight: 400; color: var(--dim); margin-left: 5px; }
+  .tile .sub { font-family: var(--mono); font-size: 11px; color: var(--dim); margin-top: 3px; }
+  .tile .sub.warn { color: var(--warn); }
+  .wrow {
+    display: grid; grid-template-columns: 170px minmax(0, 1fr) 244px; gap: 14px;
+    padding: 11px 16px; border-bottom: 1px solid var(--border); align-items: start; cursor: pointer;
+  }
+  .wrow:hover { background: color-mix(in srgb, var(--border) 30%, transparent); }
+  .wrow.hot { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .wname { font-weight: 600; font-size: 13px; }
+  .wmeta { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 2px; }
+  .doing { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .task {
+    font-family: var(--mono); font-size: 11px; padding: 1px 6px; border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 13%, transparent); color: var(--accent);
+  }
+  .tool {
+    font-family: var(--mono); font-size: 12px; color: var(--dim); margin-top: 5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .facts {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+  }
+  .facts b { color: var(--dim); font-weight: 500; }
+  .meters { display: grid; gap: 7px; }
+  .meter .lab {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-family: var(--mono); font-size: 11px; color: var(--dim);
+  }
+  .meter .lab b { color: var(--text); font-weight: 500; }
+  .track { height: 5px; border-radius: 3px; background: var(--border); overflow: hidden; display: flex; margin-top: 3px; }
+  .track i { display: block; height: 100%; }
+  .f-accent { background: var(--accent); } .f-run { background: var(--run); }
+  .f-warn { background: var(--warn); } .f-err { background: var(--err); }
+  .f-mute { background: var(--faint); opacity: .5; }
+
+  /* ── spend ledger ─────────────────────────────────────────────────────────── */
+  table.led { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.led th, table.led td {
+    text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border);
+    font-family: var(--mono); white-space: nowrap;
+  }
+  table.led th:first-child, table.led td:first-child { text-align: left; }
+  table.led th { color: var(--faint); font-weight: 500; text-transform: uppercase; font-size: 10px; letter-spacing: .08em; }
+  table.led tr.tot td { font-weight: 600; border-bottom: 0; border-top: 1px solid var(--dim); }
+  .ledsub { color: var(--faint); font-size: 11px; font-weight: 400; }
+  .sechead {
+    font-family: var(--mono); font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--faint); margin: 20px 0 8px;
+  }
+  .chart { display: block; width: 100%; height: auto; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-family: var(--mono); font-size: 11px; color: var(--dim); padding: 7px 0 0; }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 14px; height: 8px; border-radius: 2px; flex: none; }
   #theme { min-width: 64px; text-align: center; }
 </style>
 <script>
@@ -165,6 +237,8 @@
   <aside>
     <div class="side-head">View</div>
     <div class="card" id="allcard"><div class="card-top"><span class="card-name">All workers</span><span class="spacer"></span><span class="side-count" id="allcount"></span></div></div>
+    <div class="card" id="fleetcard"><div class="card-top"><span class="card-name">Fleet board</span><span class="spacer"></span><span class="side-count" id="fleetcount"></span></div></div>
+    <div class="card" id="ledgercard"><div class="card-top"><span class="card-name">Spend ledger</span><span class="spacer"></span><span class="side-count" id="ledgercount"></span></div></div>
     <div class="card" id="cfgcard"><div class="card-top"><span class="card-name">Configuration</span></div></div>
     <div class="side-sep"></div>
     <div class="side-head">Workers</div>
@@ -200,7 +274,10 @@ let seeded = false;
 // Which collapsed runs of empty polls the reader has opened, keyed by worker
 // and start time so the choice survives the re-render on every new event.
 const openGroups = new Set();
-let showConfig = false;
+// Which of the four things the main pane is showing. The worker checkboxes
+// filter the feed and nothing else: the fleet board and the ledger are about
+// the whole fleet, so they always show every worker.
+let view = "feed"; // feed | fleet | ledger | config
 let follow = true;
 const filters = { session: true, poll: true, log: true, thinking: false };
 
@@ -225,6 +302,9 @@ const el = (tag, cls, text) => {
 // mcp__relay__claim_task reads as relay:claim_task, which is what it is.
 const shortTool = (t) => (t || "").replace(/^mcp__([a-z0-9_-]+)__/i, "$1:");
 const money = (n) => "$" + (n || 0).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+// A total or a rate, where the cents are the story and the fourth decimal is
+// noise. Under a cent it keeps full precision rather than rounding to "$0.00".
+const money2 = (n) => (n || 0) >= 0.01 ? "$" + n.toFixed(2) : money(n);
 // Tokens, for a runtime that reports those instead of dollars — codex has no
 // cost figure to show, and a blank where the spend goes reads as "free".
 const tokens = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M tok"
@@ -233,6 +313,30 @@ const tokens = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M tok"
 const spend = (usd, usage) => usd ? money(usd)
   : usage && (usage.input || usage.output) ? tokens((usage.input || 0) + (usage.output || 0)) : "";
 const secs = (ms) => (ms / 1000).toFixed(1) + "s";
+// A duration a human reads off a row, where a tenth of a second is noise.
+const dur = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? s + "s" : Math.floor(s / 60) + "m" + String(s % 60).padStart(2, "0") + "s";
+};
+const hhmm = (d) => String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+const pct = (n, d) => d > 0 ? Math.round(n / d * 100) + "%" : "—";
+const clamp01 = (n) => Math.max(0, Math.min(1, n));
+
+// The main pane shows exactly one of four things.
+function render() {
+  $("toolbar").style.display = view === "feed" ? "" : "none";
+  feed.className = "feed" + (view === "fleet" ? " board" : "");
+  if (view === "config") return renderConfig();
+  if (view === "fleet") return renderFleet();
+  if (view === "ledger") return renderLedger();
+  return renderFeed();
+}
+
+function setView(v) {
+  view = v;
+  renderCards();
+  render();
+}
 
 // ── worker cards ─────────────────────────────────────────────────────────────
 function renderCards() {
@@ -247,8 +351,7 @@ function renderCards() {
     const card = el("div", "card" + (on ? " on" : " off"));
     card.onclick = () => {
       if (on) selectedWorkers.delete(c.name); else selectedWorkers.add(c.name);
-      showConfig = false;
-      renderCards(); renderFeed();
+      setView("feed");
     };
 
     const top = el("div", "card-top");
@@ -289,11 +392,16 @@ function renderCards() {
   }
   const n = snap.workers.length;
   const all = selectedWorkers.size === n;
-  $("allcard").className = "card" + (all && !showConfig ? " sel" : "");
-  $("cfgcard").className = "card" + (showConfig ? " sel" : "");
+  $("allcard").className = "card" + (all && view === "feed" ? " sel" : "");
+  $("fleetcard").className = "card" + (view === "fleet" ? " sel" : "");
+  $("ledgercard").className = "card" + (view === "ledger" ? " sel" : "");
+  $("cfgcard").className = "card" + (view === "config" ? " sel" : "");
   $("allcount").textContent = all
     ? n + " worker" + (n === 1 ? "" : "s")
     : selectedWorkers.size + " of " + n + " shown";
+  const t = fleetTotals();
+  $("fleetcount").textContent = t.live ? t.live + " running" : "all idle";
+  $("ledgercount").textContent = t.cost ? money(t.cost) : t.runs + " runs";
 }
 const b = (n) => n > 0 ? "<b>" + n + "</b>" : "0";
 
@@ -322,7 +430,6 @@ function visible(e) {
 }
 
 function renderFeed() {
-  if (showConfig) return renderConfig();
   feed.textContent = "";
   if (snap && !selectedWorkers.size) {
     feed.append(el("div", "empty", "No workers checked. Check one in the sidebar, or click “All workers”."));
@@ -508,6 +615,583 @@ const oneLine = (s, n) => {
   return t.length > n ? t.slice(0, n) + "…" : t;
 };
 
+// ── fleet numbers ────────────────────────────────────────────────────────────
+// Both new views measure the last hour. The board asks what is happening in it
+// and the ledger asks what it cost, but they count the same runs, so the window
+// and the arithmetic live here once.
+const HOUR = 3600e3;
+
+// Runs the page can account for: the ones this process kept, plus the one in
+// flight. runs_last_hour counts further back — it is read from runs.log and
+// survives a restart — so the two disagree after one, and the ledger says so.
+function recentRuns(w) {
+  const since = Date.now() - HOUR;
+  const out = (w.runs || []).filter((r) => new Date(r.started_at).getTime() >= since);
+  if (w.current_run) out.push(w.current_run);
+  return out;
+}
+
+// How long the window has actually been observed. A rate extrapolated from the
+// four minutes a fleet has been up would read as a much bigger number than it is
+// spending, so an uptime shorter than an hour divides by the uptime.
+function windowHours() {
+  if (!snap) return 1;
+  return Math.max(1 / 60, Math.min(1, (Date.now() - new Date(snap.started_at)) / HOUR));
+}
+
+// max_usd_per_run is declared by the runtimes that report dollars and by no
+// other, so its presence — rather than a runtime's name, which belongs to the
+// adapter and not to this page — says whether a worker has a cost to show.
+const capUSD = (w) => Number((w.config.runtime_config || {}).max_usd_per_run || 0);
+
+function runUsage(r) {
+  const u = r.usage || {};
+  return { in: u.input || 0, cached: u.cached_input || 0, out: u.output || 0 };
+}
+
+function fleetTotals() {
+  const t = { cost: 0, in: 0, cached: 0, out: 0, runs: 0, used: 0, ceiling: 0,
+              uncapped: false, resume: 0, attention: 0, todo: 0, live: 0, resets: null };
+  if (!snap) return t;
+  for (const w of snap.workers) {
+    for (const r of recentRuns(w)) {
+      t.runs++;
+      t.cost += r.cost_usd || 0;
+      const u = runUsage(r);
+      t.in += u.in; t.cached += u.cached; t.out += u.out;
+    }
+    t.used += w.runs_last_hour || 0;
+    // A worker with no hourly ceiling makes the fleet's ceiling meaningless
+    // rather than larger, so it is named instead of being added as a zero.
+    if (w.config.max_runs_per_hour > 0) t.ceiling += w.config.max_runs_per_hour;
+    else t.uncapped = true;
+    const q = w.last_poll;
+    if (q) { t.resume += q.resume; t.attention += q.attention; t.todo += q.todo; }
+    if (w.current_run) t.live++;
+    const rs = w.ceiling_resets_at ? new Date(w.ceiling_resets_at).getTime() : 0;
+    if (rs && (!t.resets || rs < t.resets)) t.resets = rs;
+  }
+  return t;
+}
+
+// Cost per five-minute bucket over the last hour, one array per worker. Twelve
+// buckets is the coarsest grouping in which a single expensive run is still
+// visible as a spike rather than being averaged away.
+const BUCKETS = 12;
+function costBuckets(w) {
+  const out = new Array(BUCKETS).fill(0);
+  const start = Date.now() - HOUR;
+  for (const r of recentRuns(w)) {
+    if (!r.cost_usd) continue;
+    const i = Math.floor((new Date(r.started_at).getTime() - start) / (HOUR / BUCKETS));
+    if (i >= 0 && i < BUCKETS) out[i] += r.cost_usd;
+  }
+  return out;
+}
+
+const SVGNS = "http://www.w3.org/2000/svg";
+const svgEl = (tag, attrs) => {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+};
+// Series colours, in the order workers appear. Five is more than any fleet
+// anyone runs on one machine, and the palette wraps rather than inventing one.
+const SERIES = ["var(--accent)", "var(--run)", "var(--ok)", "var(--warn)", "var(--err)"];
+const seriesColor = (i) => SERIES[i % SERIES.length];
+
+// ── fleet board ──────────────────────────────────────────────────────────────
+// The sidebar card given the width to answer the question it cannot answer at
+// 300px: what is this agent doing, and how far into its ceilings is it. Every
+// figure on a row is paired with the bound it is measured against, because a
+// running total on its own says nothing about whether a run is about to stop.
+function renderFleet() {
+  feed.textContent = "";
+  if (!snap) return;
+  if (!snap.workers.length) {
+    feed.append(el("div", "empty", "No workers configured."));
+    return;
+  }
+  const t = fleetTotals();
+  const hours = windowHours();
+
+  const tiles = el("div", "tiles");
+  const tile = (k, v, small, sub, subCls) => {
+    const d = el("div", "tile");
+    d.append(el("div", "k", k));
+    const val = el("div", "v", v);
+    if (small) val.append(el("small", "", small));
+    d.append(val);
+    if (sub != null) d.append(el("div", "sub" + (subCls ? " " + subCls : ""), sub));
+    return d;
+  };
+
+  // Spend in the window, with the shape of it underneath: one expensive run and
+  // twelve cheap ones reach the same total and are not the same fleet.
+  // A fleet that has spent nothing and a fleet that cannot report spending are
+  // different facts, and the blank under the dash has to say which one it is.
+  const anyPriced = snap.workers.some(capUSD);
+  const spendTile = tile("Spend this hour", t.cost ? money2(t.cost) : anyPriced ? "$0" : "—", null,
+    t.cost ? null : anyPriced ? "nothing spent yet" : "no runtime here reports cost");
+  if (t.cost) {
+    const totals = new Array(BUCKETS).fill(0);
+    for (const w of snap.workers) costBuckets(w).forEach((v, i) => { totals[i] += v; });
+    spendTile.append(sparkline(totals));
+  }
+  tiles.append(spendTile);
+
+  const costRuns = snap.workers.reduce((n, w) => n + (capUSD(w) ? recentRuns(w).length : 0), 0);
+  tiles.append(tile("Burn rate", t.cost ? money2(t.cost / hours) : "—", t.cost ? "/h" : null,
+    hours < 1 ? "over " + Math.round(hours * 60) + "m of uptime"
+      : costRuns ? costRuns + " priced run" + (costRuns === 1 ? "" : "s") + " · " + money2(t.cost / costRuns) + " each"
+      : "nothing priced yet"));
+
+  const tot = t.in + t.out;
+  tiles.append(tile("Tokens", tot ? tokens(tot).replace(" tok", "") : "0", null,
+    tot ? Math.round(tot / (hours * 60) / 100) / 10 + "k/min · " + pct(t.cached, t.in) + " cached" : "no usage yet"));
+
+  const ceilLabel = t.ceiling ? t.used + (t.uncapped ? "" : "") : String(t.used);
+  const runsTile = tile("Runs vs ceiling", ceilLabel,
+    t.ceiling ? "of " + t.ceiling + (t.uncapped ? "+∞" : "") : "runs",
+    t.resets ? "a slot frees at " + hhmm(new Date(t.resets)) : "nothing to age out",
+    t.ceiling && t.used >= t.ceiling ? "warn" : null);
+  if (t.ceiling) {
+    const track = el("div", "track");
+    track.style.marginTop = "7px";
+    const i = el("i", t.used >= t.ceiling ? "f-warn" : "f-accent");
+    i.style.width = clamp01(t.used / t.ceiling) * 100 + "%";
+    track.append(i);
+    runsTile.append(track);
+  }
+  tiles.append(runsTile);
+
+  const waiting = t.resume + t.attention + t.todo;
+  tiles.append(tile("Queue", String(waiting), waiting ? "waiting" : "empty",
+    "resume " + t.resume + " · attn " + t.attention + " · todo " + t.todo));
+  feed.append(tiles);
+
+  for (const w of snap.workers) feed.append(fleetRow(w));
+
+  const foot = el("div", "side-note");
+  foot.style.padding = "12px 16px";
+  foot.textContent = "Rates cover the last hour, or the uptime so far when that is shorter. " +
+    "A run is priced only by a runtime that reports cost; the rest show tokens.";
+  feed.append(foot);
+}
+
+// A twelve-point line of what the fleet spent, drawn at the size of a tile.
+function sparkline(vals) {
+  const W = 150, H = 26, max = Math.max(...vals, 0.0001);
+  const s = svgEl("svg", { class: "spark", viewBox: "0 0 " + W + " " + H, width: W, height: H,
+                           preserveAspectRatio: "none", "aria-hidden": "true" });
+  s.style.marginTop = "6px";
+  const pts = vals.map((v, i) =>
+    (i / (vals.length - 1) * W).toFixed(1) + "," + (H - clamp01(v / max) * (H - 2) - 1).toFixed(1));
+  s.append(svgEl("polyline", { points: pts.join(" "), fill: "none",
+                               stroke: "var(--accent)", "stroke-width": "1.5" }));
+  return s;
+}
+
+function fleetRow(w) {
+  const c = w.config;
+  const run = w.current_run;
+  const row = el("div", "wrow" + (run ? " hot" : ""));
+  row.title = "Show only " + c.name + " in the feed";
+  // Navigation, not an action: the board cannot start, stop or pause anything,
+  // and this only points the feed's filter at one worker.
+  row.onclick = () => {
+    selectedWorkers.clear();
+    selectedWorkers.add(c.name);
+    setView("feed");
+  };
+
+  const who = el("div");
+  who.append(el("div", "wname", c.name));
+  const rcModel = (c.runtime_config || {}).model;
+  who.append(el("div", "wmeta", c.runtime + (rcModel ? " · " + rcModel : "")));
+  const pill = el("span", "pill s-" + w.state, w.state.replace("_", " "));
+  const pw = el("div"); pw.style.marginTop = "6px"; pw.append(pill);
+  who.append(pw);
+  row.append(who);
+
+  row.append(run ? doingRunning(w, run) : doingIdle(w));
+  row.append(meters(w, run));
+  return row;
+}
+
+// What a running worker is doing: the task it claimed, the tool call it is in
+// right now, and how far the run is into the timeout that will kill it.
+function doingRunning(w, run) {
+  const d = el("div");
+  const head = el("div", "doing");
+  if (run.task_id) head.append(el("span", "task", run.task_id));
+  head.append(el("span", "", "claimed " + hhmmss(run.started_at)));
+  if (!run.task_id) head.append(el("span", "fainttext", "no task id seen yet"));
+  d.append(head);
+
+  const tl = lastTool(w.config.name);
+  const tool = el("div", "tool");
+  if (tl) {
+    tool.innerHTML = "<span class='runtext'>→ " + esc(shortTool(tl.tool)) + "</span>" +
+      (tl.target ? " <span class='dimtext'>" + esc(tl.target) + "</span>" : "");
+  } else {
+    tool.className = "tool fainttext";
+    tool.textContent = "starting up";
+  }
+  d.append(tool);
+
+  const elapsed = Date.now() - new Date(run.started_at);
+  const limit = (w.config.max_seconds_per_run || 0) * 1000;
+  const errs = toolErrors(run.run_id);
+  const f = el("div", "facts");
+  const fact = (label, val) => {
+    const s = el("span", "", label + " ");
+    s.append(el("b", "", val));
+    f.append(s);
+  };
+  fact("elapsed", dur(elapsed));
+  fact("turns", String(run.num_turns || 0));
+  fact("tools", String(run.tool_calls || 0));
+  if (errs) {
+    const s = el("span", "errtext", errs + " tool error" + (errs === 1 ? "" : "s"));
+    f.append(s);
+  }
+  if (limit) {
+    const s = el("span", elapsed > limit * 0.8 ? "warntext" : "", "timeout ");
+    s.append(el("b", "", Math.round(elapsed / 1000) + "s of " + (limit / 1000) + "s"));
+    f.append(s);
+  }
+  d.append(f);
+  return d;
+}
+
+// What an idle worker last did, and when it will look again.
+function doingIdle(w) {
+  const d = el("div");
+  const runs = w.runs || [];
+  const last = runs[runs.length - 1];
+  const head = el("div", "doing");
+  if (last) {
+    if (last.task_id) head.append(el("span", "task", last.task_id));
+    const cls = last.outcome === "ok" ? "oktext" : last.outcome === "budget_exhausted" ? "errtext" : "warntext";
+    head.append(el("span", cls, "last run " + (last.outcome || "ended")));
+    head.append(el("span", "fainttext", last.ended_at ? hhmmss(last.ended_at) : ""));
+  } else {
+    head.append(el("span", "fainttext", "no run yet in this process"));
+  }
+  d.append(head);
+
+  const tool = el("div", "tool fainttext");
+  tool.textContent = last
+    ? dur(new Date(last.ended_at || last.started_at) - new Date(last.started_at)) + " · " +
+      (last.num_turns || 0) + " turns · " + (last.tool_calls || 0) + " tool calls · exit " + last.status
+    : "waiting for its first task";
+  d.append(tool);
+
+  const f = el("div", "facts");
+  const cd = countdown(w);
+  if (cd) f.append(el("span", "", cd));
+  const q = w.last_poll;
+  if (q) f.append(el("span", "", "resume " + q.resume + " · attn " + q.attention + " · todo " + q.todo));
+  else if (w.last_poll_error) f.append(el("span", "errtext", "probe failing"));
+  if (w.detail) f.append(el("span", "warntext", w.detail));
+  d.append(f);
+  return d;
+}
+
+// The two meters. Dollars against the per-run cap is the one number nothing
+// else on the page can show: a total after the fact is a receipt, and this is a
+// fact about a run still in flight.
+function meters(w, run) {
+  const d = el("div", "meters");
+  const cap = capUSD(w);
+  const cost = run ? (run.cost_usd || 0) : 0;
+
+  const m1 = el("div", "meter");
+  const l1 = el("div", "lab");
+  l1.append(el("span", "", run ? "spend this run" : "spend last hour"));
+  const shown = run ? cost : recentRuns(w).reduce((n, r) => n + (r.cost_usd || 0), 0);
+  l1.append(el("b", "", cap ? money2(shown) + (run ? " / " + money2(cap) : "") : "—"));
+  m1.append(l1);
+  if (!cap) {
+    m1.append(el("div", "lab", "this runtime reports no cost"));
+  } else if (run) {
+    // The cap bounds one run, so the bar is drawn only while one is in flight.
+    // An idle worker's hourly total has no such ceiling to sit against, so it
+    // gets the cap as a plain line instead of a bar that would always read 0%.
+    const track = el("div", "track");
+    const frac = clamp01(cost / cap);
+    const i = el("i", frac > 0.8 ? "f-warn" : "f-accent");
+    i.style.width = frac * 100 + "%";
+    track.append(i);
+    m1.append(track);
+  } else {
+    const l = el("div", "lab");
+    l.append(el("span", "", "cap " + money2(cap) + " a run"));
+    m1.append(l);
+  }
+  d.append(m1);
+
+  const u = run ? runUsage(run)
+    : recentRuns(w).reduce((a, r) => {
+        const x = runUsage(r);
+        return { in: a.in + x.in, cached: a.cached + x.cached, out: a.out + x.out };
+      }, { in: 0, cached: 0, out: 0 });
+  const total = u.in + u.out;
+  const m2 = el("div", "meter");
+  const l2 = el("div", "lab");
+  l2.append(el("span", "", "tokens"));
+  l2.append(el("b", "", total ? tokens(total) : "—"));
+  m2.append(l2);
+  if (total) {
+    // Three parts, because "how many tokens" is the wrong question: what a run
+    // paid full price for is input that missed the cache, and that is the bar
+    // worth watching.
+    const track = el("div", "track");
+    const seg = (cls, n) => { const i = el("i", cls); i.style.width = (n / total * 100) + "%"; track.append(i); };
+    seg("f-mute", u.cached);
+    seg("f-run", Math.max(0, u.in - u.cached));
+    seg("f-accent", u.out);
+    m2.append(track);
+    const l3 = el("div", "lab");
+    l3.append(el("span", "", pct(u.cached, u.in) + " cached"));
+    l3.append(el("span", "", tokens(u.out) + " out"));
+    m2.append(l3);
+  }
+  d.append(m2);
+  return d;
+}
+
+// The tool call a running worker is inside right now, read back off the feed.
+// The ring is the only place a tool call's target survives; the run summary
+// counts them and does not keep them.
+function lastTool(worker) {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (e.worker !== worker) continue;
+    if (e.kind === "cycle_end") return null;
+    if (e.kind === "session" && e.session && e.session.type === "tool_use") return e.session;
+  }
+  return null;
+}
+
+function toolErrors(runID) {
+  let n = 0;
+  for (const e of events) {
+    if (e.run_id === runID && e.kind === "session" && e.session &&
+        e.session.type === "tool_result" && e.session.is_error) n++;
+  }
+  return n;
+}
+
+// ── spend ledger ─────────────────────────────────────────────────────────────
+// The question asked after the fleet has been running a while rather than
+// during it: what did the hour cost, which worker is expensive, how much went
+// to runs that did not finish, and is the cache doing its job.
+function renderLedger() {
+  feed.textContent = "";
+  if (!snap) return;
+  const wrap = el("div", "cfgwrap");
+  const t = fleetTotals();
+  const from = new Date(Math.max(Date.now() - HOUR, new Date(snap.started_at).getTime()));
+
+  const note = el("div", "meta");
+  note.style.marginBottom = "10px";
+  note.textContent = hhmm(from) + " → " + hhmm(new Date()) + " · " + t.runs + " run" +
+    (t.runs === 1 ? "" : "s") + " this process kept. A restart clears the run history, " +
+    "so the hourly ceiling can count runs this table does not.";
+  wrap.append(note);
+
+  const cols = ["worker", "runs", "outcomes", "turns", "tools", "tokens", "cached", "cost", "per run"];
+  const table = el("table", "led");
+  const hr = el("tr");
+  for (const h of cols) hr.append(el("th", "", h));
+  table.append(hr);
+
+  const sum = { runs: 0, turns: 0, tools: 0, tok: 0, in: 0, cached: 0, cost: 0, priced: 0 };
+  for (const w of snap.workers) {
+    const rs = recentRuns(w);
+    const agg = { turns: 0, tools: 0, tok: 0, in: 0, cached: 0, cost: 0 };
+    const outcomes = new Map();
+    for (const r of rs) {
+      agg.turns += r.num_turns || 0;
+      agg.tools += r.tool_calls || 0;
+      agg.cost += r.cost_usd || 0;
+      const u = runUsage(r);
+      agg.in += u.in; agg.cached += u.cached; agg.tok += u.in + u.out;
+      const o = r.ended_at ? (r.outcome || "ended") : "running";
+      outcomes.set(o, (outcomes.get(o) || 0) + 1);
+    }
+    sum.runs += rs.length; sum.turns += agg.turns; sum.tools += agg.tools;
+    sum.tok += agg.tok; sum.in += agg.in; sum.cached += agg.cached; sum.cost += agg.cost;
+    if (capUSD(w)) sum.priced += rs.length;
+
+    const tr = el("tr");
+    const name = el("td");
+    name.append(el("div", "", w.config.name));
+    const rcModel = (w.config.runtime_config || {}).model;
+    name.append(el("div", "ledsub", w.config.runtime + (rcModel ? " · " + rcModel : "")));
+    tr.append(name);
+    tr.append(el("td", "", rs.length + " of " + t.runs));
+    tr.append(outcomeCell(outcomes));
+    tr.append(el("td", "", String(agg.turns)));
+    tr.append(el("td", "", String(agg.tools)));
+    tr.append(el("td", "", agg.tok ? tokens(agg.tok).replace(" tok", "") : "—"));
+    tr.append(el("td", "", pct(agg.cached, agg.in)));
+    tr.append(el("td", "", capUSD(w) ? money2(agg.cost) : "—"));
+    tr.append(el("td", "", capUSD(w) && rs.length ? money2(agg.cost / rs.length) : "—"));
+    table.append(tr);
+  }
+
+  const tr = el("tr", "tot");
+  tr.append(el("td", "", "Fleet"));
+  tr.append(el("td", "", String(sum.runs)));
+  tr.append(el("td", ""));
+  tr.append(el("td", "", String(sum.turns)));
+  tr.append(el("td", "", String(sum.tools)));
+  tr.append(el("td", "", sum.tok ? tokens(sum.tok).replace(" tok", "") : "—"));
+  tr.append(el("td", "", pct(sum.cached, sum.in)));
+  tr.append(el("td", "", sum.cost ? money2(sum.cost) : "—"));
+  tr.append(el("td", "", sum.cost && sum.priced ? money2(sum.cost / sum.priced) : "—"));
+  table.append(tr);
+  wrap.append(table);
+
+  wrap.append(taskSection());
+  wrap.append(chartSection());
+  feed.append(wrap);
+}
+
+// Outcomes as coloured counts rather than a number: the whole point of the
+// column is that six ok runs and four timeouts cost the same and are not the
+// same hour.
+function outcomeCell(outcomes) {
+  const td = el("td");
+  if (!outcomes.size) { td.textContent = "—"; return td; }
+  const cls = { ok: "oktext", running: "accent", timeout: "warntext",
+                budget_exhausted: "errtext", error: "errtext" };
+  const parts = [...outcomes].sort((a, b) => b[1] - a[1]);
+  parts.forEach(([o, n], i) => {
+    if (i) td.append(document.createTextNode(", "));
+    td.append(el("span", cls[o] || "dimtext", n + " " + o.replace("_", " ")));
+  });
+  return td;
+}
+
+// What one instruction cost, which is the figure worth knowing before an
+// orchestrator fans out again. Grouped by the task id the runs were seen
+// claiming; runs whose agent never named one are kept, not dropped.
+function taskSection() {
+  const box = el("div");
+  const byTask = new Map();
+  let unlabelled = 0;
+  for (const w of snap.workers) {
+    for (const r of recentRuns(w)) {
+      if (!r.task_id) { unlabelled++; continue; }
+      const g = byTask.get(r.task_id) || { runs: 0, cost: 0, tok: 0, workers: new Set() };
+      g.runs++; g.cost += r.cost_usd || 0;
+      const u = runUsage(r);
+      g.tok += u.in + u.out;
+      g.workers.add(w.config.name);
+      byTask.set(r.task_id, g);
+    }
+  }
+  box.append(el("div", "sechead", "By task"));
+  if (!byTask.size) {
+    box.append(el("div", "ledsub", "No run in the window named a task id. An id appears once an " +
+      "agent passes task_id to a tool call, which the claim does."));
+    return box;
+  }
+  const table = el("table", "led");
+  const hr = el("tr");
+  for (const h of ["task", "workers", "runs", "tokens", "cost"]) hr.append(el("th", "", h));
+  table.append(hr);
+  for (const [id, g] of [...byTask].sort((a, b) => b[1].cost - a[1].cost || b[1].runs - a[1].runs)) {
+    const tr = el("tr");
+    tr.append(el("td", "", id));
+    tr.append(el("td", "", [...g.workers].join(", ")));
+    tr.append(el("td", "", String(g.runs)));
+    tr.append(el("td", "", g.tok ? tokens(g.tok).replace(" tok", "") : "—"));
+    tr.append(el("td", "", g.cost ? money2(g.cost) : "—"));
+    table.append(tr);
+  }
+  box.append(table);
+  if (unlabelled) {
+    box.append(el("div", "ledsub", unlabelled + " run" + (unlabelled === 1 ? "" : "s") +
+      " named no task id and are not in this table."));
+  }
+  return box;
+}
+
+// Where the hour went, stacked by worker. Only priced runs are drawn: a runtime
+// that reports no cost is absent on purpose, because a dollar figure this page
+// invented for it would be worse than a gap.
+function chartSection() {
+  const box = el("div");
+  const priced = snap.workers.filter((w) => capUSD(w));
+  const series = priced.map((w) => ({ name: w.config.name, vals: costBuckets(w) }));
+  const totals = new Array(BUCKETS).fill(0);
+  for (const s of series) s.vals.forEach((v, i) => { totals[i] += v; });
+  const peak = Math.max(...totals);
+  const spent = totals.reduce((a, b) => a + b, 0);
+
+  box.append(el("div", "sechead", "Spend by five minutes"));
+  if (!peak) {
+    box.append(el("div", "ledsub", priced.length
+      ? "Nothing priced has run in the last hour."
+      : "No worker here runs a runtime that reports cost, so there is nothing to chart."));
+    return box;
+  }
+
+  const W = 720, H = 130, PAD = 26, bw = (W - PAD) / BUCKETS;
+  const s = svgEl("svg", { class: "chart", viewBox: "0 0 " + W + " " + H,
+                           role: "img", "aria-label": "Fleet spend per five minutes" });
+  const start = Date.now() - HOUR;
+  for (let i = 0; i < BUCKETS; i++) {
+    let y = H - PAD;
+    series.forEach((ser, si) => {
+      const v = ser.vals[i];
+      if (!v) return;
+      const h = v / peak * (H - PAD - 12);
+      y -= h;
+      s.append(svgEl("rect", { x: (PAD + i * bw + 2).toFixed(1), y: y.toFixed(1),
+                               width: (bw - 4).toFixed(1), height: h.toFixed(1),
+                               fill: seriesColor(si), rx: 1 }));
+    });
+    if (i % 3 === 0) {
+      const lab = svgEl("text", { x: (PAD + i * bw + bw / 2).toFixed(1), y: H - 8,
+                                  "text-anchor": "middle", fill: "var(--faint)",
+                                  "font-size": "10", "font-family": "var(--mono)" });
+      lab.textContent = hhmm(new Date(start + i * (HOUR / BUCKETS)));
+      s.append(lab);
+    }
+  }
+  const axis = svgEl("line", { x1: PAD, y1: H - PAD, x2: W, y2: H - PAD,
+                               stroke: "var(--border)", "stroke-width": 1 });
+  s.append(axis);
+  const peakLab = svgEl("text", { x: 0, y: 14, fill: "var(--faint)", "font-size": "10",
+                                  "font-family": "var(--mono)" });
+  peakLab.textContent = money2(peak);
+  s.append(peakLab);
+  box.append(s);
+
+  const legend = el("div", "legend");
+  series.forEach((ser, i) => {
+    const sp = el("span");
+    const sw = el("span", "swatch");
+    sw.style.background = seriesColor(i);
+    sp.append(sw, document.createTextNode(ser.name));
+    legend.append(sp);
+  });
+  legend.append(el("span", "fainttext", money2(spent) + " charted · peak " + money2(peak) + " in five minutes"));
+  const absent = snap.workers.filter((w) => !capUSD(w)).map((w) => w.config.name);
+  if (absent.length) {
+    legend.append(el("span", "fainttext",
+      absent.join(", ") + " absent: that runtime reports no cost"));
+  }
+  box.append(legend);
+  return box;
+}
+
 // ── configuration view ───────────────────────────────────────────────────────
 // Shown as the EFFECTIVE config: every default filled in. "Which defaults am I
 // actually getting?" is the most common question about this file, and reading
@@ -573,10 +1257,11 @@ themeBtn.onclick = () => {
 // ── wiring ───────────────────────────────────────────────────────────────────
 $("allcard").onclick = () => {
   if (snap) for (const w of snap.workers) selectedWorkers.add(w.config.name);
-  showConfig = false;
-  renderCards(); renderFeed();
+  setView("feed");
 };
-$("cfgcard").onclick = () => { showConfig = true; renderCards(); renderFeed(); };
+$("fleetcard").onclick = () => setView("fleet");
+$("ledgercard").onclick = () => setView("ledger");
+$("cfgcard").onclick = () => setView("config");
 $("follow").onclick = (ev) => {
   follow = !follow;
   ev.target.classList.toggle("on", follow);
@@ -617,7 +1302,9 @@ async function loadSnapshot(withEvents) {
   $("cfgpath").textContent = snap.config_path;
   if (withEvents && snap.events) events = snap.events;
   renderCards();
-  if (withEvents) renderFeed();
+  // The feed redraws on its own as events arrive; the board and the ledger read
+  // the snapshot, so they redraw when a new one lands.
+  if (withEvents || view === "fleet" || view === "ledger") render();
 }
 
 function connect() {
@@ -629,8 +1316,9 @@ function connect() {
     events.push(e);
     if (events.length > MAX_EVENTS) events = events.slice(-MAX_EVENTS);
     // A full re-render per event is fine at this volume and keeps the collapsing
-    // of consecutive empty polls correct without incremental bookkeeping.
-    if (!showConfig) renderFeed();
+    // of consecutive empty polls correct without incremental bookkeeping. The
+    // effective config is the one view no event changes.
+    if (view !== "config") render();
   };
 }
 
@@ -640,6 +1328,9 @@ function connect() {
   setInterval(() => loadSnapshot(false).catch(() => setConn(false, "offline")), 2000);
   setInterval(() => {
     renderCards();
+    // Elapsed, the timeout meter and the poll countdown all move without an
+    // event arriving, so the board ticks with the clock rather than the feed.
+    if (view === "fleet") renderFleet();
     if (snap) {
       const up = Math.round((Date.now() - new Date(snap.started_at)) / 1000);
       const h = Math.floor(up / 3600), m = Math.floor(up % 3600 / 60), s = up % 60;
