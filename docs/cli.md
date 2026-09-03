@@ -41,7 +41,7 @@ Every command reads `~/.relay/config`. There is no `--config` flag.
 ## What `check` reports
 
 ```text
-relay 0.2.1 (beta) — checking 2 worker(s) from /Users/you/.relay/config
+relay 0.3.0 (beta) — checking 2 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
@@ -70,7 +70,7 @@ not listed, the agent will not see it. See
 ## Startup and shutdown
 
 ```text
-relay 0.2.1 (beta) — 1 worker(s) from /Users/you/.relay/config
+relay 0.3.0 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
   wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
 
@@ -131,8 +131,8 @@ worker is a file: `touch ~/.relay/state/<name>/PAUSED`.
 `relay version` prints one line. Quote it in bug reports:
 
 ```text
-relay 0.2.1 (beta)                                a release
-relay 0.2.1-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo, at that commit
+relay 0.3.0 (beta)                                a release
+relay 0.3.0-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo, at that commit
 ```
 
 relay-cli stays on 0.x until the interface settles. A release may change

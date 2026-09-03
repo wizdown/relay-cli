@@ -40,7 +40,7 @@ const (
 	// points at — and puts it back on the next. So a binary that prints
 	// `-SNAPSHOT` was built from a tree nobody published, which is a thing a
 	// bug report needs to say and a bare number cannot.
-	version = "0.2.2-SNAPSHOT"
+	version = "0.3.0"
 	channel = "beta"
 
 	snapshotSuffix = "-SNAPSHOT"

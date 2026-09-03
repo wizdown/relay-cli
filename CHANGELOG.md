@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.3.0
+
 - The dashboard has two new views in its sidebar. **Fleet board** gives each
   worker a row with the task it claimed, the tool call it is in, and its spend,
   tokens and elapsed time against the caps that bound them. **Spend ledger**
