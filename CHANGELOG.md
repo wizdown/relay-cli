@@ -5,6 +5,15 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- The dashboard has two new views in its sidebar. **Fleet board** gives each
+  worker a row with the task it claimed, the tool call it is in, and its spend,
+  tokens and elapsed time against the caps that bound them. **Spend ledger**
+  totals the last hour by worker and by task: cost per run, turns, tool calls,
+  cache share, the outcome mix, and spend per five minutes.
+- A run now carries the task id its agent was seen claiming, and a worker at
+  its hourly ceiling shows when the next slot frees. Both are visible in
+  `/api/snapshot` as `task_id` and `ceiling_resets_at`.
+
 ## v0.2.1
 
 - `relay run --keep-awake` holds off macOS system sleep for as long as the

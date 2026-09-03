@@ -59,13 +59,12 @@ is holding for this agent:
 | `attention` | a task it holds that has moved: a subtask finished, or asked it something |
 | `todo` | delegated work it has not started |
 
-Any count above zero launches a session on the next poll. All three at `0` is
-healthy and idle.
+Any count above zero launches a session on the next poll; all three at `0`
+is idle.
 
 The `repo` line lists what the CLI will load from `repo_dir`, in that
-runtime's own layout (`CLAUDE.md` and `.claude/` for claude, `AGENTS.md` and
-`.codex/` for codex). "Nothing to load" is valid. If you wrote a file and it
-is not listed, the agent will not see it. See
+runtime's own layout. "Nothing to load" is valid. If you wrote a file and it is
+not listed, the agent will not see it. See
 [The working directory](working-directory.md).
 
 ## Startup and shutdown
@@ -95,21 +94,23 @@ The page reads each CLI's event stream (`--output-format stream-json` for
 claude, `--json` for codex), so a session appears line by line:
 
 ```text
-14:22:08  wizhub-claude   poll  resume 0 · attention 0 · todo 1
 14:22:08  wizhub-claude   ▶ run started   claude · /Users/you/code/wizhub
 14:22:10  wizhub-claude   session 9f31c8a2 · claude-opus-5   mcp: relay: connected
 14:22:13  wizhub-claude   → relay:claim_task   task_id=42
 14:22:31  wizhub-claude   → Edit   src/handlers.go
 14:23:02  wizhub-claude   ■ run ok   status 0 · $0.31 · 7 turns · 54.1s
 14:24:40  app-codex       ▶ run started   codex · /Users/you/code/app
-14:24:44  app-codex       → relay:claim_task
 14:25:19  app-codex       → Bash   bash -lc 'go test ./...'
 14:26:02  app-codex       ■ run ok   status 0 · 41.2k tok · 82.0s
 ```
 
 - **Worker cards**: state (`idle · polling · running · cooldown · ceiling ·
-  paused · probe failing`), the last poll's three counts, runs used against
-  the hourly ceiling, cost or tokens so far, and a countdown to the next poll.
+  paused · probe failing`), the last poll's three counts, runs against the
+  hourly ceiling, cost or tokens so far, and a countdown to the next poll.
+- **The fleet board**: a row per worker with the task it claimed, the tool call
+  it is in, and its spend, tokens and time against the caps that bound them.
+- **The spend ledger**: the last hour by worker and by task, with cost per run,
+  turns, tools, cache share, outcomes, and spend per five minutes.
 - **Every poll**, including empty ones. Consecutive empty polls collapse to one
   line.
 - **The live session**: each tool call with its target, and the result with its
@@ -118,7 +119,8 @@ claude, `--json` for codex), so a session appears line by line:
 - **The effective config**, with every default resolved.
 
 A claude run shows dollars, as the CLI reports them. A codex run shows tokens,
-because that CLI reports no cost.
+because that CLI reports no cost. A task id appears where an agent passed one
+to a tool call.
 
 The dashboard is read-only. It binds `127.0.0.1` only, no flag changes that,
 and connector secrets are redacted before anything reaches the page. Pausing a

@@ -239,3 +239,70 @@ func TestPausedWorkerSkipsItsTick(t *testing.T) {
 		t.Error("a paused tick should not hold the cycle lock")
 	}
 }
+
+// The task a run is on is read off the calls the agent was seen making, and the
+// first id it names is the claim. A subtask handed out later in the same run
+// says what the agent delegated, not what it is working on.
+func TestRunSummaryTakesTheFirstTaskIDItSees(t *testing.T) {
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{})
+	summary := &RunSummary{RunID: "run-1"}
+	for _, ev := range []SessionEvent{
+		{Type: "tool_use", Tool: "Read", Target: "internal/invite/token.go"},
+		{Type: "tool_use", Tool: "mcp__relay__claim_task", Target: "task_id=T-413"},
+		{Type: "tool_use", Tool: "mcp__relay__create_task", Target: "task_id=T-418"},
+	} {
+		r.applySessionEvent("run-1", summary, ev)
+	}
+	if summary.TaskID != "T-413" {
+		t.Errorf("TaskID = %q, want %q", summary.TaskID, "T-413")
+	}
+	if summary.ToolCalls != 3 {
+		t.Errorf("ToolCalls = %d, want 3", summary.ToolCalls)
+	}
+}
+
+// A run whose agent never named a task carries none. Relay owns task state, and
+// inventing an id here would be worse than a blank.
+func TestRunSummaryWithoutATaskIDStaysEmpty(t *testing.T) {
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{})
+	summary := &RunSummary{RunID: "run-1"}
+	for _, target := range []string{"", "bash -lc 'go test ./...'", "subtask_id=T-9", "description=do a thing"} {
+		r.applySessionEvent("run-1", summary, SessionEvent{Type: "tool_use", Tool: "Bash", Target: target})
+	}
+	if summary.TaskID != "" {
+		t.Errorf("TaskID = %q, want empty", summary.TaskID)
+	}
+}
+
+// The hourly window rolls rather than resetting on the hour, so the only reset
+// time a worker at its ceiling can be shown is when its oldest run ages out.
+func TestCeilingResetsWhenTheOldestRunAgesOut(t *testing.T) {
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{MaxRunsPerHour: 3})
+	now := time.Now()
+	oldest := now.Add(-50 * time.Minute)
+	var lines []string
+	for _, at := range []time.Time{now.Add(-90 * time.Minute), oldest, now.Add(-20 * time.Minute)} {
+		lines = append(lines, fmt.Sprintf("%d", at.Unix()))
+	}
+	os.WriteFile(r.runsFile(), []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+
+	r.withinCeilings()
+	got := r.Status().CeilingResetsAt
+	if got == nil {
+		t.Fatal("CeilingResetsAt is nil, want the oldest in-window run plus an hour")
+	}
+	want := oldest.Add(time.Hour)
+	if d := got.Sub(want); d > time.Second || d < -time.Second {
+		t.Errorf("CeilingResetsAt = %v, want %v (the 90-minute-old run is outside the window)", got, want)
+	}
+}
+
+// A worker with no ceiling has nothing to free up, so it shows no reset time.
+func TestNoCeilingMeansNoResetTime(t *testing.T) {
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{MaxRunsPerHour: 0})
+	os.WriteFile(r.runsFile(), []byte(fmt.Sprintf("%d\n", time.Now().Add(-10*time.Minute).Unix())), 0o644)
+	r.withinCeilings()
+	if got := r.Status().CeilingResetsAt; got != nil {
+		t.Errorf("CeilingResetsAt = %v, want nil", got)
+	}
+}
