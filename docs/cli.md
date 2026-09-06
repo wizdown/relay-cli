@@ -59,7 +59,7 @@ is holding for this agent:
 | `attention` | a task it holds that has moved: a subtask finished, or asked it something |
 | `todo` | delegated work it has not started |
 
-Any count above zero launches a session on the next poll; all three at `0`
+Work it can act on launches a session on the next poll; all three at `0`
 is idle.
 
 The `repo` line lists what the CLI will load from `repo_dir`, in that
@@ -105,22 +105,23 @@ claude, `--json` for codex), so a session appears line by line:
 ```
 
 - **Worker cards**: state (`idle · polling · running · cooldown · ceiling ·
-  paused · probe failing`), the last poll's three counts, runs against the
-  hourly ceiling, cost or tokens so far, and a countdown to the next poll.
+  at limit · paused · probe failing`), the last poll's three counts, runs
+  against the hourly ceiling, cost or tokens so far, and a countdown to the next
+  poll.
 - **The fleet board**: a row per worker with the task it claimed, the tool call
   it is in, and its spend, tokens and time against the caps that bound them.
 - **The spend ledger**: the last hour by worker and by task, with cost per run,
   turns, tools, cache share, outcomes, and spend per five minutes.
-- **Every poll**, including empty ones. Consecutive empty polls collapse to one
-  line.
+- **Every poll**, including empty ones. Consecutive quiet polls collapse to one
+  line, labelled `queue empty` or `at claim limit`.
 - **The live session**: each tool call with its target, and the result with its
   cost or token usage. For claude, the session line shows which MCP servers
   came up.
 - **The effective config**, with every default resolved.
 
-A claude run shows dollars, as the CLI reports them. A codex run shows tokens,
-because that CLI reports no cost. A task id appears where an agent passed one
-to a tool call.
+A claude run shows dollars and a codex run tokens; see
+[Runtimes](runtimes.md). A task id appears where an agent passed one to a tool
+call.
 
 The dashboard is read-only. It binds `127.0.0.1` only, no flag changes that,
 and connector secrets are redacted before anything reaches the page. Pausing a

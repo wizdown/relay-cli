@@ -57,6 +57,41 @@ func TestCheckReportsAHealthyFleet(t *testing.T) {
 	}
 }
 
+// A backlog nothing will pick up is the confusing case check has to name. The
+// counts alone read as work about to start, and this is where someone looks
+// first when a fleet sits idle with tasks filed against it.
+func TestCheckNamesAWithheldQueue(t *testing.T) {
+	relay := mcpStub(t, atLimitQueue, true)
+	defer relay.Close()
+
+	var out bytes.Buffer
+	if err := check(writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa"), 5*time.Second, &out); err != nil {
+		t.Fatalf("an at-limit queue is a healthy fleet, not a failure: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "at limit, none claimable") {
+		t.Errorf("check does not say the queue is withheld:\n%s", got)
+	}
+	if !strings.Contains(got, "todo 3") {
+		t.Errorf("check stopped reporting the real counts:\n%s", got)
+	}
+}
+
+// An ordinary queue says nothing about limits, or the note stops meaning
+// anything on the fleets it is there to explain.
+func TestCheckSaysNothingAboutLimitsWhenThereIsNone(t *testing.T) {
+	relay := mcpStub(t, threeBuckets, true)
+	defer relay.Close()
+
+	var out bytes.Buffer
+	if err := check(writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa"), 5*time.Second, &out); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "at limit") {
+		t.Errorf("check called an ordinary queue withheld:\n%s", out.String())
+	}
+}
+
 // The failure this command exists for. A revoked credential and an empty queue
 // are indistinguishable from the outside until something asks, and asking must
 // not cost a run.

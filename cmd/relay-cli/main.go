@@ -573,8 +573,15 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 			writeWorkdirLine(out, r.worker, cfg.RelayDir)
 			continue
 		}
-		fmt.Fprintf(out, "  %-24s ok    queue: resume %d · attention %d · todo %d\n",
-			r.worker.Name, r.queue.Resume, r.queue.Attention, r.queue.Todo)
+		// The counts alone would read as work about to be picked up. An agent at
+		// its parallel-claim limit is offered none of it, and check is where
+		// someone looks first when a fleet is idle with a backlog.
+		atLimit := ""
+		if r.queue.AtLimit {
+			atLimit = " · at limit, none claimable"
+		}
+		fmt.Fprintf(out, "  %-24s ok    queue: resume %d · attention %d · todo %d%s\n",
+			r.worker.Name, r.queue.Resume, r.queue.Attention, r.queue.Todo, atLimit)
 		writeWorkdirLine(out, r.worker, cfg.RelayDir)
 	}
 	fmt.Fprintln(out)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -304,5 +305,84 @@ func TestNoCeilingMeansNoResetTime(t *testing.T) {
 	r.withinCeilings()
 	if got := r.Status().CeilingResetsAt; got != nil {
 		t.Errorf("CeilingResetsAt = %v, want nil", got)
+	}
+}
+
+// queueStub is a relay whose get_available_tasks answers with a fixed
+// structuredContent, so a whole tick can be driven without a live server.
+func queueStub(t *testing.T, structured string) *httptest.Server {
+	t.Helper()
+	return mcpStub(t, `{"jsonrpc":"2.0","id":2,"result":{"structuredContent":`+structured+`}}`, true)
+}
+
+// tickAgainst runs one tick with the worker's probe pointed at a stub queue.
+func tickAgainst(t *testing.T, structured string) *WorkerRunner {
+	t.Helper()
+	srv := queueStub(t, structured)
+	defer srv.Close()
+	// `true` exits 0 without spending anything; a launch shows up as a recorded
+	// run either way, which is what these tests are counting.
+	r, _ := newTestRunner(t, &fakeRuntime{script: "true"}, &Worker{})
+	r.prober = NewProber(srv.URL)
+	r.tick(context.Background())
+	return r
+}
+
+// The gate this whole change is about. Relay reports what it is holding even
+// when it is withholding all of it, so a worker that gates on the counts alone
+// launches a full CLI session — the most expensive thing it can do — against a
+// queue whose every claimable row relay has already said it will refuse.
+func TestAtClaimLimitDoesNotLaunchARun(t *testing.T) {
+	r := tickAgainst(t, `{"resume_total":2,"attention_total":0,"todo_total":5,"at_limit":true,"attention":[]}`)
+
+	if got := len(r.readRuns()); got != 0 {
+		t.Fatalf("%d run(s) launched while every claimable row was withheld — the counts are not the gate", got)
+	}
+	s := r.Status()
+	if s.State != StateAtLimit {
+		t.Errorf("state = %q, want %q — an idle worker with a backlog has to say why", s.State, StateAtLimit)
+	}
+	if !strings.Contains(s.Detail, "7 task(s) withheld") {
+		t.Errorf("detail = %q, want the withheld count", s.Detail)
+	}
+}
+
+// The deadlock the gate must not cause. A task needing attention is already the
+// agent's own: it is worked with get_task_context and needs no free slot, and it
+// is how an orchestrator at its ceiling keeps its fan-out moving. Withholding a
+// launch for one would strand the whole fan-out until a lease lapsed.
+func TestAtClaimLimitStillLaunchesForAttention(t *testing.T) {
+	r := tickAgainst(t, `{"resume_total":2,"attention_total":1,"todo_total":5,"at_limit":true,"attention":[{"id":7}]}`)
+
+	if got := len(r.readRuns()); got != 1 {
+		t.Fatalf("%d run(s) launched for a task needing attention, want 1 — its fan-out stalls otherwise", got)
+	}
+	if s := r.Status(); s.State != StateIdle {
+		t.Errorf("state after a run = %q, want %q", s.State, StateIdle)
+	}
+}
+
+// A relay that does not send the flag withholds nothing, so every count it
+// reports is work this worker may take. Reading the absence as "at limit" would
+// silently stop the fleet against an older server.
+func TestQueueWithoutAtLimitStillLaunches(t *testing.T) {
+	r := tickAgainst(t, `{"resume_total":0,"attention_total":0,"todo_total":1,"attention":[]}`)
+
+	if got := len(r.readRuns()); got != 1 {
+		t.Fatalf("%d run(s) launched for an ordinary todo queue, want 1", got)
+	}
+}
+
+// An empty queue is still an empty queue: no run, and no at-limit reason on a
+// card that has nothing to explain.
+func TestEmptyQueueLaunchesNothingAndSaysNothing(t *testing.T) {
+	r := tickAgainst(t, `{"resume_total":0,"attention_total":0,"todo_total":0,"attention":[]}`)
+
+	if got := len(r.readRuns()); got != 0 {
+		t.Fatalf("%d run(s) launched on an empty queue", got)
+	}
+	s := r.Status()
+	if s.State != StateIdle || s.Detail != "" {
+		t.Errorf("state = %q detail = %q, want a plain idle", s.State, s.Detail)
 	}
 }

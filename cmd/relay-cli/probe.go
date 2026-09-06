@@ -42,10 +42,52 @@ type QueueState struct {
 	Attention    int      `json:"attention"`
 	Todo         int      `json:"todo"`
 	AttentionIDs []string `json:"attention_ids"`
+	// AtLimit is relay saying this agent is holding its parallel-claim limit, so
+	// it is being offered no claimable work: `resume` and `todo` come back empty
+	// however large their counts are, and a claim of anything would be refused.
+	//
+	// The counts stay honest while that is true, which is exactly why this field
+	// has to exist. "Empty list, count of 3" means "withheld" or "capped, here are
+	// the first 25" depending on state only relay can see, and the difference is
+	// whether a launch can possibly do anything. An older relay does not send it;
+	// false is then the right reading, because such a server also does not
+	// withhold.
+	AtLimit bool `json:"at_limit,omitempty"`
 }
 
-// Total is what the loop gates on: any bucket non-empty means launch.
+// Total is everything relay is holding for this agent, withheld work included.
+// It is what the counts on the cards add up to, not what the loop gates on.
 func (q QueueState) Total() int { return q.Resume + q.Attention + q.Todo }
+
+// Actionable is what the loop gates on: how much of this queue the agent can
+// act on THIS cycle.
+//
+// At the claim limit that is `attention` alone. Those tasks are already the
+// agent's own — it works them with get_task_context and needs no free slot — and
+// they are how an orchestrator at its ceiling keeps its fan-out moving, so a
+// launch for them is a launch that does something.
+//
+// Everything else is withheld, and launching for it burns a full CLI session
+// (see "Why the probe exists") on a queue whose every claimable row relay has
+// already refused in advance. That is the cost the probe exists to avoid, so the
+// gate has to read this and not Total.
+func (q QueueState) Actionable() int {
+	if q.AtLimit {
+		return q.Attention
+	}
+	return q.Total()
+}
+
+// Withheld is the work relay is holding back behind the claim limit — real,
+// filed, and not lost. It is what an idle worker shows instead of a bare "idle",
+// because an idle fleet with a full backlog and no reason given is the failure
+// this whole path is here to prevent.
+func (q QueueState) Withheld() int {
+	if !q.AtLimit {
+		return 0
+	}
+	return q.Resume + q.Todo
+}
 
 // AttentionKey is the stall detector's fingerprint — the same task ids in
 // `attention` across consecutive completed cycles. Sorted and joined so the
@@ -127,9 +169,10 @@ func (p *Prober) GetAvailableTasks(ctx context.Context) (QueueState, error) {
 		Result struct {
 			IsError           bool `json:"isError"`
 			StructuredContent struct {
-				ResumeTotal    int `json:"resume_total"`
-				AttentionTotal int `json:"attention_total"`
-				TodoTotal      int `json:"todo_total"`
+				ResumeTotal    int  `json:"resume_total"`
+				AttentionTotal int  `json:"attention_total"`
+				TodoTotal      int  `json:"todo_total"`
+				AtLimit        bool `json:"at_limit"`
 				Attention      []struct {
 					ID json.RawMessage `json:"id"`
 				} `json:"attention"`
@@ -149,6 +192,7 @@ func (p *Prober) GetAvailableTasks(ctx context.Context) (QueueState, error) {
 
 	sc := env.Result.StructuredContent
 	q.Resume, q.Attention, q.Todo = sc.ResumeTotal, sc.AttentionTotal, sc.TodoTotal
+	q.AtLimit = sc.AtLimit
 	for _, a := range sc.Attention {
 		// Relay may send an id as a number or a string; both render the same
 		// here, and the value is only ever compared to itself.

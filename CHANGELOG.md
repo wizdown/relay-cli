@@ -5,6 +5,14 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- A worker no longer launches a session when Relay is withholding its claimable
+  work. Relay reports how much it is holding for an agent at its parallel-claim
+  limit while offering none of it; a worker used to launch against that count
+  and the session had nothing to take. Such a worker now shows `at limit` with
+  the number withheld, and still launches for a task needing its attention.
+- `relay check` marks a withheld queue `at limit, none claimable`, and the
+  dashboard labels those polls rather than counting them as work waiting.
+
 ## v0.3.0
 
 - The dashboard has two new views in its sidebar. **Fleet board** gives each

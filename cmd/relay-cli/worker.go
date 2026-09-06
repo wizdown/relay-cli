@@ -299,8 +299,23 @@ func (r *WorkerRunner) tick(ctx context.Context) {
 	q := queue
 	r.bus.Publish(Event{Worker: r.w.Name, Kind: KindPoll, Poll: &q})
 
-	if queue.Total() > 0 {
+	// Actionable, not Total. Relay withholds every claimable row from an agent
+	// already holding its parallel-claim limit, while still reporting honestly how
+	// much it is holding back — so a non-zero count is not a reason to launch. A
+	// gate on Total spends a whole CLI session to be told, in prose the loop never
+	// reads, that there was nothing to take.
+	if queue.Actionable() > 0 {
 		r.runCycle(ctx, queue)
+		r.setState(StateIdle, "")
+		return
+	}
+	// Idle with a backlog needs a reason on the card, or the fleet looks broken to
+	// the one person who could fix it. The remedy is relay's, not this worker's:
+	// a slot frees when the agent finishes or hands back a task, or when its owner
+	// raises max_parallel_claims.
+	if withheld := queue.Withheld(); withheld > 0 {
+		r.setState(StateAtLimit, fmt.Sprintf("agent is at its parallel-claim limit in relay — %d task(s) withheld", withheld))
+		return
 	}
 	r.setState(StateIdle, "")
 }

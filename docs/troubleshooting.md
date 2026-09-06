@@ -47,6 +47,7 @@ An idle worker prints nothing. "No output" is the healthy steady state.
 | `THE RELAY MCP SERVER DID NOT COME UP` (codex) | The session had no Relay tools. If `relay check` passes, the installed codex cannot connect to a streamable-HTTP MCP server. Upgrade it. |
 | `PAUSED — N consecutive runs were cut off by a spend or usage limit` | claude: raise `runtime_config.max_usd_per_run`. codex: the account's plan window is spent, so wait for it to reset, or lower `max_runs_per_hour` or `reasoning_effort`. Then remove the `PAUSED` file. |
 | `PAUSED — task(s) N have needed this agent's attention` | The same task came back needing attention on 3 completed runs in a row, usually because its capability was revoked or the parent was re-delegated. Resolve it in Relay, then remove the `PAUSED` file. |
+| `agent is at its parallel-claim limit in relay …` | It holds as many tasks as Relay allows at once. Finish or hand back one, or raise its limit. |
 | `cycle timed out` repeatedly | Raise `max_seconds_per_run`, or split the task. |
 | Worker starts and stops instantly | Check `worker.log`. Usually the repo's own hooks, or a denied tool. |
 | An agent says a tool is not available | If Relay refused it, the refusal names the capability to grant on the agent. If the CLI refused it, `worker.log` lists it under "the CLI refused these tool calls". |

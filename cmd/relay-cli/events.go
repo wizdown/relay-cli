@@ -42,6 +42,7 @@ const (
 	StateRunning  = "running"
 	StateCooldown = "cooldown"
 	StateCeiling  = "ceiling"
+	StateAtLimit  = "at_limit"
 	StatePaused   = "paused"
 	StateProbeErr = "probe_failing"
 	StateStopped  = "stopped"
