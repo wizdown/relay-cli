@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.3.1
+
 - A worker no longer launches a session when Relay is withholding its claimable
   work. Relay reports how much it is holding for an agent at its parallel-claim
   limit while offering none of it; a worker used to launch against that count
