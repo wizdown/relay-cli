@@ -37,12 +37,43 @@ Each worker ticks every `poll_seconds`:
    launch, stop here without probing. A throttled worker is cheaper than an
    idle one.
 4. **Probe**: one MCP call. Three buckets come back: `resume`, `attention`,
-   `todo`.
-5. **Launch**, only if a bucket is non-empty: one headless session inside
-   `repo_dir`, under the wall-clock timeout and the spend cap.
+   `todo`, plus `at_limit`.
+5. **Launch**, only if something in them is actionable: one headless session
+   inside `repo_dir`, under the wall-clock timeout and the spend cap.
 
 The worker owns the working directory and the timeout for every runtime, so a
 stuck session can never hold its lock, or the task's lease, indefinitely.
+
+## Why the gate reads `at_limit` and not the counts
+
+Relay caps how many tasks one agent may hold at once. An agent already holding
+that many is offered no claimable work: `resume` and `todo` come back empty
+whatever their counts say, because a claim of anything would be refused. The
+counts stay honest while that happens, and they have to — an owner watching a
+fleet needs to see the backlog that is waiting on a slot.
+
+That honesty is what makes the counts unusable as a launch gate. An empty
+`todo` with `todo_total: 3` means "withheld, you are at your limit" or "capped,
+here are the first 25" depending on state only Relay can see, and the two differ
+in whether a session could do anything at all. Gating on the sum spends a full
+launch — the ~55k tokens above — to be told, in a message the loop never reads,
+that there was nothing to take. Then it does it again on the next tick.
+
+So the probe reads `at_limit` and `QueueState.Actionable` answers the only
+question the loop asks. At the limit that is `attention` alone. Those tasks are
+already the agent's own: it works them with `get_task_context` and needs no free
+slot, and they are how an orchestrator at its ceiling keeps its fan-out moving.
+Suppressing a launch for them would strand a supervisor behind a lease timeout,
+which is the stall the `attention` bucket exists to prevent.
+
+A worker parked there shows `at_limit` with the number withheld rather than a
+bare `idle`. An idle fleet with a full backlog and no reason on the card is a
+support question, and the reason is one field away.
+
+Relay sends the flag from the same predicate it suppresses the buckets with, so
+the two cannot disagree. A Relay that does not send it is one that does not
+withhold, and its absence reads as false — everything counted is claimable,
+which is what that server means.
 
 ## Who owns what
 

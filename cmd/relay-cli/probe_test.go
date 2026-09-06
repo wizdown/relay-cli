@@ -163,3 +163,69 @@ func TestProbeErrorsAreScrubbed(t *testing.T) {
 		t.Fatalf("the credential leaked into a probe error: %v", err)
 	}
 }
+
+// atLimitQueue is relay's answer to an agent holding its parallel-claim limit:
+// both claimable buckets withheld, their counts still honest, and the flag that
+// is the only way to tell that apart from a queue that is merely capped.
+const atLimitQueue = `{"jsonrpc":"2.0","id":2,"result":{"structuredContent":` +
+	`{"resume_total":1,"attention_total":2,"todo_total":3,"at_limit":true,"attention":[{"id":23}]}}}`
+
+func TestProbeReadsAtLimit(t *testing.T) {
+	srv := mcpStub(t, atLimitQueue, true)
+	defer srv.Close()
+	q, err := NewProber(srv.URL).GetAvailableTasks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.AtLimit {
+		t.Fatal("at_limit was not read off the response")
+	}
+	// Total is unchanged: relay still reports everything it holds.
+	if q.Total() != 6 {
+		t.Errorf("Total() = %d, want 6 — the flag must not change what is counted", q.Total())
+	}
+	// Actionable is the part that matters. `attention` needs no free slot, so it
+	// survives; both claimable buckets are a launch that could not claim anything.
+	if q.Actionable() != 2 {
+		t.Errorf("Actionable() = %d, want 2 (attention only)", q.Actionable())
+	}
+	if q.Withheld() != 4 {
+		t.Errorf("Withheld() = %d, want 4 (resume + todo)", q.Withheld())
+	}
+}
+
+// A relay that never sends the field is one that never withholds, so the absence
+// has to read as "everything I was given is mine to take" — not as an at-limit
+// worker that would then never launch again.
+func TestProbeWithoutAtLimitOffersEverything(t *testing.T) {
+	srv := mcpStub(t, threeBuckets, true)
+	defer srv.Close()
+	q, err := NewProber(srv.URL).GetAvailableTasks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.AtLimit {
+		t.Error("at_limit defaulted to true when the field was absent")
+	}
+	if q.Actionable() != q.Total() || q.Actionable() != 6 {
+		t.Errorf("Actionable() = %d, want 6 — an older relay withholds nothing", q.Actionable())
+	}
+	if q.Withheld() != 0 {
+		t.Errorf("Withheld() = %d, want 0", q.Withheld())
+	}
+}
+
+// At the limit with nothing needing attention there is nothing a session could
+// do, however long the backlog: this is the case the gate exists for.
+func TestQueueStateAtLimitWithNoAttentionIsNotActionable(t *testing.T) {
+	q := QueueState{Resume: 2, Attention: 0, Todo: 9, AtLimit: true}
+	if q.Actionable() != 0 {
+		t.Errorf("Actionable() = %d, want 0 — every claimable row here is one relay would refuse", q.Actionable())
+	}
+	if q.Total() != 11 {
+		t.Errorf("Total() = %d, want 11 — withheld work is still work, and the cards say so", q.Total())
+	}
+	if q.Withheld() != 11 {
+		t.Errorf("Withheld() = %d, want 11", q.Withheld())
+	}
+}

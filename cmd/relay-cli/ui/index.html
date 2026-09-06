@@ -78,7 +78,7 @@
   }
   .s-idle { color: var(--dim); } .s-polling { color: var(--run); }
   .s-running { color: var(--accent); } .s-paused { color: var(--err); }
-  .s-ceiling, .s-cooldown { color: var(--warn); } .s-probe_failing { color: var(--err); }
+  .s-ceiling, .s-cooldown, .s-at_limit { color: var(--warn); } .s-probe_failing { color: var(--err); }
   .s-stopped, .s-starting { color: var(--faint); }
   .card-line {
     display: flex; justify-content: space-between; gap: 8px;
@@ -368,7 +368,8 @@ function renderCards() {
     const q = w.last_poll;
     const bucket = el("span", "bucket");
     if (q) {
-      bucket.innerHTML = "resume " + b(q.resume) + " · attn " + b(q.attention) + " · todo " + b(q.todo);
+      bucket.innerHTML = "resume " + b(q.resume) + " · attn " + b(q.attention) + " · todo " + b(q.todo) +
+        (q.at_limit ? " <span class='warntext'>· withheld</span>" : "");
     } else if (w.last_poll_error) {
       bucket.className = "errtext"; bucket.textContent = "probe failing";
     } else {
@@ -445,10 +446,10 @@ function renderFeed() {
   // matters under an hour of "queue empty"; the rows are still one click away.
   let i = 0;
   while (i < shown.length) {
-    if (!isEmptyPoll(shown[i])) { feed.append(renderEvent(shown[i])); i++; continue; }
+    if (!isQuietPoll(shown[i])) { feed.append(renderEvent(shown[i])); i++; continue; }
     let j = i;
     const groups = new Map();
-    while (j < shown.length && isEmptyPoll(shown[j])) {
+    while (j < shown.length && isQuietPoll(shown[j])) {
       const g = groups.get(shown[j].worker);
       if (g) g.push(shown[j]); else groups.set(shown[j].worker, [shown[j]]);
       j++;
@@ -459,8 +460,15 @@ function renderFeed() {
   if (follow) feed.scrollTop = feed.scrollHeight;
 }
 
-const isEmptyPoll = (e) => e.kind === "poll" && !e.error && e.poll &&
-  !e.poll.resume && !e.poll.attention && !e.poll.todo;
+// What a poll leaves the worker able to do, mirroring QueueState.Actionable: at
+// the claim limit relay withholds both claimable buckets while still counting
+// them, so the counts alone cannot say whether a poll was quiet.
+const pollActionable = (q) => q.at_limit ? (q.attention || 0) : (q.resume || 0) + (q.attention || 0) + (q.todo || 0);
+
+// A quiet poll is one no run could have come out of. A worker parked at its
+// claim limit polls just as often and just as pointlessly as one with an empty
+// queue, so it collapses the same way — under a label that says which it was.
+const isQuietPoll = (e) => e.kind === "poll" && !e.error && e.poll && !pollActionable(e.poll);
 
 // Collapsed by default: how many polls, and when the last one landed, is the
 // whole of what a stretch of empty polls has to say — that the worker is alive
@@ -475,8 +483,9 @@ function emptyPollGroup(worker, polls) {
   const row = el("div", "row group");
   row.append(el("span", "t", hhmmss(last.time)));
   row.append(el("span", "w", worker));
+  const why = (last.poll && last.poll.at_limit) ? "at claim limit" : "queue empty";
   row.append(el("span", "b fainttext",
-    (open ? "▾ " : "▸ ") + polls.length + " polls — queue empty · " +
+    (open ? "▾ " : "▸ ") + polls.length + " polls — " + why + " · " +
     hhmmss(first.time) + " → " + hhmmss(last.time)));
   row.onclick = () => {
     if (open) openGroups.delete(key); else openGroups.add(key);
@@ -534,6 +543,7 @@ function renderEvent(e) {
       body.className = "b";
       body.innerHTML = "<span class='accent'>poll</span> <span class='dimtext'>resume " +
         q.resume + " · attention " + q.attention + " · todo " + q.todo + "</span>" +
+        (q.at_limit ? " <span class='warntext'>at claim limit</span>" : "") +
         (q.attention_ids && q.attention_ids.length ?
           " <span class='fainttext'>[" + esc(q.attention_ids.join(", ")) + "]</span>" : "");
     }
@@ -651,7 +661,7 @@ function runUsage(r) {
 
 function fleetTotals() {
   const t = { cost: 0, in: 0, cached: 0, out: 0, runs: 0, used: 0, ceiling: 0,
-              uncapped: false, resume: 0, attention: 0, todo: 0, live: 0, resets: null };
+              uncapped: false, resume: 0, attention: 0, todo: 0, withheld: 0, live: 0, resets: null };
   if (!snap) return t;
   for (const w of snap.workers) {
     for (const r of recentRuns(w)) {
@@ -666,7 +676,10 @@ function fleetTotals() {
     if (w.config.max_runs_per_hour > 0) t.ceiling += w.config.max_runs_per_hour;
     else t.uncapped = true;
     const q = w.last_poll;
-    if (q) { t.resume += q.resume; t.attention += q.attention; t.todo += q.todo; }
+    if (q) {
+      t.resume += q.resume; t.attention += q.attention; t.todo += q.todo;
+      if (q.at_limit) t.withheld += (q.resume || 0) + (q.todo || 0);
+    }
     if (w.current_run) t.live++;
     const rs = w.ceiling_resets_at ? new Date(w.ceiling_resets_at).getTime() : 0;
     if (rs && (!t.resets || rs < t.resets)) t.resets = rs;
@@ -765,8 +778,11 @@ function renderFleet() {
   }
   tiles.append(runsTile);
 
-  const waiting = t.resume + t.attention + t.todo;
-  tiles.append(tile("Queue", String(waiting), waiting ? "waiting" : "empty",
+  // The headline is what the fleet can pick up. Work relay is withholding behind
+  // a claim limit is real and filed, but no worker will launch for it, so a tile
+  // that counted it as waiting would explain an idle fleet as a busy one.
+  const waiting = t.resume + t.attention + t.todo - t.withheld;
+  tiles.append(tile("Queue", String(waiting), t.withheld ? t.withheld + " withheld" : waiting ? "waiting" : "empty",
     "resume " + t.resume + " · attn " + t.attention + " · todo " + t.todo));
   feed.append(tiles);
 
