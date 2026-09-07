@@ -421,7 +421,11 @@ function countdown(w) {
   }
   if (!w.next_poll_at) return "";
   const left = Math.round((new Date(w.next_poll_at) - Date.now()) / 1000);
-  return left > 0 ? "next poll in " + left + "s" : "polling…";
+  // A countdown that used to read 30s and now reads 240s looks like a stall
+  // unless the rate it is counting down from is on the card beside it.
+  const cooled = w.poll_interval_seconds > snap.poll_seconds
+    ? " · backed off to " + w.poll_interval_seconds + "s" : "";
+  return left > 0 ? "next poll in " + left + "s" + cooled : "polling…";
 }
 
 // ── the feed ─────────────────────────────────────────────────────────────────
@@ -1240,7 +1244,9 @@ function renderConfig() {
   const cols = [
     ["name", (c) => c.name], ["runtime", (c) => c.runtime],
     ["repo_dir", (c) => c.repo_dir],
-    ["poll", () => snap.poll_seconds + "s"],
+    ["poll", () => snap.idle_poll_seconds > snap.poll_seconds
+      ? snap.poll_seconds + "s → " + snap.idle_poll_seconds + "s"
+      : snap.poll_seconds + "s"],
     ["runs/hour", (c) => c.max_runs_per_hour === 0 ? "∞" : c.max_runs_per_hour],
     ["timeout", (c) => c.max_seconds_per_run + "s"],
     ...rcKeys.map((k) => [k, (c) => rc(c, k) ?? "—"]),

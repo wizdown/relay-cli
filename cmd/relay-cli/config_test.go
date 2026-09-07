@@ -142,6 +142,53 @@ func TestAcceptsPollSecondsAtTheMinimum(t *testing.T) {
 	}
 }
 
+// The idle rate defaults on, so a config that says nothing about it still gets
+// the backoff. A worker that has to be told to stop asking is the case this
+// field exists for.
+func TestIdlePollSecondsDefaultsToTheBackoff(t *testing.T) {
+	noRuntimeCheck(t)
+	cfg, err := LoadConfig(write(t, configOf(t, worker(t, ""))))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.IdlePollSeconds != defaultIdlePollSeconds {
+		t.Errorf("IdlePollSeconds = %v, want %v", cfg.IdlePollSeconds, defaultIdlePollSeconds)
+	}
+}
+
+// Equal rates are how a fleet asks to poll at one rate at all times, so the
+// value the error messages recommend has to be a value that loads.
+func TestIdlePollSecondsMayEqualPollSeconds(t *testing.T) {
+	noRuntimeCheck(t)
+	cfg, err := LoadConfig(write(t, `{"poll_seconds":30,"idle_poll_seconds":30,"workers":[`+worker(t, "")+`]}`))
+	if err != nil {
+		t.Fatalf("equal rates are how the backoff is turned off: %v", err)
+	}
+	if cfg.IdlePollSeconds != cfg.PollSeconds {
+		t.Errorf("IdlePollSeconds = %v, want %v", cfg.IdlePollSeconds, cfg.PollSeconds)
+	}
+}
+
+// Every rejection names what to do instead. 0 is the interesting one: it removes
+// a per-worker ceiling everywhere else in this file, and here it would mean
+// never slowing down at all.
+func TestRejectsAnIdleRateThatIsNotOne(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, tc := range []struct{ name, doc, want string }{
+		{"a string", `{"poll_seconds":30,"idle_poll_seconds":"300",`, "must be a JSON number"},
+		{"zero", `{"poll_seconds":30,"idle_poll_seconds":0,`, "slowdown, not a switch"},
+		{"faster than the base rate", `{"poll_seconds":30,"idle_poll_seconds":10,`, "below the 30"},
+		{"above the maximum", `{"poll_seconds":30,"idle_poll_seconds":7200,`, "above the 3600s maximum"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := loadErr(write(t, tc.doc+`"workers":[`+worker(t, "")+`]}`))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want an error saying %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 // A config still carrying system_prompt_file would otherwise launch an agent
 // with no standing instructions at all and look fine doing it. The renamed keys
 // matter for the same reason: an ignored "model" is a worker running something

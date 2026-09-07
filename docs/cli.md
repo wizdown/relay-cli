@@ -72,7 +72,8 @@ not listed, the agent will not see it. See
 ```text
 relay 0.3.2 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
-  wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
+  polling every 30s, 300s when idle
+  wizhub-claude            runtime claude   runs/h 6  repo /Users/you/code/wizhub
 
 dashboard: http://127.0.0.1:7717/
 stop with Ctrl-C (workers stop, logs are archived to logs/)
@@ -107,7 +108,7 @@ claude, `--json` for codex), so a session appears line by line:
 - **Worker cards**: state (`idle · polling · running · cooldown · ceiling ·
   at limit · paused · probe failing`), the last poll's three counts, runs
   against the hourly ceiling, cost or tokens so far, and a countdown to the next
-  poll.
+  poll. A backed-off worker names its wait.
 - **The fleet board**: a row per worker with the task it claimed, the tool call
   it is in, and its spend, tokens and time against the caps that bound them.
 - **The spend ledger**: the last hour by worker and by task, with cost per run,

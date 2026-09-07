@@ -36,6 +36,7 @@ import (
 // something nobody chose.
 const (
 	defaultPollSeconds      = 30.0
+	defaultIdlePollSeconds  = 300.0
 	defaultMaxRunsPerHour   = 12
 	defaultMaxSecondsPerRun = 900
 )
@@ -51,6 +52,16 @@ const (
 // value: a fleet that polls at a rate its own config does not state is a fleet
 // nobody can reason about.
 const minPollSeconds = 5.0
+
+// The ceiling on idle_poll_seconds.
+//
+// The backoff moves load off relay, so nothing here protects relay — this bound
+// protects the operator. A worker that waits an hour between polls is
+// indistinguishable from a worker that has died, and the fleet it belongs to
+// takes an hour to pick up work someone is waiting on. An idle rate is a
+// slowdown, not an off switch, so the config is rejected rather than allowed to
+// state one.
+const maxIdlePollSeconds = 3600.0
 
 // The floor under a max_seconds_per_run that is actually set.
 //
@@ -129,6 +140,13 @@ type Config struct {
 	// differently.
 	PollSeconds float64 `json:"poll_seconds"`
 
+	// IdlePollSeconds is the rate a worker cools to when it has nothing to act
+	// on, and the slowest it ever polls. PollSeconds stays the rate that
+	// matters: it is what a worker with work in front of it polls at, and the
+	// fastest it ever polls. Both ends are in the file, so the range a fleet
+	// leans on relay with is still one its own config states.
+	IdlePollSeconds float64 `json:"idle_poll_seconds"`
+
 	Workers []*Worker `json:"workers"`
 }
 
@@ -175,7 +193,7 @@ var removedKeys = map[string]string{
 // so a new field is accepted by adding it to the struct, not by remembering to
 // add it here as well.
 var (
-	topLevelKeys = []string{"poll_seconds", "workers"}
+	topLevelKeys = []string{"poll_seconds", "idle_poll_seconds", "workers"}
 	workerKeys   = []string{
 		"name",
 		"relay_mcp",
@@ -464,7 +482,35 @@ func LoadConfig(path string) (*Config, error) {
 			pollSeconds, minPollSeconds)
 	}
 
-	cfg := &Config{Path: abs, RelayDir: filepath.Dir(abs), PollSeconds: pollSeconds}
+	idlePollSeconds := float64(defaultIdlePollSeconds)
+	if len(doc["idle_poll_seconds"]) > 0 {
+		if err := json.Unmarshal(doc["idle_poll_seconds"], &idlePollSeconds); err != nil {
+			return nil, fmt.Errorf("%s: \"idle_poll_seconds\" must be a JSON number (300, not \"300\")", path)
+		}
+	}
+	// 0 removes a per-worker ceiling everywhere else in this file. Here it would
+	// mean the opposite — never slow down, poll at the fast rate forever — and a
+	// value that reads as "no bound" while asking for more requests is worth one
+	// error message. Equal to poll_seconds is how a fleet says it wants one rate.
+	if idlePollSeconds == 0 {
+		return nil, fmt.Errorf("\"idle_poll_seconds\" is 0. It is a slowdown, not a switch:\n" +
+			"       set it to the same value as \"poll_seconds\" for one rate at all times.")
+	}
+	if idlePollSeconds < pollSeconds {
+		return nil, fmt.Errorf("\"idle_poll_seconds\" is %g, below the %g in \"poll_seconds\".\n"+
+			"       It is the rate a worker cools to with nothing to act on, so it cannot\n"+
+			"       be faster than the rate it polls at with work in front of it. Set it\n"+
+			"       equal to \"poll_seconds\" for one rate at all times.",
+			idlePollSeconds, pollSeconds)
+	}
+	if idlePollSeconds > maxIdlePollSeconds {
+		return nil, fmt.Errorf("\"idle_poll_seconds\" is %g, above the %gs maximum.\n"+
+			"       A worker that waits that long between polls reads as a dead one, and\n"+
+			"       work delegated to it waits with it.",
+			idlePollSeconds, maxIdlePollSeconds)
+	}
+
+	cfg := &Config{Path: abs, RelayDir: filepath.Dir(abs), PollSeconds: pollSeconds, IdlePollSeconds: idlePollSeconds}
 
 	// Removed keys first: a config written for an older version is not a config
 	// with one bad field, and reporting a missing repo_dir for it would be noise
