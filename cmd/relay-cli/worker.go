@@ -39,6 +39,82 @@ import (
 // which is the knob that actually caps spend.
 const relaunchCooldown = 60 * time.Second
 
+// How long a worker keeps polling at poll_seconds after it last had work, and
+// how fast it cools once that window lapses.
+//
+// Both are fixed for the same reason relaunchCooldown is. The rates are the
+// operator's — poll_seconds and idle_poll_seconds are the two numbers a fleet
+// is planned around — but the shape between them is harness policy, and a knob
+// for it would be three fields answering one question.
+//
+// Work arrives in bursts: a task delegated to an agent is usually followed by
+// another, and the minutes after a run are when the fast rate earns its
+// requests. Cooling by doubling rather than by dropping straight to the idle
+// rate keeps that true for a worker whose next task is a minute late.
+const (
+	pollWarmWindow    = 5 * time.Minute
+	pollBackoffFactor = 2
+)
+
+// tickResult is what one tick tells the ladder. Only a tick that actually
+// polled moves it: a tick that found the worker paused, locked out by another
+// process, inside a ceiling or unable to reach relay learned nothing about how
+// busy this agent is, and guessing from it in either direction is wrong. Held
+// is also what keeps a failing endpoint from being retried at the fast rate
+// while a worker sits backed off.
+type tickResult int
+
+const (
+	tickHold   tickResult = iota // no poll happened, or it failed: leave the ladder alone
+	tickQuiet                    // polled, nothing this worker could act on: cool
+	tickWorked                   // polled and had work: back to the fast rate
+)
+
+// nextPollInterval is the whole adaptive rule, as a function of time so it can
+// be tested without a clock or a network.
+//
+// base is poll_seconds, idle is idle_poll_seconds, cur is the interval the last
+// wait used, and sinceWork is how long ago this worker last had something to
+// act on. A fleet that has just started counts as having had work, so the first
+// minutes of a run are fast while somebody is watching them.
+func nextPollInterval(base, idle, cur, sinceWork time.Duration) time.Duration {
+	if idle <= base {
+		return base
+	}
+	if sinceWork < pollWarmWindow {
+		return base
+	}
+	next := cur * pollBackoffFactor
+	if next < base {
+		next = base
+	}
+	if next > idle {
+		next = idle
+	}
+	return next
+}
+
+// pollRateNote is the line a worker logs when its poll rate changes, and "" for
+// a tick that left it alone.
+//
+// A rate change is a transition worth reading, which is what separates it from
+// the empty polls themselves: those stay out of worker.log, because an idle
+// worker that costs nothing should not cost log noise either. This fires once
+// per doubling — twice between the default rates, then silence — and once
+// more when work brings the worker back. Without it, a fleet that has quietly
+// gone from a poll every 30s to one every 2 minutes looks like a fleet that has
+// stopped, and the reader has no line to tell them otherwise.
+func pollRateNote(prev, next, quiet time.Duration) string {
+	switch {
+	case next > prev:
+		return fmt.Sprintf("nothing to act on for %s — slowing to one poll every %gs",
+			quiet.Round(time.Second), next.Seconds())
+	case next < prev:
+		return fmt.Sprintf("work again — back to one poll every %gs", next.Seconds())
+	}
+	return ""
+}
+
 // Circuit breakers. Each counts a specific kind of fruitless cycle and
 // self-pauses once it is clearly not going to stop on its own. A worker that
 // cannot make progress should say so once and go quiet, not burn its whole run
@@ -85,6 +161,11 @@ type WorkerStatus struct {
 	NextPollAt    *time.Time  `json:"next_poll_at,omitempty"`
 	ProbeFailures int         `json:"probe_failures"`
 
+	// PollIntervalSeconds is the wait this worker is currently on, which is
+	// poll_seconds until it has been quiet long enough to start cooling. The
+	// card needs it to say why a countdown that used to read 30s reads 120s.
+	PollIntervalSeconds float64 `json:"poll_interval_seconds"`
+
 	RunsLastHour int `json:"runs_last_hour"`
 	// CeilingResetsAt is when the oldest run in the window ages out and the
 	// hourly ceiling frees a slot. The window rolls rather than resetting on the
@@ -112,6 +193,12 @@ type WorkerRunner struct {
 	prober    *Prober
 	rules     string
 	rulesFile string
+
+	// The poll ladder. interval is the wait the next tick will use; lastWorkAt
+	// is when this worker last had something to act on. Both are touched only by
+	// the loop goroutine, so neither is under mu.
+	interval   time.Duration
+	lastWorkAt time.Time
 
 	mu     sync.Mutex
 	status WorkerStatus
@@ -202,23 +289,45 @@ func (r *WorkerRunner) Run(ctx context.Context) {
 	// immediately finds the worker present-and-quiet instead of missing.
 	os.WriteFile(r.runsFile(), nil, 0o644)
 
-	r.log("starting: runtime=%s, poll every %gs, timeout %ds, repo %s",
-		r.w.Runtime, r.cfg.PollSeconds, r.w.MaxSecondsPerRun, r.w.RepoDir)
+	base := time.Duration(r.cfg.PollSeconds * float64(time.Second))
+	idle := time.Duration(r.cfg.IdlePollSeconds * float64(time.Second))
+	r.log("starting: runtime=%s, poll every %gs, %gs when idle, timeout %ds, repo %s",
+		r.w.Runtime, r.cfg.PollSeconds, r.cfg.IdlePollSeconds, r.w.MaxSecondsPerRun, r.w.RepoDir)
 
-	interval := time.Duration(r.cfg.PollSeconds * float64(time.Second))
+	// A start is treated as work, so a fleet someone has just launched polls at
+	// the fast rate for the first warm window rather than cooling while they
+	// watch it do nothing.
+	r.interval, r.lastWorkAt = base, time.Now()
+	r.mu.Lock()
+	r.status.PollIntervalSeconds = base.Seconds()
+	r.mu.Unlock()
 	for {
-		r.tick(ctx)
+		res := r.tick(ctx)
 		if ctx.Err() != nil {
 			break
 		}
-		next := time.Now().Add(interval).UTC()
+		// Timed from when the cycle ENDED. A run of fifteen minutes would
+		// otherwise spend its own warm window working, and come back to a worker
+		// already cooling from the task it just finished.
+		if res == tickWorked {
+			r.lastWorkAt = time.Now()
+		}
+		if res != tickHold {
+			prev := r.interval
+			r.interval = nextPollInterval(base, idle, r.interval, time.Since(r.lastWorkAt))
+			if note := pollRateNote(prev, r.interval, time.Since(r.lastWorkAt)); note != "" {
+				r.log("%s", note)
+			}
+		}
+		next := time.Now().Add(r.interval).UTC()
 		r.mu.Lock()
 		r.status.NextPollAt = &next
+		r.status.PollIntervalSeconds = r.interval.Seconds()
 		r.mu.Unlock()
 
 		select {
 		case <-ctx.Done():
-		case <-time.After(interval):
+		case <-time.After(r.interval):
 		}
 		if ctx.Err() != nil {
 			break
@@ -228,13 +337,13 @@ func (r *WorkerRunner) Run(ctx context.Context) {
 	r.log("shutting down")
 }
 
-func (r *WorkerRunner) tick(ctx context.Context) {
+func (r *WorkerRunner) tick(ctx context.Context) tickResult {
 	if _, err := os.Stat(r.pausedFile()); err == nil {
 		r.mu.Lock()
 		r.status.Paused = true
 		r.mu.Unlock()
 		r.setState(StatePaused, "PAUSED file present — remove it to resume")
-		return
+		return tickHold
 	}
 	r.mu.Lock()
 	r.status.Paused = false
@@ -246,12 +355,12 @@ func (r *WorkerRunner) tick(ctx context.Context) {
 	// or a leftover bash worker, running the same worker at the same time.
 	if err := os.Mkdir(r.lockDir(), 0o755); err != nil {
 		r.log("previous cycle still running, skipping this tick")
-		return
+		return tickHold
 	}
 	defer os.Remove(r.lockDir())
 
 	if !r.withinCeilings() {
-		return
+		return tickHold
 	}
 
 	r.setState(StatePolling, "")
@@ -277,10 +386,10 @@ func (r *WorkerRunner) tick(ctx context.Context) {
 		// a minute. Trip the breaker and make a human look.
 		if maxProbeFailures > 0 && n >= maxProbeFailures {
 			r.selfPause(fmt.Sprintf("%d consecutive probe failures — fix the endpoint/credential, then remove the PAUSED file.\n  last error: %s", n, Scrub(err.Error())))
-			return
+			return tickHold
 		}
 		r.setState(StateProbeErr, fmt.Sprintf("%d consecutive probe failures", n))
-		return
+		return tickHold
 	}
 
 	writeCounter(r.probeFailFile(), 0)
@@ -307,7 +416,7 @@ func (r *WorkerRunner) tick(ctx context.Context) {
 	if queue.Actionable() > 0 {
 		r.runCycle(ctx, queue)
 		r.setState(StateIdle, "")
-		return
+		return tickWorked
 	}
 	// Idle with a backlog needs a reason on the card, or the fleet looks broken to
 	// the one person who could fix it. The remedy is relay's, not this worker's:
@@ -315,9 +424,10 @@ func (r *WorkerRunner) tick(ctx context.Context) {
 	// raises max_parallel_claims.
 	if withheld := queue.Withheld(); withheld > 0 {
 		r.setState(StateAtLimit, fmt.Sprintf("agent is at its parallel-claim limit in relay — %d task(s) withheld", withheld))
-		return
+		return tickQuiet
 	}
 	r.setState(StateIdle, "")
+	return tickQuiet
 }
 
 // withinCeilings evaluates every bound before anything is spent.

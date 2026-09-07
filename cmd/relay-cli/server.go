@@ -34,10 +34,11 @@ type Snapshot struct {
 	Now        time.Time `json:"now"`
 	ConfigPath string    `json:"config_path"`
 	RelayDir   string    `json:"relay_dir"`
-	// Fleet-wide, so it belongs here rather than repeated on every worker.
-	PollSeconds float64        `json:"poll_seconds"`
-	Workers     []WorkerStatus `json:"workers"`
-	Events      []Event        `json:"events,omitempty"`
+	// Fleet-wide, so both belong here rather than repeated on every worker.
+	PollSeconds     float64        `json:"poll_seconds"`
+	IdlePollSeconds float64        `json:"idle_poll_seconds"`
+	Workers         []WorkerStatus `json:"workers"`
+	Events          []Event        `json:"events,omitempty"`
 }
 
 type Server struct {
@@ -73,13 +74,14 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	snap := Snapshot{
-		Version:     version,
-		StartedAt:   s.sup.startedAt,
-		Now:         time.Now().UTC(),
-		ConfigPath:  s.sup.cfg.Path,
-		RelayDir:    s.sup.cfg.RelayDir,
-		PollSeconds: s.sup.cfg.PollSeconds,
-		Workers:     s.sup.Statuses(),
+		Version:         version,
+		StartedAt:       s.sup.startedAt,
+		Now:             time.Now().UTC(),
+		ConfigPath:      s.sup.cfg.Path,
+		RelayDir:        s.sup.cfg.RelayDir,
+		PollSeconds:     s.sup.cfg.PollSeconds,
+		IdlePollSeconds: s.sup.cfg.IdlePollSeconds,
+		Workers:         s.sup.Statuses(),
 	}
 	// The dashboard's card refresh asks for state alone; a full load asks for the history too.
 	if r.URL.Query().Get("events") != "0" {

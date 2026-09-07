@@ -54,7 +54,7 @@ const initHeader = `{
   // agent works and what it is free to rewrite:
   //   ` + docsBase + `working-directory.md
 
-  "poll_seconds": 30,             // how often a worker asks relay for work; runs no model
+  "poll_seconds": 30,             // the fastest a worker asks relay for work; runs no model
 
   "workers": [
 `

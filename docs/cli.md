@@ -72,7 +72,8 @@ not listed, the agent will not see it. See
 ```text
 relay 0.3.2 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
-  wizhub-claude            runtime claude   poll 30s  runs/h 6  repo /Users/you/code/wizhub
+  polling every 30s, 120s when idle
+  wizhub-claude            runtime claude   runs/h 6  repo /Users/you/code/wizhub
 
 dashboard: http://127.0.0.1:7717/
 stop with Ctrl-C (workers stop, logs are archived to logs/)
@@ -113,7 +114,8 @@ claude, `--json` for codex), so a session appears line by line:
 - **The spend ledger**: the last hour by worker and by task, with cost per run,
   turns, tools, cache share, outcomes, and spend per five minutes.
 - **Every poll**, including empty ones. Consecutive quiet polls collapse to one
-  line, labelled `queue empty` or `at claim limit`.
+  line, labelled `queue empty` or `at claim limit`. A worker with nothing to do
+  slows down, and logs each change of rate.
 - **The live session**: each tool call with its target, and the result with its
   cost or token usage. For claude, the session line shows which MCP servers
   came up.
@@ -138,6 +140,5 @@ relay 0.3.2-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo, at that c
 
 relay-cli stays on 0.x until the interface settles. A release may change
 configuration, defaults or the worker contract. Changes are listed in
-[CHANGELOG.md](../CHANGELOG.md) and in the release notes. A removed config key
-is rejected by name with its replacement, so an old config fails at
-`relay check` with the fix in the message.
+[CHANGELOG.md](../CHANGELOG.md) and in the release notes. An old config fails
+at `relay check`; see [Validation](configuration.md#validation).

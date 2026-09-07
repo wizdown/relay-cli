@@ -142,6 +142,65 @@ func TestAcceptsPollSecondsAtTheMinimum(t *testing.T) {
 	}
 }
 
+// The idle rate defaults on, so a config that says nothing about it still gets
+// the backoff. A worker that has to be told to stop asking is the case this
+// field exists for.
+func TestIdlePollSecondsDefaultsToTheBackoff(t *testing.T) {
+	noRuntimeCheck(t)
+	cfg, err := LoadConfig(write(t, configOf(t, worker(t, ""))))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.IdlePollSeconds != defaultIdlePollSeconds {
+		t.Errorf("IdlePollSeconds = %v, want %v", cfg.IdlePollSeconds, defaultIdlePollSeconds)
+	}
+}
+
+// The floor is relative, because the right idle rate for a fleet polling every
+// 5s is not the right one for a fleet polling every 30s. Exactly one doubling
+// is the smallest slowdown anyone can ask for, and it has to load.
+func TestIdlePollSecondsAcceptsExactlyOneDoubling(t *testing.T) {
+	noRuntimeCheck(t)
+	cfg, err := LoadConfig(write(t, `{"poll_seconds":30,"idle_poll_seconds":60,"workers":[`+worker(t, "")+`]}`))
+	if err != nil {
+		t.Fatalf("%d× poll_seconds is the documented minimum and must load: %v", pollBackoffFactor, err)
+	}
+	if cfg.IdlePollSeconds != 60 {
+		t.Errorf("IdlePollSeconds = %v, want 60", cfg.IdlePollSeconds)
+	}
+	// The floor tracks poll_seconds rather than a constant of its own.
+	if got := minIdlePollSeconds(minPollSeconds); got != pollBackoffFactor*minPollSeconds {
+		t.Errorf("minIdlePollSeconds(%g) = %g, want %g", minPollSeconds, got, pollBackoffFactor*minPollSeconds)
+	}
+	// And it never asks for more than the maximum allows, or no value would load.
+	if got := minIdlePollSeconds(maxIdlePollSeconds); got != maxIdlePollSeconds {
+		t.Errorf("minIdlePollSeconds(%g) = %g, want the maximum — the two bounds must leave something settable",
+			maxIdlePollSeconds, got)
+	}
+}
+
+// Every rejection names what to do instead. 0 is the interesting one: it removes
+// a per-worker ceiling everywhere else in this file, and here it would mean
+// never slowing down at all.
+func TestRejectsAnIdleRateThatIsNotOne(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, tc := range []struct{ name, doc, want string }{
+		{"a string", `{"poll_seconds":30,"idle_poll_seconds":"300",`, "must be a JSON number"},
+		{"zero", `{"poll_seconds":30,"idle_poll_seconds":0,`, "slowdown, not a switch"},
+		{"faster than the base rate", `{"poll_seconds":30,"idle_poll_seconds":10,`, "below the 60 minimum"},
+		{"equal to the base rate", `{"poll_seconds":30,"idle_poll_seconds":30,`, "below the 60 minimum"},
+		{"a slowdown too small to take a step", `{"poll_seconds":30,"idle_poll_seconds":45,`, "below the 60 minimum"},
+		{"above the maximum", `{"poll_seconds":30,"idle_poll_seconds":7200,`, "above the 3600s maximum"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := loadErr(write(t, tc.doc+`"workers":[`+worker(t, "")+`]}`))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want an error saying %q, got %v", tc.want, err)
+			}
+		})
+	}
+}
+
 // A config still carrying system_prompt_file would otherwise launch an agent
 // with no standing instructions at all and look fine doing it. The renamed keys
 // matter for the same reason: an ignored "model" is a worker running something

@@ -318,14 +318,20 @@ func queueStub(t *testing.T, structured string) *httptest.Server {
 // tickAgainst runs one tick with the worker's probe pointed at a stub queue.
 func tickAgainst(t *testing.T, structured string) *WorkerRunner {
 	t.Helper()
+	r, _ := tickResultAgainst(t, structured)
+	return r
+}
+
+// tickResultAgainst is tickAgainst plus what the tick told the poll ladder.
+func tickResultAgainst(t *testing.T, structured string) (*WorkerRunner, tickResult) {
+	t.Helper()
 	srv := queueStub(t, structured)
 	defer srv.Close()
 	// `true` exits 0 without spending anything; a launch shows up as a recorded
 	// run either way, which is what these tests are counting.
 	r, _ := newTestRunner(t, &fakeRuntime{script: "true"}, &Worker{})
 	r.prober = NewProber(srv.URL)
-	r.tick(context.Background())
-	return r
+	return r, r.tick(context.Background())
 }
 
 // The gate this whole change is about. Relay reports what it is holding even
@@ -384,5 +390,116 @@ func TestEmptyQueueLaunchesNothingAndSaysNothing(t *testing.T) {
 	s := r.Status()
 	if s.State != StateIdle || s.Detail != "" {
 		t.Errorf("state = %q detail = %q, want a plain idle", s.State, s.Detail)
+	}
+}
+
+// ── the poll ladder ─────────────────────────────────────────────────────────
+
+// The whole adaptive rule, as the loop applies it. A worker is fast while it
+// has work and for the warm window after it, then doubles its wait on each
+// quiet poll until it reaches the idle rate and stays there.
+func TestPollIntervalWarmsThenCools(t *testing.T) {
+	const (
+		base = 30 * time.Second
+		idle = 300 * time.Second
+	)
+	for _, tc := range []struct {
+		name      string
+		cur       time.Duration
+		sinceWork time.Duration
+		want      time.Duration
+	}{
+		{"work just now stays fast", base, 0, base},
+		{"inside the warm window stays fast", base, pollWarmWindow - time.Second, base},
+		{"backed off, then work, is fast again", 240 * time.Second, time.Second, base},
+		{"first quiet poll past the window doubles", base, pollWarmWindow, 60 * time.Second},
+		{"and doubles again", 60 * time.Second, time.Hour, 120 * time.Second},
+		{"and again", 120 * time.Second, time.Hour, 240 * time.Second},
+		{"clamped at the idle rate", 240 * time.Second, time.Hour, idle},
+		{"and stays there", idle, time.Hour, idle},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nextPollInterval(base, idle, tc.cur, tc.sinceWork); got != tc.want {
+				t.Errorf("nextPollInterval(cur=%s, sinceWork=%s) = %s, want %s", tc.cur, tc.sinceWork, got, tc.want)
+			}
+		})
+	}
+}
+
+// The rule is total: an idle rate no slower than the base one returns the base
+// rate however long the worker has been quiet. The config refuses such a pair
+// now, so this holds the function rather than a setting anyone can write.
+func TestEqualRatesNeverBackOff(t *testing.T) {
+	const base = 30 * time.Second
+	for _, since := range []time.Duration{0, pollWarmWindow, 24 * time.Hour} {
+		if got := nextPollInterval(base, base, base, since); got != base {
+			t.Errorf("quiet for %s: interval = %s, want %s — equal rates mean one rate", since, got, base)
+		}
+	}
+}
+
+// Only a poll that actually happened says anything about how busy this agent
+// is. A tick that was paused, locked out, inside a ceiling or unable to reach
+// relay leaves the ladder where it was — which is also what stops a dead
+// endpoint being retried at the fast rate by a worker that had backed off.
+func TestOnlyAPollThatHappenedMovesTheLadder(t *testing.T) {
+	work := `{"resume_total":0,"attention_total":0,"todo_total":1,"attention":[]}`
+	empty := `{"resume_total":0,"attention_total":0,"todo_total":0,"attention":[]}`
+	withheld := `{"resume_total":2,"attention_total":0,"todo_total":5,"at_limit":true,"attention":[]}`
+
+	if _, res := tickResultAgainst(t, work); res != tickWorked {
+		t.Errorf("a poll with work returned %v, want tickWorked", res)
+	}
+	if _, res := tickResultAgainst(t, empty); res != tickQuiet {
+		t.Errorf("an empty poll returned %v, want tickQuiet", res)
+	}
+	// A worker parked at its claim limit polls just as pointlessly as one with
+	// an empty queue, and cools for the same reason.
+	if _, res := tickResultAgainst(t, withheld); res != tickQuiet {
+		t.Errorf("a withheld poll returned %v, want tickQuiet", res)
+	}
+
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{})
+	os.WriteFile(r.pausedFile(), nil, 0o644)
+	if res := r.tick(context.Background()); res != tickHold {
+		t.Errorf("a paused tick returned %v, want tickHold", res)
+	}
+
+	// A probe that cannot reach relay learned nothing about the queue.
+	f, _ := newTestRunner(t, &fakeRuntime{}, &Worker{Name: "unreachable"})
+	f.prober = NewProber("http://127.0.0.1:1")
+	if res := f.tick(context.Background()); res != tickHold {
+		t.Errorf("a failed probe returned %v, want tickHold", res)
+	}
+}
+
+// Both directions are announced, because both are things a reader watching the
+// dashboard has to be able to explain. A fleet whose polls quietly thinned out
+// looks stopped; one that speeds back up with no line looks like it did so for
+// no reason.
+func TestBothDirectionsOfTheRateChangeAreLogged(t *testing.T) {
+	const (
+		base = 30 * time.Second
+		idle = 300 * time.Second
+	)
+
+	slower := pollRateNote(base, 60*time.Second, 5*time.Minute)
+	for _, want := range []string{"nothing to act on", "5m0s", "60s"} {
+		if !strings.Contains(slower, want) {
+			t.Errorf("slowing down logged %q, which does not say %q", slower, want)
+		}
+	}
+
+	faster := pollRateNote(idle, base, 0)
+	for _, want := range []string{"work again", "30s"} {
+		if !strings.Contains(faster, want) {
+			t.Errorf("speeding up logged %q, which does not say %q", faster, want)
+		}
+	}
+
+	// The common tick changes nothing, and a line every poll would bury the two
+	// above in the noise they exist to cut through.
+	if note := pollRateNote(idle, idle, time.Hour); note != "" {
+		t.Errorf("an unchanged rate logged %q, want silence", note)
 	}
 }

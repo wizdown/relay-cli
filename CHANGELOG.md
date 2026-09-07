@@ -5,6 +5,21 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- A worker's poll rate now adapts. It polls every `poll_seconds` while it has
+  work and for five minutes after its last task; each quiet poll after that
+  doubles the wait, up to the new fleet-wide `idle_poll_seconds`. Work puts it
+  straight back on `poll_seconds`. An idle worker makes about a third of the
+  requests it used to, and picks up a task up to two minutes later.
+- `idle_poll_seconds` defaults to `120`, and is at least twice `poll_seconds`
+  and at most `3600`. Because the wait doubles, anything under twice the fast
+  rate is a slowdown the backoff cannot take a single step of, and is rejected
+  with the minimum for the `poll_seconds` you set.
+- Every change of poll rate is one line, in `worker.log` and in the dashboard
+  feed: `nothing to act on for 5m0s — slowing to one poll every 60s`, and
+  `work again — back to one poll every 30s` when a task arrives. The worker
+  card names the wait a backed-off worker has cooled to, beside its countdown,
+  and the effective config shows both rates.
+
 ## v0.3.2
 
 - A worker card no longer says `withheld` when nothing is being withheld. The

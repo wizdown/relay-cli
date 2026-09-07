@@ -27,7 +27,7 @@ probe sits below the runtime adapters, so every runtime inherits it.
 
 ## How a cycle runs
 
-Each worker ticks every `poll_seconds`:
+Each worker ticks on its current poll interval, which starts at `poll_seconds`:
 
 1. **`PAUSED` file** present? Do nothing this tick.
 2. **Lock**: take the worker's `mkdir` mutex. One cycle per worker at a time,
@@ -43,6 +43,48 @@ Each worker ticks every `poll_seconds`:
 
 The worker owns the working directory and the timeout for every runtime, so a
 stuck session can never hold its lock, or the task's lease, indefinitely.
+
+## Why the poll rate adapts
+
+The empty queue is the common case, and a fleet of workers asking about it
+twice a minute forever is load relay carries for nothing. So a worker that has
+had nothing to act on for five minutes doubles its wait on each quiet poll,
+up to `idle_poll_seconds`, and any poll with work in it puts it straight back
+on `poll_seconds`.
+
+The floor under `poll_seconds` exists to stop a fleet flooding relay, and
+backing off only ever moves load away from it. What the floor also asks for is
+that a fleet polls at a rate its own config states, and that is why the slow
+end is a field rather than a constant: both ends of the range are in the file,
+and neither is inferred.
+
+The shape between them is not. The five-minute warm window and the doubling
+are constants beside `relaunchCooldown`, for the same reason: they answer
+"how does it move between the two rates", which is one question, and three
+fields answering it would be three numbers for an operator to get wrong.
+
+The doubling is also what sets the floor under `idle_poll_seconds`. An idle
+rate under twice `poll_seconds` is reached in a single step and leaves the
+fleet polling at very nearly the fast rate, so it is rejected — and the floor
+is relative, because the right idle rate for a fleet polling every 5s is not
+the right one for a fleet polling every 30s. That leaves no way to turn the
+backoff off, which is deliberate: the closest a fleet can get is one doubling,
+and both of its rates are still in the file.
+
+Each change of rate logs a line, in both directions. Empty polls stay out of
+`worker.log` because an idle worker should cost nothing, log noise included —
+but a fleet that has silently gone from a poll every 30s to one every two
+minutes is indistinguishable from a fleet that has stopped, and the reader
+needs one line to tell them apart. It fires once per doubling, twice
+between the default rates, and once more when work brings the worker back.
+
+Only a poll that happened moves the ladder. A tick that found a `PAUSED` file,
+another process holding the lock, a ceiling, or an unreachable relay learned
+nothing about how busy this agent is. Holding also keeps a dead endpoint from
+being retried at the fast rate: the probe breaker still trips on the tenth
+consecutive failure, but a worker that goes bad while backed off takes longer
+to get there, which is the accepted cost. The breaker is a notification, not a
+spend guard — nothing is being spent while it counts.
 
 ## Why the gate reads `at_limit` and not the counts
 
@@ -168,7 +210,7 @@ relay-cli/
     init.go                      `relay init` and the starting config it writes
     config.go                    parse, defaults, validation; problems accumulated
     probe.go                     MCP JSON-RPC over net/http, the token-free gate
-    worker.go                    the poll loop: ceilings, breakers, locking, timeouts
+    worker.go                    the poll loop: the adaptive rate, ceilings, breakers, locking, timeouts
     runtime.go                   the Runtime interface, runtimeField, the bash bridge
     runtime_claude.go            native claude adapter
     runtime_codex.go             native codex adapter

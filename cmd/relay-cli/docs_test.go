@@ -69,11 +69,16 @@ func TestEveryWorkerFieldIsDocumented(t *testing.T) {
 		}
 	}
 
-	// poll_seconds is fleet-wide rather than per-worker, so the struct walk
-	// above never reaches it — and a setting nobody can find is the one thing
+	// The fleet fields are on Config rather than Worker, so the struct walk
+	// above never reaches them — and a setting nobody can find is the one thing
 	// this file exists to prevent.
-	if !strings.Contains(docs, "`poll_seconds`") {
-		t.Error("poll_seconds has no row in docs/configuration.md")
+	for _, field := range []string{"poll_seconds", "idle_poll_seconds"} {
+		if !strings.Contains(docs, "`"+field+"`") {
+			t.Errorf("%s has no row in docs/configuration.md", field)
+		}
+		if !strings.Contains(helpText, field) {
+			t.Errorf("%s is not in the manual (helpText in main.go)", field)
+		}
 	}
 }
 
@@ -109,6 +114,7 @@ func TestConfigDocsQuoteTheRealDefaults(t *testing.T) {
 
 	want := map[string]string{
 		"poll_seconds":        fmt.Sprintf("%g", defaultPollSeconds),
+		"idle_poll_seconds":   fmt.Sprintf("%g", defaultIdlePollSeconds),
 		"max_runs_per_hour":   fmt.Sprint(defaultMaxRunsPerHour),
 		"max_seconds_per_run": fmt.Sprint(defaultMaxSecondsPerRun),
 	}

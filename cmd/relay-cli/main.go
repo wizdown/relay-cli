@@ -276,6 +276,7 @@ THE CONFIG FILE ─────────────────────�
 
     {
       "poll_seconds": 30,          // fleet-wide. default 30, min 5
+      "idle_poll_seconds": 120,    // fleet-wide. default 120, 2x-3600
 
       "workers": [
         {
@@ -376,6 +377,7 @@ COST AND SAFEGUARDS ────────────────────
   session, and is what costs money. Every ceiling counts RUNS.
 
     poll_seconds          default 30    fleet-wide, minimum 5
+    idle_poll_seconds     default 120   fleet-wide, 2x poll_seconds to 3600
     max_runs_per_hour     default 12    runs started, per worker, per hour
     max_seconds_per_run   default 900   wall-clock kill for one session
     max_usd_per_run       default 5     claude only, enforced by the CLI
@@ -383,6 +385,13 @@ COST AND SAFEGUARDS ────────────────────
 
   Set any per-worker ceiling to 0 to remove it. A poll_seconds below 5 is
   rejected.
+
+  A worker polls at poll_seconds while it has work, and for 5 minutes after its
+  last task. Each quiet poll after that doubles the wait, up to
+  idle_poll_seconds, and work resets it to poll_seconds. Every change of rate
+  is one line in worker.log and on the dashboard. Because the wait doubles,
+  idle_poll_seconds is at least twice poll_seconds — that is the smallest
+  slowdown a fleet can ask for, and 0 is not one of them.
 
   A worker pauses itself after 10 consecutive probe failures, after 2 spend or
   usage-limit kills in a row, or when the same task has needed its attention
@@ -761,7 +770,7 @@ func run(configPath string, port int, noOpen, noArchive, quiet, keepAwake bool) 
 	for _, line := range runtimeBanner(cfg) {
 		fmt.Println(line)
 	}
-	fmt.Printf("  polling every %gs\n", cfg.PollSeconds)
+	fmt.Printf("  polling every %gs, %gs when idle\n", cfg.PollSeconds, cfg.IdlePollSeconds)
 	for _, w := range cfg.Workers {
 		fmt.Printf("  %-24s runtime %-8s runs/h %d  repo %s\n",
 			w.Name, w.Runtime, w.MaxRunsPerHour, w.RepoDir)
