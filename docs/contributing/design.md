@@ -63,6 +63,21 @@ are constants beside `relaunchCooldown`, for the same reason: they answer
 "how does it move between the two rates", which is one question, and three
 fields answering it would be three numbers for an operator to get wrong.
 
+The doubling is also what sets the floor under `idle_poll_seconds`. An idle
+rate under twice `poll_seconds` is reached in a single step and leaves the
+fleet polling at very nearly the fast rate, so it is rejected — and the floor
+is relative, because the right idle rate for a fleet polling every 5s is not
+the right one for a fleet polling every 30s. That leaves no way to turn the
+backoff off, which is deliberate: the closest a fleet can get is one doubling,
+and both of its rates are still in the file.
+
+Each change of rate logs a line, in both directions. Empty polls stay out of
+`worker.log` because an idle worker should cost nothing, log noise included —
+but a fleet that has silently gone from a poll every 30s to one every five
+minutes is indistinguishable from a fleet that has stopped, and the reader
+needs one line to tell them apart. It fires once per doubling, four times
+between the default rates, and once more when work brings the worker back.
+
 Only a poll that happened moves the ladder. A tick that found a `PAUSED` file,
 another process holding the lock, a ceiling, or an unreachable relay learned
 nothing about how busy this agent is. Holding also keeps a dead endpoint from

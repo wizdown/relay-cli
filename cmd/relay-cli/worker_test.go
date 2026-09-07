@@ -426,8 +426,9 @@ func TestPollIntervalWarmsThenCools(t *testing.T) {
 	}
 }
 
-// Setting idle_poll_seconds to poll_seconds is how a fleet asks for one rate,
-// and it has to hold however long the worker has been quiet.
+// The rule is total: an idle rate no slower than the base one returns the base
+// rate however long the worker has been quiet. The config refuses such a pair
+// now, so this holds the function rather than a setting anyone can write.
 func TestEqualRatesNeverBackOff(t *testing.T) {
 	const base = 30 * time.Second
 	for _, since := range []time.Duration{0, pollWarmWindow, 24 * time.Hour} {
@@ -469,5 +470,36 @@ func TestOnlyAPollThatHappenedMovesTheLadder(t *testing.T) {
 	f.prober = NewProber("http://127.0.0.1:1")
 	if res := f.tick(context.Background()); res != tickHold {
 		t.Errorf("a failed probe returned %v, want tickHold", res)
+	}
+}
+
+// Both directions are announced, because both are things a reader watching the
+// dashboard has to be able to explain. A fleet whose polls quietly thinned out
+// looks stopped; one that speeds back up with no line looks like it did so for
+// no reason.
+func TestBothDirectionsOfTheRateChangeAreLogged(t *testing.T) {
+	const (
+		base = 30 * time.Second
+		idle = 300 * time.Second
+	)
+
+	slower := pollRateNote(base, 60*time.Second, 5*time.Minute)
+	for _, want := range []string{"nothing to act on", "5m0s", "60s"} {
+		if !strings.Contains(slower, want) {
+			t.Errorf("slowing down logged %q, which does not say %q", slower, want)
+		}
+	}
+
+	faster := pollRateNote(idle, base, 0)
+	for _, want := range []string{"work again", "30s"} {
+		if !strings.Contains(faster, want) {
+			t.Errorf("speeding up logged %q, which does not say %q", faster, want)
+		}
+	}
+
+	// The common tick changes nothing, and a line every poll would bury the two
+	// above in the noise they exist to cut through.
+	if note := pollRateNote(idle, idle, time.Hour); note != "" {
+		t.Errorf("an unchanged rate logged %q, want silence", note)
 	}
 }

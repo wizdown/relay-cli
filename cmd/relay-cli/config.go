@@ -63,6 +63,16 @@ const minPollSeconds = 5.0
 // state one.
 const maxIdlePollSeconds = 3600.0
 
+// The floor under idle_poll_seconds, which is one backoff step above the rate
+// the fleet already states. It is capped at the ceiling above so that the two
+// bounds always leave a value someone can actually set.
+func minIdlePollSeconds(pollSeconds float64) float64 {
+	if min := pollBackoffFactor * pollSeconds; min < maxIdlePollSeconds {
+		return min
+	}
+	return maxIdlePollSeconds
+}
+
 // The floor under a max_seconds_per_run that is actually set.
 //
 // This one protects the operator rather than relay. A kill measured in a few
@@ -490,18 +500,27 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	// 0 removes a per-worker ceiling everywhere else in this file. Here it would
 	// mean the opposite — never slow down, poll at the fast rate forever — and a
-	// value that reads as "no bound" while asking for more requests is worth one
-	// error message. Equal to poll_seconds is how a fleet says it wants one rate.
+	// value that reads as "no bound" while asking for more requests is worth its
+	// own message rather than the bare minimum below.
 	if idlePollSeconds == 0 {
-		return nil, fmt.Errorf("\"idle_poll_seconds\" is 0. It is a slowdown, not a switch:\n" +
-			"       set it to the same value as \"poll_seconds\" for one rate at all times.")
+		return nil, fmt.Errorf("\"idle_poll_seconds\" is 0. It is a slowdown, not a switch:\n"+
+			"       the smallest value it takes is %g, which is %d× the %g in\n"+
+			"       \"poll_seconds\". Lower \"poll_seconds\" if a worker should be asking\n"+
+			"       more often than that.",
+			minIdlePollSeconds(pollSeconds), pollBackoffFactor, pollSeconds)
 	}
-	if idlePollSeconds < pollSeconds {
-		return nil, fmt.Errorf("\"idle_poll_seconds\" is %g, below the %g in \"poll_seconds\".\n"+
-			"       It is the rate a worker cools to with nothing to act on, so it cannot\n"+
-			"       be faster than the rate it polls at with work in front of it. Set it\n"+
-			"       equal to \"poll_seconds\" for one rate at all times.",
-			idlePollSeconds, pollSeconds)
+	// One doubling, which is the smallest slowdown the ladder can actually
+	// express: a value between poll_seconds and twice it is reached in a single
+	// step and leaves the fleet polling at very nearly the fast rate anyway. The
+	// bound is relative because the right idle rate for a fleet polling every 5s
+	// is not the right one for a fleet polling every 30s, and a constant here
+	// would be wrong for one of them.
+	if min := minIdlePollSeconds(pollSeconds); idlePollSeconds < min {
+		return nil, fmt.Errorf("\"idle_poll_seconds\" is %g, below the %g minimum for a\n"+
+			"       \"poll_seconds\" of %g. It is the rate a worker cools to with nothing\n"+
+			"       to act on, and the backoff doubles, so a value under %d× the fast rate\n"+
+			"       is a slowdown the ladder cannot take even one step of.",
+			idlePollSeconds, min, pollSeconds, pollBackoffFactor)
 	}
 	if idlePollSeconds > maxIdlePollSeconds {
 		return nil, fmt.Errorf("\"idle_poll_seconds\" is %g, above the %gs maximum.\n"+

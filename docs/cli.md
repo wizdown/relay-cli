@@ -108,13 +108,14 @@ claude, `--json` for codex), so a session appears line by line:
 - **Worker cards**: state (`idle · polling · running · cooldown · ceiling ·
   at limit · paused · probe failing`), the last poll's three counts, runs
   against the hourly ceiling, cost or tokens so far, and a countdown to the next
-  poll. A backed-off worker names its wait.
+  poll.
 - **The fleet board**: a row per worker with the task it claimed, the tool call
   it is in, and its spend, tokens and time against the caps that bound them.
 - **The spend ledger**: the last hour by worker and by task, with cost per run,
   turns, tools, cache share, outcomes, and spend per five minutes.
 - **Every poll**, including empty ones. Consecutive quiet polls collapse to one
-  line, labelled `queue empty` or `at claim limit`.
+  line, labelled `queue empty` or `at claim limit`. A worker with nothing to do
+  slows down, and logs each change of rate.
 - **The live session**: each tool call with its target, and the result with its
   cost or token usage. For claude, the session line shows which MCP servers
   came up.
@@ -139,6 +140,5 @@ relay 0.3.2-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo, at that c
 
 relay-cli stays on 0.x until the interface settles. A release may change
 configuration, defaults or the worker contract. Changes are listed in
-[CHANGELOG.md](../CHANGELOG.md) and in the release notes. A removed config key
-is rejected by name with its replacement, so an old config fails at
-`relay check` with the fix in the message.
+[CHANGELOG.md](../CHANGELOG.md) and in the release notes. An old config fails
+at `relay check`; see [Validation](configuration.md#validation).

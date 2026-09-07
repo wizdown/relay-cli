@@ -1244,9 +1244,7 @@ function renderConfig() {
   const cols = [
     ["name", (c) => c.name], ["runtime", (c) => c.runtime],
     ["repo_dir", (c) => c.repo_dir],
-    ["poll", () => snap.idle_poll_seconds > snap.poll_seconds
-      ? snap.poll_seconds + "s → " + snap.idle_poll_seconds + "s"
-      : snap.poll_seconds + "s"],
+    ["poll", () => snap.poll_seconds + "s → " + snap.idle_poll_seconds + "s"],
     ["runs/hour", (c) => c.max_runs_per_hour === 0 ? "∞" : c.max_runs_per_hour],
     ["timeout", (c) => c.max_seconds_per_run + "s"],
     ...rcKeys.map((k) => [k, (c) => rc(c, k) ?? "—"]),

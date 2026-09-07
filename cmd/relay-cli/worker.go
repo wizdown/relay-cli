@@ -94,6 +94,27 @@ func nextPollInterval(base, idle, cur, sinceWork time.Duration) time.Duration {
 	return next
 }
 
+// pollRateNote is the line a worker logs when its poll rate changes, and "" for
+// a tick that left it alone.
+//
+// A rate change is a transition worth reading, which is what separates it from
+// the empty polls themselves: those stay out of worker.log, because an idle
+// worker that costs nothing should not cost log noise either. This fires once
+// per doubling — four lines between the default rates, then silence — and once
+// more when work brings the worker back. Without it, a fleet that has quietly
+// gone from a poll every 30s to one every 5 minutes looks like a fleet that has
+// stopped, and the reader has no line to tell them otherwise.
+func pollRateNote(prev, next, quiet time.Duration) string {
+	switch {
+	case next > prev:
+		return fmt.Sprintf("nothing to act on for %s — slowing to one poll every %gs",
+			quiet.Round(time.Second), next.Seconds())
+	case next < prev:
+		return fmt.Sprintf("work again — back to one poll every %gs", next.Seconds())
+	}
+	return ""
+}
+
 // Circuit breakers. Each counts a specific kind of fruitless cycle and
 // self-pauses once it is clearly not going to stop on its own. A worker that
 // cannot make progress should say so once and go quiet, not burn its whole run
@@ -292,7 +313,11 @@ func (r *WorkerRunner) Run(ctx context.Context) {
 			r.lastWorkAt = time.Now()
 		}
 		if res != tickHold {
+			prev := r.interval
 			r.interval = nextPollInterval(base, idle, r.interval, time.Since(r.lastWorkAt))
+			if note := pollRateNote(prev, r.interval, time.Since(r.lastWorkAt)); note != "" {
+				r.log("%s", note)
+			}
 		}
 		next := time.Now().Add(r.interval).UTC()
 		r.mu.Lock()

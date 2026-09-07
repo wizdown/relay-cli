@@ -51,7 +51,7 @@ the config loads.
 | Field | Required | What it does | Default |
 | --- | --- | --- | --- |
 | `poll_seconds` | no | Seconds between polls, for every worker. Minimum `5`; a lower value is rejected. | `30` |
-| `idle_poll_seconds` | no | Seconds between polls once a worker has nothing to act on. Maximum `3600`. Set it to `poll_seconds` for one rate at all times. | `300` |
+| `idle_poll_seconds` | no | Seconds between polls once a worker has nothing to act on. At least 2× `poll_seconds`, and at most `3600`. | `300` |
 
 ## Worker fields
 
@@ -136,7 +136,7 @@ Guards that need no config:
 | Guard | Effect |
 |---|---|
 | Empty queue | No launch. An idle worker costs one HTTP request per poll. |
-| Idle backoff | A worker polls at `poll_seconds` while it has work and for 5 minutes after its last task. Each quiet poll after that doubles the wait, up to `idle_poll_seconds`. Work resets it. |
+| Idle backoff | A worker polls at `poll_seconds` while it has work and for 5 minutes after its last task. Each quiet poll after that doubles the wait, up to `idle_poll_seconds`. Work resets it, and every change of rate is logged. |
 | `mkdir` lock | One cycle per worker at a time. |
 | Probe breaker | 10 consecutive probe failures (revoked credential, dead host) pause the worker. |
 | Budget breaker | 2 consecutive spend-cap or plan-limit kills pause the worker. |
@@ -214,7 +214,7 @@ them together. The config is rejected when:
 - a required field is missing, or still holds an `init` placeholder
 - a value is the wrong type, `relay_mcp` is not an `http(s)` URL, `repo_dir` is
   relative or not a directory, `poll_seconds` is below `5`,
-  `idle_poll_seconds` is `0`, below `poll_seconds` or above `3600`, a ceiling
+  `idle_poll_seconds` is under twice `poll_seconds` or above `3600`, a ceiling
   is negative or fractional, or a set `max_seconds_per_run` is below `30`
 - a `name` or `relay_mcp` repeats
 - a runtime the config names is not usable on this machine; see
