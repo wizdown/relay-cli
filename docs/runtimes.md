@@ -30,8 +30,8 @@ anything launches:
 3. It is signed in, asked with `claude auth status --json` or
    `codex login status`. Both read stored credentials and spend nothing.
 
-A failure stops the start and names the fix. Two cases warn instead of
-failing:
+A failure names the fix. It stops `relay run` and fails `relay check`, which
+still probes every credential first. Two cases warn instead of failing:
 
 - A CLI too old to answer the sign-in question.
 - A credential in the environment (`ANTHROPIC_API_KEY`, `CODEX_API_KEY`, or a

@@ -58,7 +58,7 @@ moment.
   `TestWorkerKeysMatchTheStruct` fails until the two agree.
 - Add a `default…` constant if it has a default. Make it a **bound**, never
   "unlimited": the short config has to be the safe one.
-- Parse it in `LoadConfig` with a fallback for when the key is absent.
+- Parse it in `ParseConfig` with a fallback for when the key is absent.
 - Validate it if a wrong value would fail late, and **append to `problems`**
   rather than returning early. Every problem in a file is reported at once; a
   parser that stops at the first one turns a half-written config into a dozen

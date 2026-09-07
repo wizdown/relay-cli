@@ -246,9 +246,8 @@ func codexLoginError() error {
 		return nil
 	}
 	return fmt.Errorf("the installed codex is not signed in (%s).\n"+
-		"       Run `codex login` once as this user and sign in with your ChatGPT\n"+
-		"       account; workers then run as you, with no API key to configure.\n"+
-		"       relay-cli never writes or moves those credentials.",
+		"       Run `codex login` as the user this fleet runs as and sign in with\n"+
+		"       your ChatGPT account.",
 		oneLine(strings.TrimSpace(string(out)), 120))
 }
 

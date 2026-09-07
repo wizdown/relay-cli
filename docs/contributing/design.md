@@ -169,6 +169,14 @@ credential in the environment, which authenticates a run whatever the stored
 sign-in says. Both warn out loud, since a stale key hiding a signed-out CLI is
 exactly what the check exists to catch. A healthy start stays silent.
 
+`LoadConfig` is `ParseConfig` then `CheckRuntimes`, and `run` needs both.
+`check` calls the halves itself: it parses, runs the runtime check and holds
+the result, probes every credential, and reports the runtime failure after
+the probe lines. A signed-out CLI is a one-command fix and a wrong credential
+is a trip back to Relay; reporting only the first costs a round of
+edit-and-rerun for the second. The check still runs before the banner,
+because the banner names the version and path each CLI resolved to.
+
 `relay init` asks a weaker question, `Installed()`: is the CLI on `PATH` at
 all? That decides whether a runtime's worker is written live or commented
 out, and it is not `Check()` on purpose: a signed-out CLI is installed, and
@@ -205,8 +213,9 @@ relay-cli/
   .githooks/                     pre-commit and commit-msg, sharing lib.sh
   .github/workflows/             ci.yml (manual) and release.yml (tags)
   cmd/relay-cli/                 one Go package
-    main.go                      commands, flags, supervisor, startup checks, log
-                                 archiving, the version constant, shortHelp, helpText
+    main.go                      dispatch, the commands and their flags, per-command help,
+                                 exit statuses, supervisor, log archiving, the version
+                                 constant, shortHelp, helpText
     init.go                      `relay init` and the starting config it writes
     config.go                    parse, defaults, validation; problems accumulated
     probe.go                     MCP JSON-RPC over net/http, the token-free gate
@@ -224,6 +233,8 @@ relay-cli/
     docs_pages_test.go           links resolve, cli.md is complete, versions exist, pages stay short
     doclinks_test.go             every doc link the binary prints is a full URL
     docs_lint_test.go            the prose is held to the rules in AGENTS.md
+    cli_test.go                  help on stdout exits 0, usage errors on stderr exit 2
+    repo_test.go                 no build output is tracked; main is the only os.Exit
 ```
 
 And `~/.relay/`, the only place relay-cli keeps anything:

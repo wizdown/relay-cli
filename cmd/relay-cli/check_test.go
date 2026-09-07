@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -290,5 +291,62 @@ func TestCheckAcceptsAnEmptyWorkingDirectory(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "nothing to load") {
 		t.Errorf("check should say the directory is empty:\n%s", out.String())
+	}
+}
+
+// A signed-out CLI must not hide what relay said. check probes every
+// credential first and reports both, so a config with one wrong URL and one
+// CLI to sign in to is fixed in one sitting rather than two.
+func TestCheckProbesCredentialsEvenWhenARuntimeIsUnusable(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer relay.Close()
+
+	path := writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa")
+	prev := checkRuntime
+	checkRuntime = func(name, runtime, relayDir string) error {
+		return fmt.Errorf("worker %q cannot run: runtime %q is unusable.\n       the installed %s is not signed in.", name, runtime, runtime)
+	}
+	t.Cleanup(func() { checkRuntime = prev })
+
+	var out bytes.Buffer
+	err := check(path, 5*time.Second, &out)
+	if err == nil {
+		t.Fatal("check passed with a 401 and a signed-out CLI")
+	}
+	if !strings.Contains(out.String(), "FAIL") {
+		t.Errorf("the probe result was not reported:\n%s", out.String())
+	}
+	for _, want := range []string{"401", "issue_agent_credential", "not usable here", "not signed in"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error is missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// A healthy relay and a signed-out CLI is still a failure — run would refuse —
+// but the ok line is printed so the reader knows which half is done.
+func TestCheckFailsOnAnUnusableRuntimeAlone(t *testing.T) {
+	relay := mcpStub(t, threeBuckets, true)
+	defer relay.Close()
+
+	path := writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa")
+	prev := checkRuntime
+	checkRuntime = func(name, runtime, relayDir string) error {
+		return fmt.Errorf("worker %q cannot run: runtime %q is unusable.", name, runtime)
+	}
+	t.Cleanup(func() { checkRuntime = prev })
+
+	var out bytes.Buffer
+	err := check(path, 5*time.Second, &out)
+	if err == nil || !strings.Contains(err.Error(), "not usable here") {
+		t.Fatalf("want the runtime failure, got %v", err)
+	}
+	if !strings.Contains(out.String(), "ok    queue") {
+		t.Errorf("the healthy probe was not reported:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "ready") {
+		t.Errorf("check said the fleet is ready with a runtime it cannot run:\n%s", out.String())
 	}
 }

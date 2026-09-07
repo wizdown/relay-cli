@@ -8,7 +8,7 @@ Then read the worker's log: `~/.relay/state/<name>/worker.log` while it runs,
 archived to `~/.relay/logs/<name>-<timestamp>.log` on shutdown. Beside it,
 `events.ndjson` holds the same run as one JSON object per line.
 
-An idle worker prints nothing. "No output" is the healthy steady state.
+An idle worker prints nothing.
 
 ## `relay check` fails
 
@@ -24,6 +24,8 @@ An idle worker prints nothing. "No output" is the healthy steady state.
 
 ## `relay run` refuses to start
 
+`relay check` prints the same messages, after its credential probes.
+
 | Message | Fix |
 |---|---|
 | `runtime "claude" is unusable` / `runtime "codex" is unusable` | The CLI is missing from `PATH`, too old for the flags relay-cli needs, or not signed in. The error says which and names the fix. Install or upgrade [Claude Code](https://claude.com/claude-code) or the [Codex CLI](https://developers.openai.com/codex/cli). |
@@ -33,7 +35,7 @@ An idle worker prints nothing. "No output" is the healthy steady state.
 | `could not ask <cli> whether it is signed in` | A warning. The CLI is too old to answer, so the start continues and a real failure shows on the first run. Upgrading the CLI restores the check. |
 | `reports it is NOT signed in, but X is set — starting anyway` | A warning. An API key in the environment authenticates runs, and relay-cli cannot check it is valid. If every run fails at once, sign in properly and unset the variable. |
 | `is not one runtime "codex" offered when this relay-cli was built` | A warning. The model check was skipped and the name went to the CLI unchecked. If every run fails at once, it was a typo. |
-| `no coding CLI found on PATH, and a worker is one` | `relay init` wrote nothing. Install Claude Code or the Codex CLI, sign in, and run `init` again. |
+| `no coding CLI found on PATH` | `relay init` wrote nothing. Install Claude Code or the Codex CLI, sign in, and run `init` again. |
 | A worker for the runtime you wanted is commented out | That CLI was not on `PATH` when `relay init` ran. Install and sign it in, then delete the `// ` from those lines. |
 | `relay is already running (pid N)` | A fleet is already up. Use it, or `kill` that pid. |
 

@@ -5,6 +5,24 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- `relay run --help`, `relay check --help` and `relay init --help` print that
+  command's usage on stdout and exit `0`. `relay help <command>` prints the
+  same. `relay -h` and `relay --help` both print the one-screen summary.
+- A wrong flag or a stray argument is one line naming the fix, and exits `2`:
+  `"relay run" does not take --bogus`, `--port takes a number, not "abc"`.
+  `relay version` and `relay help` refuse arguments they do not take instead
+  of ignoring them. Exit statuses are documented in `docs/cli.md`.
+- `relay check` probes every credential before it reports a missing or
+  signed-out CLI, and reports both, so a bad `relay_mcp` is no longer hidden
+  behind a CLI that needs `claude auth login`. Its banner still names each
+  CLI it found.
+- Error messages for a config that needs fixes, an existing config at
+  `relay init`, a missing CLI and a signed-out CLI are shorter: what is wrong
+  and what to type, without the reasoning.
+- The help uses plain ASCII rulers, so it reads the same pasted into a bug
+  report.
+- `docs/cli.md` documents the two dashboard routes, `/api/snapshot` and
+  `/api/stream`.
 - A worker's poll rate now adapts. It polls every `poll_seconds` while it has
   work and for five minutes after its last task; each quiet poll after that
   doubles the wait, up to the new fleet-wide `idle_poll_seconds`. Work puts it

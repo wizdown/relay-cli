@@ -412,10 +412,12 @@ func DefaultConfigPath() (string, error) {
 	return filepath.Join(dir, configFileName), nil
 }
 
-// LoadConfig reads, strips, parses and validates the config. The returned error
-// is meant to be printed verbatim to a human and acted on; most are deliberately
-// multi-line, and several list every problem in the file at once.
-func LoadConfig(path string) (*Config, error) {
+// ParseConfig reads, strips, parses and validates the config file, and says
+// nothing about whether this machine can run it; that is CheckRuntimes. The
+// returned error is meant to be printed verbatim to a human and acted on; most
+// are deliberately multi-line, and several list every problem in the file at
+// once.
+func ParseConfig(path string) (*Config, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -720,24 +722,8 @@ func LoadConfig(path string) (*Config, error) {
 
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("%s needs %d fix(es):\n%s\n\n"+
-			"       Every worker needs a name, a relay_mcp credential, a repo_dir and a\n"+
-			"       runtime; every other key has to be one this version accepts, because a\n"+
-			"       key relay-cli does not read is a setting you would believe was in force.\n"+
-			"       The full reference is "+docsBase+"configuration.md",
+			"       Reference: "+docsBase+"configuration.md",
 			path, len(problems), strings.Join(problems, "\n"))
-	}
-
-	// Machine problems, reported separately from file problems: a config that is
-	// correct and a CLI that is missing are different jobs, and mixing them makes
-	// each one harder to act on.
-	var unusable []string
-	for _, w := range cfg.Workers {
-		if err := checkRuntime(w.Name, w.Runtime, cfg.RelayDir); err != nil {
-			unusable = append(unusable, "  "+err.Error())
-		}
-	}
-	if len(unusable) > 0 {
-		return nil, fmt.Errorf("the config is valid, but a runtime it names is not usable here:\n%s", strings.Join(unusable, "\n"))
 	}
 
 	// Redaction is computed once, here, so no later code path has to remember to
@@ -749,6 +735,44 @@ func LoadConfig(path string) (*Config, error) {
 	InstallSecrets(cfg.Workers)
 
 	return cfg, nil
+}
+
+// LoadConfig is ParseConfig followed by CheckRuntimes: the file is right AND
+// this machine can run it. `run` needs both before it starts; `check` calls
+// the two halves itself so that a signed-out CLI does not hide what the
+// credential probes would have said.
+func LoadConfig(path string) (*Config, error) {
+	cfg, err := ParseConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := CheckRuntimes(cfg); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// CheckRuntimes asks every runtime the config names to prove its CLI is
+// installed, accepts the flags the adapter needs, and is signed in. Machine
+// problems are reported separately from file problems: a config that is
+// correct and a CLI that is missing are different jobs, and mixing them makes
+// each one harder to act on.
+func CheckRuntimes(cfg *Config) error {
+	var unusable []string
+	seen := map[string]bool{}
+	for _, w := range cfg.Workers {
+		if seen[w.Runtime] {
+			continue
+		}
+		seen[w.Runtime] = true
+		if err := checkRuntime(w.Name, w.Runtime, cfg.RelayDir); err != nil {
+			unusable = append(unusable, "  "+err.Error())
+		}
+	}
+	if len(unusable) > 0 {
+		return fmt.Errorf("the config is valid, but a runtime it names is not usable here:\n%s", strings.Join(unusable, "\n"))
+	}
+	return nil
 }
 
 // workerLabel names an entry in an error the best way the entry allows: by name

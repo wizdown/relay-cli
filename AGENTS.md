@@ -25,6 +25,35 @@ Go 1.22+, no other dependencies, no network. A fresh clone passes its tests
 with no coding CLI installed; keep it that way. See
 [The fresh-clone property](docs/contributing/development.md#the-fresh-clone-property).
 
+## Using the binary
+
+`make build` writes `./relay`. Everything a user can do is in `relay help`,
+and [docs/cli.md](docs/cli.md) is the same reference as a page.
+
+| Command | What it does |
+|---|---|
+| `relay`, `relay -h`, `relay --help` | the one-screen summary, `shortHelp` |
+| `relay help` | the manual, `helpText`. It stands alone, for a user with only the binary |
+| `relay help <command>`, `relay <command> --help` | that command's synopsis, one sentence and its flags, built from its `FlagSet` |
+| `relay init` | writes `~/.relay/config` with two placeholders per worker. Never overwrites |
+| `relay check` | the dry run: validates the file, probes every credential, then reports any unusable runtime. Spends nothing |
+| `relay run` | starts every worker in the foreground and opens the dashboard. Ctrl-C stops it |
+| `relay version` | one line; quote it in a bug report |
+
+- **Streams and statuses.** Help goes to stdout and exits 0. A wrong command
+  line is one `error:` line on stderr and exits 2. A command that ran and
+  failed exits 1. The codes are `exitOK`, `exitFail` and `exitUsage`;
+  `main` is the only `os.Exit`, and every command returns its status to
+  `dispatch`.
+- **One config location.** Every command reads `~/.relay/config`. There is no
+  `--config` flag and nothing moves it. To try the binary without touching
+  your own config, point `HOME` at a scratch directory.
+- **Trying it without a coding CLI.** `RELAY_CLI_SKIP_RUNTIME_CHECK=1` lets
+  `check` and `run` proceed when the CLI is missing or signed out. The
+  credential probe still runs.
+- **What costs money.** `check` and every poll are one HTTP request. Only a
+  session started by `run` spends.
+
 ## Hard rules
 
 1. **No credentials, anywhere.** Every `relay_mcp` is a live secret. Not in a
@@ -51,14 +80,32 @@ with no coding CLI installed; keep it that way. See
     own workflow; do not copy it here.
 11. **Comments explain why.** The reason a ceiling exists is more useful than
     its type.
+12. **Help is not an error.** `--help`, `-h` and `relay help <command>` print
+    on stdout and exit 0. A usage error is one `error:` line on stderr and
+    exits 2. A failed command exits 1. Exit codes are the three constants,
+    `main` is the only `os.Exit`, and `cli_test.go` and `repo_test.go` hold
+    all of it.
+13. **No build output is tracked.** `make build` writes `./relay`, which is
+    ignored. The pre-commit hook refuses a staged executable or any file over
+    1 MiB, and `TestNoBuildOutputIsTracked` is the backstop.
+14. **An error message says what is wrong and what to type.** The reason
+    belongs in the comment above it, or in `design.md`. Two lines is usual;
+    the `check` hints are the ceiling.
+15. **`check` reports everything it can.** A failed probe and an unusable
+    runtime are both printed. Neither hides the other, and either fails the
+    check.
 
 ## The code
 
 One package, `cmd/relay-cli/`, one job per file. The codemap is
 [Directory layout](docs/contributing/design.md#directory-layout).
 
-Four config fields are required (`name`, `relay_mcp`, `repo_dir`, `runtime`)
-plus `runtime_config.model`. Fields outside `runtime_config` are enforced by
+Five fields per worker are required: `name`, `relay_mcp`, `repo_dir`,
+`runtime` and `runtime_config.model`. `relay init` fills in all but
+`relay_mcp` and `repo_dir`, and every page says so the same way. `LoadConfig`
+is `ParseConfig` (the file) then `CheckRuntimes` (this machine); `run` needs
+both, and `check` runs the halves itself so a probe result is never hidden
+behind a signed-out CLI. Fields outside `runtime_config` are enforced by
 relay-cli; fields inside are one CLI's vocabulary, declared by that adapter's
 `ConfigFields()`. Adding, renaming, removing or defaulting a field is a loop
 across code, docs and `helpText`, and tests name what you missed:
@@ -146,7 +193,7 @@ Before and after, from the pages as they were:
 | `readme.md` | quickstart: what it is, requirements, install, four steps, stop, the doc table | 700 words |
 | `docs/configuration.md` | reference: layout, one example, field tables, safeguards, short sections after | 1,700 |
 | `docs/runtimes.md` | one comparison table, the startup check, what each run does | 700 |
-| `docs/cli.md` | commands, flags, sample output, what the dashboard shows, versioning | 1,000 |
+| `docs/cli.md` | commands, flags, exit status, sample output, what the dashboard shows and serves, versioning | 1,100 |
 | `docs/working-directory.md` | a ladder: each step adds one thing and shows it | 1,150 |
 | `docs/troubleshooting.md` | tables grouped by where the reader is, one row per message | 1,100 |
 | `docs/contributing/*` | the reasons and the procedures, as long as they need to be | none |
@@ -180,7 +227,8 @@ table for what you touched:
 |---|---|
 | a config field or its default | the tables in `docs/configuration.md`, the `THE CONFIG FILE` block in `helpText`, and `config-fields.md` if the loop moved |
 | a field you removed | delete every mention from `docs/configuration.md` and `helpText`; add it to `removedKeys` with what to use instead |
-| a command or a flag | `shortHelp` and `helpText`, `docs/cli.md`, and the readme if it appears there |
+| a command or a flag | `commands`, `synopsis` and `summary` in `main.go`, `shortHelp` and `helpText`, `docs/cli.md`, and the readme if it appears there. Per-command help is built from the `FlagSet`, so a flag's usage string is its documentation and fits 80 columns |
+| an exit status, or which stream a message uses | the exit-status table in `docs/cli.md`, the `EXIT STATUS` block in `helpText`, and `cli_test.go` |
 | a safeguard, ceiling or breaker | the safeguards tables in `docs/configuration.md` |
 | what the dashboard shows or serves | `docs/cli.md` |
 | a runtime's support status or its startup check | `docs/runtimes.md` |
@@ -207,7 +255,14 @@ What the tests enforce (`make lint-docs` runs only these):
   no paragraph has two em-dashes, no heading has one; `CHANGELOG.md` has an
   Unreleased section and a heading for the release the docs quote.
 - `main_test.go`: `shortHelp` and `helpText` name every command, flag and
-  default, and `shortHelp` fits one screen.
+  default; `shortHelp` fits one screen; per-command help names every flag in
+  synopsis order and fits 80 columns; the help is plain ASCII; a usage error
+  names the flag the way the docs do.
+- `cli_test.go`: through `dispatch`, every form of help is on stdout with
+  exit 0, every usage error is one `error:` line on stderr with exit 2, and
+  `version` and its aliases agree.
+- `repo_test.go`: no tracked file is an executable image or over 1 MiB; exit
+  statuses are the constants and `main` is the only `os.Exit`.
 
 The pre-commit hook runs the suite when docs change. Nothing checks what a
 sentence means, so re-read the pages your change touches before you open the
@@ -220,9 +275,11 @@ PR.
 1. No credentials in the diff or the message.
 2. `make check` passes.
 3. A config change followed [the loop](docs/contributing/config-fields.md).
-4. A new flag or command is in `shortHelp` and `helpText`.
+4. A new flag or command is in `commands`, `synopsis`, `summary`, `shortHelp`
+   and `helpText`, and `cli_test.go` still passes.
 5. Docs updated in the same commit.
 6. The version constant is untouched.
+7. No build output is staged. `git status` shows no `relay` binary.
 
 PR summary format:
 [Pull requests](docs/contributing/development.md#pull-requests).

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"testing"
@@ -243,5 +244,79 @@ func TestRunParsesWithNoFlags(t *testing.T) {
 	}
 	if o.noOpen || o.quiet || o.noArchive {
 		t.Errorf("bare `run` should take every default, got %+v", o)
+	}
+}
+
+// `relay help <command>` and `relay <command> --help` print the same text, and
+// it has to name every flag the command parses, in a usage line that fits a
+// terminal. The synopsis is hand-written, so a flag added to the set and not
+// to it is what this catches.
+func TestCommandHelpDocumentsEveryFlag(t *testing.T) {
+	for _, cmd := range commands {
+		text := commandHelp(cmd)
+		if !strings.Contains(text, "usage: "+synopsis[cmd]) {
+			t.Errorf("relay help %s does not open with its synopsis:\n%s", cmd, text)
+		}
+		if fs := commandFlags(cmd); fs != nil {
+			fs.VisitAll(func(f *flag.Flag) {
+				if !strings.Contains(synopsis[cmd], "--"+f.Name) {
+					t.Errorf("flag --%s is not in the synopsis for %s", f.Name, cmd)
+				}
+				if !strings.Contains(text, "  --"+f.Name) {
+					t.Errorf("flag --%s has no line in `relay help %s`", f.Name, cmd)
+				}
+			})
+		}
+		for i, l := range strings.Split(text, "\n") {
+			if n := len([]rune(l)); n > 80 {
+				t.Errorf("relay help %s, line %d is %d columns: %s", cmd, i+1, n, l)
+			}
+		}
+	}
+}
+
+// Flags in the help are listed in the order the usage line names them, not
+// alphabetically: --port first for run, because it is the one people set.
+func TestCommandHelpListsFlagsInSynopsisOrder(t *testing.T) {
+	text := commandHelp("run")
+	if strings.Index(text, "--port") > strings.Index(text, "--keep-awake") {
+		t.Errorf("run's flags are not in synopsis order:\n%s", text)
+	}
+}
+
+// A usage error names the flag the way the docs do (two dashes) and says what
+// the flag wanted, instead of the flag package's "parse error".
+func TestFlagErrorsUseTheDocumentedNames(t *testing.T) {
+	var o runOpts
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--bogus"}, `"relay run" does not take --bogus`},
+		{[]string{"--port", "abc"}, `--port takes a number, not "abc"`},
+		{[]string{"--port"}, `--port needs a value`},
+	} {
+		fs := runFlags(&o)
+		fs.SetOutput(io.Discard)
+		err := fs.Parse(tc.args)
+		if err == nil {
+			t.Fatalf("%v parsed", tc.args)
+		}
+		if got := flagError("run", err); got != tc.want {
+			t.Errorf("flagError(%v) = %q, want %q", tc.args, got, tc.want)
+		}
+	}
+}
+
+// The short help and the manual agree with the flag sets on every default, and
+// neither uses a glyph a plain terminal cannot show. The rulers are ASCII so a
+// pasted bug report reads the same everywhere.
+func TestHelpIsPlainText(t *testing.T) {
+	for name, text := range map[string]string{"shortHelp": shortHelp, "helpText": helpText} {
+		for _, glyph := range []string{"───", "→", "×"} {
+			if strings.Contains(text, glyph) {
+				t.Errorf("%s uses %q; keep the help to characters every terminal shows", name, glyph)
+			}
+		}
 	}
 }
