@@ -73,9 +73,9 @@ and both of its rates are still in the file.
 
 Each change of rate logs a line, in both directions. Empty polls stay out of
 `worker.log` because an idle worker should cost nothing, log noise included —
-but a fleet that has silently gone from a poll every 30s to one every five
+but a fleet that has silently gone from a poll every 30s to one every two
 minutes is indistinguishable from a fleet that has stopped, and the reader
-needs one line to tell them apart. It fires once per doubling, four times
+needs one line to tell them apart. It fires once per doubling, twice
 between the default rates, and once more when work brings the worker back.
 
 Only a poll that happened moves the ladder. A tick that found a `PAUSED` file,

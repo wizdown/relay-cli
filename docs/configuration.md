@@ -20,7 +20,7 @@ Everything relay-cli owns lives beside the config, and no flag moves it:
 ```jsonc
 {
   "poll_seconds": 30,                 // fleet-wide, optional
-  "idle_poll_seconds": 300,           // fleet-wide, optional
+  "idle_poll_seconds": 120,           // fleet-wide, optional
 
   "workers": [
     {
@@ -51,7 +51,7 @@ the config loads.
 | Field | Required | What it does | Default |
 | --- | --- | --- | --- |
 | `poll_seconds` | no | Seconds between polls, for every worker. Minimum `5`; a lower value is rejected. | `30` |
-| `idle_poll_seconds` | no | Seconds between polls once a worker has nothing to act on. At least 2× `poll_seconds`, and at most `3600`. | `300` |
+| `idle_poll_seconds` | no | Seconds between polls once a worker has nothing to act on. At least 2× `poll_seconds`, and at most `3600`. | `120` |
 
 ## Worker fields
 

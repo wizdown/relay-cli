@@ -36,7 +36,7 @@ import (
 // something nobody chose.
 const (
 	defaultPollSeconds      = 30.0
-	defaultIdlePollSeconds  = 300.0
+	defaultIdlePollSeconds  = 120.0
 	defaultMaxRunsPerHour   = 12
 	defaultMaxSecondsPerRun = 900
 )
@@ -495,7 +495,7 @@ func LoadConfig(path string) (*Config, error) {
 	idlePollSeconds := float64(defaultIdlePollSeconds)
 	if len(doc["idle_poll_seconds"]) > 0 {
 		if err := json.Unmarshal(doc["idle_poll_seconds"], &idlePollSeconds); err != nil {
-			return nil, fmt.Errorf("%s: \"idle_poll_seconds\" must be a JSON number (300, not \"300\")", path)
+			return nil, fmt.Errorf("%s: \"idle_poll_seconds\" must be a JSON number (120, not \"120\")", path)
 		}
 	}
 	// 0 removes a per-worker ceiling everywhere else in this file. Here it would

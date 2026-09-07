@@ -72,7 +72,7 @@ not listed, the agent will not see it. See
 ```text
 relay 0.3.2 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
-  polling every 30s, 300s when idle
+  polling every 30s, 120s when idle
   wizhub-claude            runtime claude   runs/h 6  repo /Users/you/code/wizhub
 
 dashboard: http://127.0.0.1:7717/

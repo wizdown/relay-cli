@@ -276,7 +276,7 @@ THE CONFIG FILE ─────────────────────�
 
     {
       "poll_seconds": 30,          // fleet-wide. default 30, min 5
-      "idle_poll_seconds": 300,    // fleet-wide. default 300, 2x-3600
+      "idle_poll_seconds": 120,    // fleet-wide. default 120, 2x-3600
 
       "workers": [
         {
@@ -377,7 +377,7 @@ COST AND SAFEGUARDS ────────────────────
   session, and is what costs money. Every ceiling counts RUNS.
 
     poll_seconds          default 30    fleet-wide, minimum 5
-    idle_poll_seconds     default 300   fleet-wide, 2x poll_seconds to 3600
+    idle_poll_seconds     default 120   fleet-wide, 2x poll_seconds to 3600
     max_runs_per_hour     default 12    runs started, per worker, per hour
     max_seconds_per_run   default 900   wall-clock kill for one session
     max_usd_per_run       default 5     claude only, enforced by the CLI

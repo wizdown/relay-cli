@@ -100,9 +100,9 @@ func nextPollInterval(base, idle, cur, sinceWork time.Duration) time.Duration {
 // A rate change is a transition worth reading, which is what separates it from
 // the empty polls themselves: those stay out of worker.log, because an idle
 // worker that costs nothing should not cost log noise either. This fires once
-// per doubling — four lines between the default rates, then silence — and once
+// per doubling — twice between the default rates, then silence — and once
 // more when work brings the worker back. Without it, a fleet that has quietly
-// gone from a poll every 30s to one every 5 minutes looks like a fleet that has
+// gone from a poll every 30s to one every 2 minutes looks like a fleet that has
 // stopped, and the reader has no line to tell them otherwise.
 func pollRateNote(prev, next, quiet time.Duration) string {
 	switch {
@@ -163,7 +163,7 @@ type WorkerStatus struct {
 
 	// PollIntervalSeconds is the wait this worker is currently on, which is
 	// poll_seconds until it has been quiet long enough to start cooling. The
-	// card needs it to say why a countdown that used to read 30s reads 240s.
+	// card needs it to say why a countdown that used to read 30s reads 120s.
 	PollIntervalSeconds float64 `json:"poll_interval_seconds"`
 
 	RunsLastHour int `json:"runs_last_hour"`
