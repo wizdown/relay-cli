@@ -56,6 +56,34 @@ fi
 
 [ "$fail" -eq 0 ] && note "ok"
 
+# ── 1b. build output ─────────────────────────────────────────────────────────
+#
+# A binary committed by accident is pulled by every clone from then on, and a
+# diff review does not notice a 10 MB file. Anything staged that is an
+# executable image, or larger than any source file could be, is refused.
+# repo_test.go is the backstop for a clone without the hooks.
+step "checking for build output"
+artefacts=""
+while IFS= read -r f; do
+	[ -z "$f" ] && continue
+	size=$(git cat-file -s ":$f" 2>/dev/null || echo 0)
+	magic=$(git show ":$f" 2>/dev/null | head -c 4 | od -An -tx1 | tr -d ' \n')
+	case "$magic" in
+		feedface|cefaedfe|feedfacf|cffaedfe|cafebabe|7f454c46) artefacts="$artefacts $f" ;;
+		*) [ "$size" -gt 1048576 ] && artefacts="$artefacts $f" ;;
+	esac
+done <<EOF_STAGED
+$staged
+EOF_STAGED
+if [ -n "$artefacts" ]; then
+	note "REFUSING: a build output is staged:"
+	for f in $artefacts; do echo "    $f"; done
+	note "Unstage it: git restore --staged <path>, and add it to .gitignore."
+	fail=1
+else
+	note "ok"
+fi
+
 # ── 2. gofmt ─────────────────────────────────────────────────────────────────
 go_files=$(echo "$staged" | grep '\.go$' || true)
 if [ -n "$go_files" ]; then

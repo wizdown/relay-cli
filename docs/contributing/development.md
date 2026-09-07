@@ -23,7 +23,10 @@ make release VERSION=x.y.z   # cut a release; see below
 A clone passes its tests with no coding CLI installed. It is easy to break
 without noticing, because your machine has the CLI.
 
-Two seams make it hold, both package variables. `checkRuntime` in `config.go`
+Three seams make it hold. `dispatch` in `main.go` takes the argument list and
+both output streams and returns the exit status, so `cli_test.go` drives every
+command line without a process. The other two are package variables:
+`checkRuntime` in `config.go`
 is stubbed by the parsing tests via `noRuntimeCheck(t)`. `installedRuntimes`
 in `init.go` decides which workers `relay init` writes live, and is stubbed
 via `withInstalledRuntimes(t, …)`, so an init test describes a machine rather
@@ -46,8 +49,11 @@ an updated hook reaches you with a `git pull`.
 1. **Credentials**: refuses a staged relay-cli config, or any connector-shaped
    secret in added lines. A secret pushed to a public repo is leaked the
    moment it lands, and rewriting history does not un-leak it.
-2. **gofmt** on staged Go files.
-3. **`go test ./...`** when Go changed, and also when only docs changed,
+2. **Build output**: refuses a staged file that is an executable image or over
+   1 MiB. A binary committed by accident is pulled by every clone from then
+   on. `TestNoBuildOutputIsTracked` is the backstop for a clone without hooks.
+3. **gofmt** on staged Go files.
+4. **`go test ./...`** when Go changed, and also when only docs changed,
    because the drift tests read the docs. Without `-race`, for speed.
 
 **commit-msg** scans the message for the same connector shapes, with the same

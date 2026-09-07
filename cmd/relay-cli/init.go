@@ -212,18 +212,20 @@ func initFlags() *flag.FlagSet {
 	return flag.NewFlagSet("init", flag.ContinueOnError)
 }
 
-func initCommand(args []string) {
-	parseFlags("init", initFlags(), args)
-
+func initCommand(args []string, stdout, stderr io.Writer) int {
+	if code, stop := parseFlags("init", initFlags(), args, stdout, stderr); stop {
+		return code
+	}
 	dir, err := RelayHome()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitFail)
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitFail
 	}
-	if err := initConfig(dir, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitFail)
+	if err := initConfig(dir, stdout); err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitFail
 	}
+	return exitOK
 }
 
 // initConfig creates the relay directory and writes the starting config — and

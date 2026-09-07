@@ -213,8 +213,9 @@ relay-cli/
   .githooks/                     pre-commit and commit-msg, sharing lib.sh
   .github/workflows/             ci.yml (manual) and release.yml (tags)
   cmd/relay-cli/                 one Go package
-    main.go                      commands, flags, supervisor, startup checks, log
-                                 archiving, the version constant, shortHelp, helpText
+    main.go                      dispatch, the commands and their flags, per-command help,
+                                 exit statuses, supervisor, log archiving, the version
+                                 constant, shortHelp, helpText
     init.go                      `relay init` and the starting config it writes
     config.go                    parse, defaults, validation; problems accumulated
     probe.go                     MCP JSON-RPC over net/http, the token-free gate
@@ -232,6 +233,8 @@ relay-cli/
     docs_pages_test.go           links resolve, cli.md is complete, versions exist, pages stay short
     doclinks_test.go             every doc link the binary prints is a full URL
     docs_lint_test.go            the prose is held to the rules in AGENTS.md
+    cli_test.go                  help on stdout exits 0, usage errors on stderr exit 2
+    repo_test.go                 no build output is tracked; main is the only os.Exit
 ```
 
 And `~/.relay/`, the only place relay-cli keeps anything:

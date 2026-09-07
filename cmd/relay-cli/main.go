@@ -527,16 +527,6 @@ func flagLine(f *flag.Flag) string {
 	return line
 }
 
-// usage prints the manual when asked for by name, and the one-screen summary
-// otherwise.
-func usage(w *os.File, full bool) {
-	if full {
-		fmt.Fprint(w, helpText)
-		return
-	}
-	fmt.Fprint(w, shortHelp)
-}
-
 // displayConfigPath is the config path as a human would write it. Errors that
 // tell someone which file to edit read better with the ~ they typed than with
 // their expanded home directory.
@@ -544,109 +534,119 @@ func displayConfigPath() string {
 	return "~/" + relayDirName + "/" + configFileName
 }
 
+// main is one line: everything else returns an exit status, so a test can
+// drive the whole command surface through dispatch without a process. A test
+// holds this to being the only os.Exit in the package.
 func main() {
+	os.Exit(dispatch(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// dispatch routes one command line to its command and returns the exit status.
+// Help goes to stdout and exits 0; a wrong command line goes to stderr with an
+// `error:` prefix and exits 2; a command that ran and failed exits 1.
+func dispatch(args []string, stdout, stderr io.Writer) int {
 	// A bare invocation prints help rather than starting the fleet. Starting is
 	// not a neutral default here — it launches autonomous sessions that spend
 	// money — so it has to be asked for by name.
-	args := os.Args[1:]
 	if len(args) == 0 {
-		usage(os.Stdout, false)
-		return
+		fmt.Fprint(stdout, shortHelp)
+		return exitOK
 	}
 
 	switch args[0] {
 	case "-h", "--help":
-		usage(os.Stdout, false)
-		return
+		fmt.Fprint(stdout, shortHelp)
+		return exitOK
 	case "help":
-		helpCommand(args[1:])
-		return
+		return helpCommand(args[1:], stdout, stderr)
 	case "version", "-v", "--version":
-		rejectArguments("version", args[1:])
-		fmt.Println(versionLine())
-		return
+		if code, stop := rejectArguments("version", args[1:], stdout, stderr); stop {
+			return code
+		}
+		fmt.Fprintln(stdout, versionLine())
+		return exitOK
 	case "run":
-		runCommand(args[1:])
-		return
+		return runCommand(args[1:], stdout, stderr)
 	case "check":
-		checkCommand(args[1:])
-		return
+		return checkCommand(args[1:], stdout, stderr)
 	case "init":
-		initCommand(args[1:])
-		return
+		return initCommand(args[1:], stdout, stderr)
 	}
 
 	// A flag where the command should be is the likeliest mistake, and the fix
 	// is one word — so say the whole corrected line rather than just refusing.
 	if strings.HasPrefix(args[0], "-") {
-		fmt.Fprintf(os.Stderr, "error: %q is a flag, not a command. Did you mean:\n\n  relay run %s\n\nRun \"relay help\" for the full manual.\n",
+		fmt.Fprintf(stderr, "error: %q is a flag, not a command. Did you mean:\n\n  relay run %s\n\nRun \"relay help\" for the full manual.\n",
 			args[0], strings.Join(args, " "))
-		os.Exit(exitUsage)
+		return exitUsage
 	}
-	fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: %s.\n", args[0], strings.Join(commands, ", "))
-	os.Exit(exitUsage)
+	fmt.Fprintf(stderr, "error: unknown command %q. Commands are: %s.\n", args[0], strings.Join(commands, ", "))
+	return exitUsage
 }
 
 // helpCommand prints the manual, or one command's help when named.
-func helpCommand(args []string) {
+func helpCommand(args []string, stdout, stderr io.Writer) int {
 	switch {
 	case len(args) == 0:
-		usage(os.Stdout, true)
+		fmt.Fprint(stdout, helpText)
 	case len(args) == 1 && (args[0] == "-h" || args[0] == "--help"):
-		fmt.Print(commandHelp("help"))
+		fmt.Fprint(stdout, commandHelp("help"))
 	case len(args) == 1 && contains(commands, args[0]):
-		fmt.Print(commandHelp(args[0]))
+		fmt.Fprint(stdout, commandHelp(args[0]))
 	case len(args) == 1:
-		fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: %s.\n", args[0], strings.Join(commands, ", "))
-		os.Exit(exitUsage)
+		fmt.Fprintf(stderr, "error: unknown command %q. Commands are: %s.\n", args[0], strings.Join(commands, ", "))
+		return exitUsage
 	default:
-		fmt.Fprintf(os.Stderr, "error: \"relay help\" takes one command name, not %d arguments.\n\n  usage: %s\n", len(args), synopsis["help"])
-		os.Exit(exitUsage)
+		fmt.Fprintf(stderr, "error: \"relay help\" takes one command name, not %d arguments.\n\n  usage: %s\n", len(args), synopsis["help"])
+		return exitUsage
 	}
+	return exitOK
 }
 
-// rejectArguments refuses anything after a command that takes nothing, so a
-// mistyped `relay version --json` is an error rather than a silent ignore.
-func rejectArguments(name string, args []string) {
+// rejectArguments handles a command that takes nothing: `--help` prints its
+// help, anything else is a usage error rather than a silent ignore. stop is
+// true when the caller should return code.
+func rejectArguments(name string, args []string, stdout, stderr io.Writer) (code int, stop bool) {
 	if len(args) == 0 {
-		return
+		return exitOK, false
 	}
 	if args[0] == "-h" || args[0] == "--help" {
-		fmt.Print(commandHelp(name))
-		os.Exit(exitOK)
+		fmt.Fprint(stdout, commandHelp(name))
+		return exitOK, true
 	}
-	fmt.Fprintf(os.Stderr, "error: \"relay %s\" takes no arguments, got %q.\n\n  usage: %s\n", name, args[0], synopsis[name])
-	os.Exit(exitUsage)
+	fmt.Fprintf(stderr, "error: \"relay %s\" takes no arguments, got %q.\n\n  usage: %s\n", name, args[0], synopsis[name])
+	return exitUsage, true
 }
 
 // parseFlags parses a command's flags the way every command should: `--help`
-// prints that command's help on stdout and exits 0, a wrong flag or a stray
-// argument is one line on stderr naming the fix and exits 2.
+// prints that command's help on stdout and stops with 0, a wrong flag or a
+// stray argument is one line on stderr naming the fix and stops with 2.
 //
 // The flag package's own output is discarded: its messages name flags with one
 // dash and its Usage hook prints after the error, which reads as noise.
-func parseFlags(name string, fs *flag.FlagSet, args []string) {
+func parseFlags(name string, fs *flag.FlagSet, args []string, stdout, stderr io.Writer) (code int, stop bool) {
 	fs.SetOutput(io.Discard)
 	fs.Usage = func() {}
 	err := fs.Parse(args)
 	if err == flag.ErrHelp {
-		fmt.Print(commandHelp(name))
-		os.Exit(exitOK)
+		fmt.Fprint(stdout, commandHelp(name))
+		return exitOK, true
 	}
 	if err != nil {
-		usageError(name, flagError(name, err))
+		return usageError(name, flagError(name, err), stderr), true
 	}
 	if fs.NArg() > 0 {
 		if name == "init" {
-			usageError(name, fmt.Sprintf("\"relay init\" takes no arguments, got %q. It always writes to %s", fs.Arg(0), displayConfigPath()))
+			return usageError(name, fmt.Sprintf("\"relay init\" takes no arguments, got %q. It always writes to %s", fs.Arg(0), displayConfigPath()), stderr), true
 		}
-		usageError(name, fmt.Sprintf("\"relay %s\" takes no arguments, got %q", name, fs.Arg(0)))
+		return usageError(name, fmt.Sprintf("\"relay %s\" takes no arguments, got %q", name, fs.Arg(0)), stderr), true
 	}
+	return exitOK, false
 }
 
-func usageError(name, msg string) {
-	fmt.Fprintf(os.Stderr, "error: %s.\n\n  usage: %s\n\nRun \"relay help %s\" for its flags.\n", msg, synopsis[name], name)
-	os.Exit(exitUsage)
+func usageError(name, msg string, stderr io.Writer) int {
+	fmt.Fprintf(stderr, "error: %s.\n\n  usage: %s\n\nRun \"relay help %s\" for its flags.\n", msg, synopsis[name], name)
+	return exitUsage
 }
 
 // flagError rewrites the flag package's parse errors into the words the docs
@@ -680,19 +680,21 @@ func checkFlags(o *checkOpts) *flag.FlagSet {
 	return fs
 }
 
-func checkCommand(args []string) {
+func checkCommand(args []string, stdout, stderr io.Writer) int {
 	var o checkOpts
-	parseFlags("check", checkFlags(&o), args)
-
+	if code, stop := parseFlags("check", checkFlags(&o), args, stdout, stderr); stop {
+		return code
+	}
 	path, err := DefaultConfigPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitFail)
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitFail
 	}
-	if err := check(path, time.Duration(o.timeout)*time.Second, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitFail)
+	if err := check(path, time.Duration(o.timeout)*time.Second, stdout); err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitFail
 	}
+	return exitOK
 }
 
 // check answers "would `run` work?" without launching anything.
@@ -860,19 +862,21 @@ func runFlags(o *runOpts) *flag.FlagSet {
 	return fs
 }
 
-func runCommand(args []string) {
+func runCommand(args []string, stdout, stderr io.Writer) int {
 	var o runOpts
-	parseFlags("run", runFlags(&o), args)
-
+	if code, stop := parseFlags("run", runFlags(&o), args, stdout, stderr); stop {
+		return code
+	}
 	path, err := DefaultConfigPath()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitFail)
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitFail
 	}
 	if err := run(path, o.port, o.noOpen, o.noArchive, o.quiet, o.keepAwake); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(exitFail)
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return exitFail
 	}
+	return exitOK
 }
 
 func run(configPath string, port int, noOpen, noArchive, quiet, keepAwake bool) error {
