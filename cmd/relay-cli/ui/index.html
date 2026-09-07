@@ -368,8 +368,14 @@ function renderCards() {
     const q = w.last_poll;
     const bucket = el("span", "bucket");
     if (q) {
+      // `at_limit` alone is not "work is being withheld": an agent at its ceiling
+      // with an empty backlog has nothing held back, and labelling that "withheld"
+      // sends whoever is debugging a quiet fleet looking for a queue that is not
+      // there. Count it the way the Go side's QueueState.Withheld does — resume +
+      // todo, the buckets the limit actually suppresses — and say the number.
+      const held = q.at_limit ? (q.resume || 0) + (q.todo || 0) : 0;
       bucket.innerHTML = "resume " + b(q.resume) + " · attn " + b(q.attention) + " · todo " + b(q.todo) +
-        (q.at_limit ? " <span class='warntext'>· withheld</span>" : "");
+        (held ? " <span class='warntext'>· " + held + " withheld</span>" : "");
     } else if (w.last_poll_error) {
       bucket.className = "errtext"; bucket.textContent = "probe failing";
     } else {
