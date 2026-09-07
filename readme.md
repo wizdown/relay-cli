@@ -83,14 +83,14 @@ relay run     # starts every worker and opens http://127.0.0.1:7717/
 terminal shows the run:
 
 ```text
-14:22:08  worker-claude   poll  resume 0 · attention 0 · todo 1
-14:22:08  worker-claude   ▶ run started   claude · ~/code/scratch
-14:22:11  worker-claude   → relay:claim_task   task_id=42
-14:23:02  worker-claude   ■ run ok   status 0 · $0.09 · 5 turns · 54.1s
+2026-02-04T14:22:08Z [worker-claude] cycle start: runtime=claude resume=0 attention=0 todo=1 cwd=/Users/you/code/scratch
+2026-02-04T14:22:10Z [worker-claude]   · session 9f31c8a2 started (model claude-sonnet-5)
+2026-02-04T14:22:11Z [worker-claude]   → relay:claim_task  task_id=42
+2026-02-04T14:23:02Z [worker-claude] cycle complete
 ```
 
-The result is in `repo_dir` and the task is waiting in Relay for review. An
-idle worker prints nothing.
+The dashboard shows the same run with its cost. The result is in `repo_dir`
+and the task is waiting in Relay for review. An idle worker prints nothing.
 
 ## Stopping and pausing
 
@@ -112,7 +112,8 @@ rm ~/.relay/state/worker-claude/PAUSED      # resume
 | [Runtimes](docs/runtimes.md) | Claude Code and Codex: what each run does and what bounds it |
 | [Troubleshooting](docs/troubleshooting.md) | Symptom → fix |
 
-`relay help` prints the same reference from the binary.
+`relay help` prints the same reference from the binary, and
+`relay help <command>` one command's usage.
 
 ## Contributing
 

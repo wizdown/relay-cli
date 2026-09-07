@@ -146,7 +146,7 @@ Before and after, from the pages as they were:
 | `readme.md` | quickstart: what it is, requirements, install, four steps, stop, the doc table | 700 words |
 | `docs/configuration.md` | reference: layout, one example, field tables, safeguards, short sections after | 1,700 |
 | `docs/runtimes.md` | one comparison table, the startup check, what each run does | 700 |
-| `docs/cli.md` | commands, flags, sample output, what the dashboard shows, versioning | 1,000 |
+| `docs/cli.md` | commands, flags, exit status, sample output, what the dashboard shows and serves, versioning | 1,100 |
 | `docs/working-directory.md` | a ladder: each step adds one thing and shows it | 1,150 |
 | `docs/troubleshooting.md` | tables grouped by where the reader is, one row per message | 1,100 |
 | `docs/contributing/*` | the reasons and the procedures, as long as they need to be | none |

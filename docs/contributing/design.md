@@ -169,6 +169,14 @@ credential in the environment, which authenticates a run whatever the stored
 sign-in says. Both warn out loud, since a stale key hiding a signed-out CLI is
 exactly what the check exists to catch. A healthy start stays silent.
 
+`LoadConfig` is `ParseConfig` then `CheckRuntimes`, and `run` needs both.
+`check` calls the halves itself: it parses, runs the runtime check and holds
+the result, probes every credential, and reports the runtime failure after
+the probe lines. A signed-out CLI is a one-command fix and a wrong credential
+is a trip back to Relay; reporting only the first costs a round of
+edit-and-rerun for the second. The check still runs before the banner,
+because the banner names the version and path each CLI resolved to.
+
 `relay init` asks a weaker question, `Installed()`: is the CLI on `PATH` at
 all? That decides whether a runtime's worker is written live or commented
 out, and it is not `Check()` on purpose: a signed-out CLI is installed, and

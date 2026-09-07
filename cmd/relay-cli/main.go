@@ -13,6 +13,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -138,15 +140,24 @@ func versionLine() string {
 func baseVersion() string { return strings.TrimSuffix(version, snapshotSuffix) }
 
 // commands is the command list, in one place: the switch in main dispatches
-// them, the unknown-command error names them, and tests hold both the manual
-// and docs/cli.md to it.
+// them, the unknown-command error names them, `relay help <command>` accepts
+// them, and tests hold both the manual and docs/cli.md to it.
 var commands = []string{"init", "check", "run", "version", "help"}
+
+// Exit statuses. Scripts and CI wrappers branch on these, so they are fixed
+// and documented in docs/cli.md.
+const (
+	exitOK    = 0 // the command did what it says
+	exitFail  = 1 // the config, a runtime or a credential failed
+	exitUsage = 2 // the command line itself was wrong
+)
 
 // shortHelpMaxLines is the ceiling a test holds shortHelp to: one screen, on
 // the smallest terminal anyone actually uses.
 const shortHelpMaxLines = 40
 
-// shortHelp is what a bare `relay` and `-h` print: one screen, no rationale.
+// shortHelp is what a bare `relay`, `-h` and `--help` print: one screen, no
+// rationale.
 //
 // The manual below is the reference, and it is the right thing to have — but it
 // is not what someone typing `relay` with no arguments is asking for. They want
@@ -157,41 +168,42 @@ const shortHelp = `relay ` + version + ` (` + channel + `) — a fleet of coding
 
 USAGE
   relay <command> [flags]
+  relay help [command]
 
-COMMANDS ───────────────────────────────────────────────────────────────
+COMMANDS ------------------------------------------------------------------
   init      write ~/` + relayDirName + `/` + configFileName + ` (never overwrites an existing one)
   check     validate the config + probe every credential. Spends nothing
   run       start every worker, open the dashboard on 127.0.0.1:7717
   version   print the version
-  help      the full manual — config, models, runtimes, safeguards
+  help      the full manual. "relay help <command>" for one command
 
-FLAGS ──────────────────────────────────────────────────────────────────
+FLAGS ---------------------------------------------------------------------
   run     --port N (default 7717)  --no-open  --quiet  --no-archive
           --keep-awake  macOS: hold off sleep while on AC power
   check   --timeout N seconds (default 15)
   init    takes none
 
-QUICKSTART ─────────────────────────────────────────────────────────────
+QUICKSTART ----------------------------------------------------------------
   1  relay init      write the starting config
-  2  edit it         fill in the four required fields below
+  2  edit it         paste relay_mcp and repo_dir into each worker
   3  relay check     proves the wiring. Costs nothing
   4  relay run       start the fleet
 
-WHAT YOU HAVE TO DECIDE — four fields per worker ───────────────────────
+WHAT YOU HAVE TO DECIDE, per worker ---------------------------------------
   relay_mcp   the agent's credential URL from relay. A SECRET, shown ONCE
   repo_dir    the checkout this agent works in. Its files and tooling are
-              what the agent can do — and a headless run rewrites them
+              what the agent can do, and a headless run rewrites them
               with no prompt to answer
   runtime     claude or codex. Install and sign in to that CLI yourself;
               none is bundled
   model       stated outright, in that runtime's own words:
-                claude → opus | sonnet | haiku
-                codex  → sol | terra | luna
+                claude: opus | sonnet | haiku
+                codex:  sol | terra | luna
 
   Everything else is already bounded. Polls are free; only RUNS spend.
-  Never commit ~/` + relayDirName + `/` + configFileName + ` — every relay_mcp in it is live.
+  Never commit ~/` + relayDirName + `/` + configFileName + `: every relay_mcp in it is live.
 
-  relay help  →  the full manual        ` + repoURL + `
+  relay help prints the full manual        ` + repoURL + `
 `
 
 // helpText is the whole manual, and `relay help` is what prints it.
@@ -203,28 +215,31 @@ WHAT YOU HAVE TO DECIDE — four fields per worker ─────────�
 // docs/contributing/, and a reason that lives in two places will disagree.
 const helpText = `relay ` + version + ` (` + channel + `) — run Relay CLI workers, and watch them work.
 
-  one worker = one Relay agent identity × one directory × one CLI runtime
+  one worker = one Relay agent identity x one directory x one CLI runtime
 
 A worker polls Relay over HTTP for work delegated to its agent. A poll runs no
 model and costs nothing. When a task is waiting, the worker launches one
 headless CLI session that claims and works that task, then goes idle. A local
 page shows every tool call and the cost so far.
 
-BETA — 0.x until the interface settles. Spend is bounded by default; an upgrade
+BETA: 0.x until the interface settles. Spend is bounded by default; an upgrade
 may need edits to your config.
 
-USAGE ───────────────────────────────────────────────────────────────────────
+USAGE -----------------------------------------------------------------------
   relay <command> [flags]
+  relay help [command]         this manual, or one command's usage
+  relay <command> --help       that command's usage
 
-COMMANDS ────────────────────────────────────────────────────────────────────
+COMMANDS --------------------------------------------------------------------
   init      write ~/` + relayDirName + `/` + configFileName + ` with a starting config. Never overwrites
-  check     validate the config, probe every credential, and report what each
-            repo_dir gives its agent. Launches nothing, spends nothing
+  check     validate the config, probe every credential, verify every runtime
+            and report what each repo_dir gives its agent. Launches nothing,
+            spends nothing
   run       start every worker in the config and open the dashboard
   version   print the version. Quote it in a bug report
   help      this manual
 
-FLAGS ───────────────────────────────────────────────────────────────────────
+FLAGS -----------------------------------------------------------------------
   run    --port N       dashboard port on 127.0.0.1. Default 7717; if it is
                         taken, the next free port is used and the URL printed
          --no-open      do not open a browser (servers, containers, CI)
@@ -237,42 +252,28 @@ FLAGS ────────────────────────�
   check  --timeout N    seconds to wait for each credential probe. Default 15
   init   none           and it never overwrites an existing config
 
-GETTING STARTED ─────────────────────────────────────────────────────────────
-  You need this binary and a Relay agent credential. Relay is at
-  https://relay.bytecurio.com/ — sign in with Google or Microsoft; the free
-  workspace is enough. Install and sign in to a coding CLI yourself: see
-  RUNTIMES.
+EXIT STATUS -----------------------------------------------------------------
+  0   done. For check: every credential answered and every runtime is usable
+  1   the config, a runtime or a credential failed. The message names the fix
+  2   the command line was wrong: an unknown command, flag or argument
+
+GETTING STARTED -------------------------------------------------------------
+  You need this binary, a Relay agent credential, and a coding CLI you have
+  installed and signed in to (see RUNTIMES). Relay is at
+  https://relay.bytecurio.com/; the free workspace is enough.
 
   1  relay init       writes ~/` + relayDirName + `/` + configFileName + `: one worker per coding CLI on
                       PATH, with two placeholders in each
-  2  fill them in     relay_mcp and repo_dir; see the next section
+  2  fill them in     relay_mcp and repo_dir; see THE CONFIG FILE
   3  relay check      proves every credential and repo. Costs nothing
   4  relay run        starts the workers and opens the dashboard
 
   Then delegate a task to that agent in Relay and watch the run.
 
-WHAT YOU HAVE TO DECIDE ─────────────────────────────────────────────────────
-  Four fields per worker are required. Everything else has a bounded default.
-
-  name        unique in the file. Names the state directory, the log and the
-              dashboard row
-  relay_mcp   the agent's credential URL. In Relay, add the agent
-              (onboard_agent) and issue its credential (issue_agent_credential);
-              leave its capabilities off. The secret is in the URL, and it is
-              shown ONCE
-  repo_dir    the directory the agent works in. Its CLAUDE.md or AGENTS.md,
-              skills and tooling are what the agent gets. An empty directory
-              is valid. A run cannot ask before changing files, so choose a
-              checkout you are willing to have rewritten
-  runtime     claude or codex. Install and sign in to that CLI yourself
-  runtime_config.model
-              which model, in that runtime's own names. See CHOOSING A MODEL
-
-  Preparing a repo_dir:
-    ` + docsBase + `working-directory.md
-
-THE CONFIG FILE ─────────────────────────────────────────────────────────────
+THE CONFIG FILE -------------------------------------------------------------
   ~/` + relayDirName + `/` + configFileName + ` is JSON listing your workers. // comments are allowed.
+  Five fields per worker are required; relay init fills in all but relay_mcp
+  and repo_dir. Everything else has a bounded default.
 
     {
       "poll_seconds": 30,          // fleet-wide. default 30, min 5
@@ -285,15 +286,28 @@ THE CONFIG FILE ─────────────────────�
           "repo_dir": "~/code/wizhub",                // REQUIRED
           "runtime": "claude",                        // REQUIRED
 
-          "max_runs_per_hour": 6,      // default 12  — caps what you SPEND
-          "max_seconds_per_run": 900,  // default 900 — kill for one session
+          "max_runs_per_hour": 6,      // default 12: caps what you SPEND
+          "max_seconds_per_run": 900,  // default 900: kill for one session
 
           "runtime_config": {          // settings the RUNTIME understands
-            "model": "sonnet"          // REQUIRED for claude
+            "model": "sonnet"          // REQUIRED, see CHOOSING A MODEL
           }
         }
       ]
     }
+
+  name        unique in the file. Names the state directory, the log and the
+              dashboard row
+  relay_mcp   the agent's credential URL. In Relay, add the agent
+              (onboard_agent) and issue its credential (issue_agent_credential);
+              leave its capabilities off. The secret is in the URL, and it is
+              shown ONCE
+  repo_dir    the directory the agent works in. Its CLAUDE.md or AGENTS.md,
+              skills and tooling are what the agent gets. An empty directory
+              is valid. A run cannot ask before changing files, so choose a
+              checkout you are willing to have rewritten. Preparing one:
+              ` + docsBase + `working-directory.md
+  runtime     claude or codex. Install and sign in to that CLI yourself
 
   Fields OUTSIDE runtime_config are enforced by relay-cli and mean the same for
   every runtime. Fields INSIDE are that CLI's own:
@@ -328,7 +342,7 @@ THE CONFIG FILE ─────────────────────�
 
   NEVER COMMIT IT: each relay_mcp is a live credential.
 
-CHOOSING A MODEL ────────────────────────────────────────────────────────────
+CHOOSING A MODEL ------------------------------------------------------------
   Required for both runtimes. Write the short name; relay-cli pins it to the
   id beside it, and the full id is accepted too. Logs and the dashboard show
   the resolved id.
@@ -345,7 +359,7 @@ CHOOSING A MODEL ─────────────────────
   vendor offered when this build was made; for a newer model, see ENVIRONMENT.
   Pair a bigger model with a tighter max_runs_per_hour.
 
-RUNTIMES — no CLI is bundled ────────────────────────────────────────────────
+RUNTIMES: no CLI is bundled -------------------------------------------------
   relay-cli ships adapters, not CLIs. Install the CLI, sign in, and relay-cli
   finds it on PATH.
 
@@ -360,11 +374,11 @@ RUNTIMES — no CLI is bundled ────────────────�
 
   Before anything starts, relay-cli checks that each CLI the config names is
   installed, accepts the flags the adapter needs, and is signed in. A failure
-  stops the start and names the fix. A CLI too old to be asked about sign-in
-  warns and continues, and so does a credential in the environment. See
-  ENVIRONMENT.
+  stops run and fails check, and names the fix. A CLI too old to be asked
+  about sign-in warns and continues, and so does a credential in the
+  environment. See ENVIRONMENT.
 
-ENVIRONMENT ─────────────────────────────────────────────────────────────────
+ENVIRONMENT -----------------------------------------------------------------
   RELAY_CLI_SKIP_RUNTIME_CHECK=1    skip the flag, sign-in and model checks
   ` + modelCheckEnv + `=1      pass an unlisted model through, with a
                                     warning naming the worker
@@ -372,7 +386,7 @@ ENVIRONMENT ──────────────────────�
                                     check stands down for that CLI; relay-cli
                                     cannot tell whether the key is valid
 
-COST AND SAFEGUARDS ─────────────────────────────────────────────────────────
+COST AND SAFEGUARDS ---------------------------------------------------------
   A POLL asks Relay "do I have a task?" and runs no model. A RUN is one CLI
   session, and is what costs money. Every ceiling counts RUNS.
 
@@ -389,15 +403,14 @@ COST AND SAFEGUARDS ────────────────────
   A worker polls at poll_seconds while it has work, and for 5 minutes after its
   last task. Each quiet poll after that doubles the wait, up to
   idle_poll_seconds, and work resets it to poll_seconds. Every change of rate
-  is one line in worker.log and on the dashboard. Because the wait doubles,
-  idle_poll_seconds is at least twice poll_seconds — that is the smallest
-  slowdown a fleet can ask for, and 0 is not one of them.
+  is one line in worker.log and on the dashboard. idle_poll_seconds is at
+  least twice poll_seconds, and 0 is not accepted.
 
   A worker pauses itself after 10 consecutive probe failures, after 2 spend or
   usage-limit kills in a row, or when the same task has needed its attention
   across 3 consecutive completed runs. Each writes a PAUSED file naming its fix.
 
-WHILE IT RUNS ───────────────────────────────────────────────────────────────
+WHILE IT RUNS ---------------------------------------------------------------
   Ctrl-C                 stop every worker, archive logs to logs/, remove state/
   Pause one worker       touch ~/` + relayDirName + `/state/<name>/PAUSED
   Resume it              rm ~/` + relayDirName + `/state/<name>/PAUSED
@@ -411,15 +424,111 @@ WHILE IT RUNS ──────────────────────
   One location, and no flag moves it.
 
   The dashboard is READ-ONLY and binds 127.0.0.1 only. Connector secrets are
-  redacted before they reach the page.
+  redacted before they reach the page. It serves two JSON routes: GET
+  /api/snapshot for the current state, and /api/stream for live events.
 
 Source and full documentation:
   ` + repoURL + `
 `
 
+// synopsis is the one-line usage of each command, printed at the top of its
+// help and under a usage error.
+var synopsis = map[string]string{
+	"init":    "relay init",
+	"check":   "relay check [--timeout N]",
+	"run":     "relay run [--port N] [--no-open] [--quiet] [--no-archive] [--keep-awake]",
+	"version": "relay version",
+	"help":    "relay help [command]",
+}
+
+// summary is the one sentence each command's help opens with.
+var summary = map[string]string{
+	"init":    "Create ~/" + relayDirName + "/ with a starting config in it. Never overwrites one.",
+	"check":   "Validate the config, probe every credential and verify every runtime.\nLaunches nothing and spends nothing.",
+	"run":     "Start every worker in " + displayConfigPath() + " and open the dashboard.\nCtrl-C stops the fleet and archives its logs.",
+	"version": "Print the version. Quote it in a bug report.",
+	"help":    "Print the full manual, or one command's usage.",
+}
+
+// commandFlags returns the flag set a command parses, or nil for a command
+// with none. The help for a command is built from this, so a flag added to the
+// set is documented without a second copy to keep in step.
+func commandFlags(name string) *flag.FlagSet {
+	switch name {
+	case "run":
+		return runFlags(&runOpts{})
+	case "check":
+		return checkFlags(&checkOpts{})
+	case "init":
+		return initFlags()
+	}
+	return nil
+}
+
+// commandHelp is what `relay <command> --help` and `relay help <command>`
+// print: the synopsis, one sentence, the flags with their defaults, and where
+// the rest is.
+func commandHelp(name string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "usage: %s\n\n%s\n", synopsis[name], summary[name])
+	if fs := commandFlags(name); fs != nil {
+		lines := flagLines(name, fs)
+		if len(lines) > 0 {
+			b.WriteString("\n")
+			for _, l := range lines {
+				b.WriteString(l + "\n")
+			}
+		}
+	}
+	switch name {
+	case "run", "check":
+		fmt.Fprintf(&b, "\nReads %s. Exits 1 when the config, a runtime or a credential\nfails, and 2 on a usage error.\n", displayConfigPath())
+	}
+	b.WriteString("\nRun \"relay help\" for the full manual.\n")
+	return b.String()
+}
+
+// flagLines renders a flag set as the manual does: `--name N` for a valued
+// flag, the usage, and the default where there is one. Flags come out in the
+// order the synopsis names them, so the list reads the way the usage line does.
+func flagLines(name string, fs *flag.FlagSet) []string {
+	byName := map[string]*flag.Flag{}
+	fs.VisitAll(func(f *flag.Flag) { byName[f.Name] = f })
+	var out []string
+	for _, m := range flagNameRe.FindAllStringSubmatch(synopsis[name], -1) {
+		f, ok := byName[m[1]]
+		if !ok {
+			continue
+		}
+		delete(byName, m[1])
+		out = append(out, flagLine(f))
+	}
+	// A flag the synopsis does not name still gets a line; a test says the
+	// synopsis should name it.
+	fs.VisitAll(func(f *flag.Flag) {
+		if _, left := byName[f.Name]; left {
+			out = append(out, flagLine(f))
+		}
+	})
+	return out
+}
+
+var flagNameRe = regexp.MustCompile(`--([a-z-]+)`)
+
+func flagLine(f *flag.Flag) string {
+	name := "--" + f.Name
+	if _, isBool := f.Value.(interface{ IsBoolFlag() bool }); !isBool {
+		name += " N"
+	}
+	line := fmt.Sprintf("  %-14s %s", name, f.Usage)
+	if f.DefValue != "" && f.DefValue != "false" {
+		line += ". Default " + f.DefValue
+	}
+	return line
+}
+
 // usage prints the manual when asked for by name, and the one-screen summary
-// otherwise. `relay` with no arguments and `-h` are the same question — which
-// commands are there — and `relay help` and `--help` ask for the reference.
+// otherwise.
 func usage(w *os.File, full bool) {
 	if full {
 		fmt.Fprint(w, helpText)
@@ -439,41 +548,124 @@ func main() {
 	// A bare invocation prints help rather than starting the fleet. Starting is
 	// not a neutral default here — it launches autonomous sessions that spend
 	// money — so it has to be asked for by name.
-	if len(os.Args) < 2 {
+	args := os.Args[1:]
+	if len(args) == 0 {
 		usage(os.Stdout, false)
 		return
 	}
 
-	switch os.Args[1] {
-	case "-h":
+	switch args[0] {
+	case "-h", "--help":
 		usage(os.Stdout, false)
 		return
-	case "help", "--help":
-		usage(os.Stdout, true)
+	case "help":
+		helpCommand(args[1:])
 		return
 	case "version", "-v", "--version":
+		rejectArguments("version", args[1:])
 		fmt.Println(versionLine())
 		return
 	case "run":
-		runCommand(os.Args[2:])
+		runCommand(args[1:])
 		return
 	case "check":
-		checkCommand(os.Args[2:])
+		checkCommand(args[1:])
 		return
 	case "init":
-		initCommand(os.Args[2:])
+		initCommand(args[1:])
 		return
 	}
 
 	// A flag where the command should be is the likeliest mistake, and the fix
 	// is one word — so say the whole corrected line rather than just refusing.
-	if strings.HasPrefix(os.Args[1], "-") {
+	if strings.HasPrefix(args[0], "-") {
 		fmt.Fprintf(os.Stderr, "error: %q is a flag, not a command. Did you mean:\n\n  relay run %s\n\nRun \"relay help\" for the full manual.\n",
-			os.Args[1], strings.Join(os.Args[1:], " "))
-		os.Exit(2)
+			args[0], strings.Join(args, " "))
+		os.Exit(exitUsage)
 	}
-	fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: %s.\n", os.Args[1], strings.Join(commands, ", "))
-	os.Exit(2)
+	fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: %s.\n", args[0], strings.Join(commands, ", "))
+	os.Exit(exitUsage)
+}
+
+// helpCommand prints the manual, or one command's help when named.
+func helpCommand(args []string) {
+	switch {
+	case len(args) == 0:
+		usage(os.Stdout, true)
+	case len(args) == 1 && (args[0] == "-h" || args[0] == "--help"):
+		fmt.Print(commandHelp("help"))
+	case len(args) == 1 && contains(commands, args[0]):
+		fmt.Print(commandHelp(args[0]))
+	case len(args) == 1:
+		fmt.Fprintf(os.Stderr, "error: unknown command %q. Commands are: %s.\n", args[0], strings.Join(commands, ", "))
+		os.Exit(exitUsage)
+	default:
+		fmt.Fprintf(os.Stderr, "error: \"relay help\" takes one command name, not %d arguments.\n\n  usage: %s\n", len(args), synopsis["help"])
+		os.Exit(exitUsage)
+	}
+}
+
+// rejectArguments refuses anything after a command that takes nothing, so a
+// mistyped `relay version --json` is an error rather than a silent ignore.
+func rejectArguments(name string, args []string) {
+	if len(args) == 0 {
+		return
+	}
+	if args[0] == "-h" || args[0] == "--help" {
+		fmt.Print(commandHelp(name))
+		os.Exit(exitOK)
+	}
+	fmt.Fprintf(os.Stderr, "error: \"relay %s\" takes no arguments, got %q.\n\n  usage: %s\n", name, args[0], synopsis[name])
+	os.Exit(exitUsage)
+}
+
+// parseFlags parses a command's flags the way every command should: `--help`
+// prints that command's help on stdout and exits 0, a wrong flag or a stray
+// argument is one line on stderr naming the fix and exits 2.
+//
+// The flag package's own output is discarded: its messages name flags with one
+// dash and its Usage hook prints after the error, which reads as noise.
+func parseFlags(name string, fs *flag.FlagSet, args []string) {
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
+	err := fs.Parse(args)
+	if err == flag.ErrHelp {
+		fmt.Print(commandHelp(name))
+		os.Exit(exitOK)
+	}
+	if err != nil {
+		usageError(name, flagError(name, err))
+	}
+	if fs.NArg() > 0 {
+		if name == "init" {
+			usageError(name, fmt.Sprintf("\"relay init\" takes no arguments, got %q. It always writes to %s", fs.Arg(0), displayConfigPath()))
+		}
+		usageError(name, fmt.Sprintf("\"relay %s\" takes no arguments, got %q", name, fs.Arg(0)))
+	}
+}
+
+func usageError(name, msg string) {
+	fmt.Fprintf(os.Stderr, "error: %s.\n\n  usage: %s\n\nRun \"relay help %s\" for its flags.\n", msg, synopsis[name], name)
+	os.Exit(exitUsage)
+}
+
+// flagError rewrites the flag package's parse errors into the words the docs
+// use: double-dash names, and what the flag wanted instead of "parse error".
+func flagError(name string, err error) string {
+	msg := err.Error()
+	if rest, ok := strings.CutPrefix(msg, "flag provided but not defined: -"); ok {
+		return fmt.Sprintf("\"relay %s\" does not take --%s", name, strings.TrimPrefix(rest, "-"))
+	}
+	if rest, ok := strings.CutPrefix(msg, "flag needs an argument: -"); ok {
+		return fmt.Sprintf("--%s needs a value", strings.TrimPrefix(rest, "-"))
+	}
+	if strings.HasPrefix(msg, "invalid value ") {
+		// invalid value "abc" for flag -port: parse error
+		value, after, _ := strings.Cut(strings.TrimPrefix(msg, "invalid value "), " for flag -")
+		flagName, _, _ := strings.Cut(strings.TrimPrefix(after, "-"), ":")
+		return fmt.Sprintf("--%s takes a number, not %s", flagName, value)
+	}
+	return msg
 }
 
 // checkOpts is the check command's flags, split out for the same reason
@@ -484,57 +676,50 @@ type checkOpts struct {
 
 func checkFlags(o *checkOpts) *flag.FlagSet {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `
-usage: relay check [--timeout N]
-
-  Reads %s. Run "relay help" for the full manual.
-`, displayConfigPath())
-	}
 	fs.IntVar(&o.timeout, "timeout", defaultCheckTimeoutSecs, "seconds to wait for each credential probe")
 	return fs
 }
 
 func checkCommand(args []string) {
 	var o checkOpts
-	fs := checkFlags(&o)
-
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay help\" for usage.\n", fs.Arg(0))
-		os.Exit(2)
-	}
+	parseFlags("check", checkFlags(&o), args)
 
 	path, err := DefaultConfigPath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitFail)
 	}
 	if err := check(path, time.Duration(o.timeout)*time.Second, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitFail)
 	}
 }
 
 // check answers "would `run` work?" without launching anything.
 //
-// It runs every startup check run runs — LoadConfig validates the file, the
-// runtimes and the repo directories — and then asks relay one question per
+// It runs every startup check run runs — ParseConfig validates the file and the
+// repo directories, CheckRuntimes the CLIs — and asks relay one question per
 // worker using the same token-free probe the poll loop uses. No CLI is started,
 // so a credential can be tested for nothing.
+//
+// The probes run whether or not the runtime check passed, and both are
+// reported. A signed-out CLI is a one-command fix; a wrong credential is a trip
+// back to relay, and hiding the second behind the first costs a round of
+// edit-and-rerun.
 //
 // That matters because the alternative is to start the fleet and watch: a
 // revoked credential and an empty queue look identical from the outside until a
 // worker has been running long enough to be trusted, and finding out by
 // launching sessions is the expensive way to ask.
 func check(configPath string, timeout time.Duration, out io.Writer) error {
-	cfg, err := LoadConfig(configPath)
+	cfg, err := ParseConfig(configPath)
 	if err != nil {
 		return err
 	}
+	// Asked now, because the banner below names the version and path each CLI
+	// resolved to, and reported after the probes so a signed-out CLI does not
+	// hide what relay said.
+	runtimeErr := CheckRuntimes(cfg)
 
 	fmt.Fprintf(out, "relay %s (%s) — checking %d worker(s) from %s\n", version, channel, len(cfg.Workers), cfg.Path)
 	for _, line := range runtimeBanner(cfg) {
@@ -595,6 +780,7 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 	}
 	fmt.Fprintln(out)
 
+	var failures []string
 	if failed > 0 {
 		// The advice is conditional because the failures have different fixes,
 		// and offering all of them makes each one less believable: a 401 is a
@@ -614,7 +800,13 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 				"       host in relay_mcp is right and the rest of the URL is not — paste the\n" +
 				"       whole connector_url again, secret included, and check nothing was cut off."
 		}
-		return fmt.Errorf("%d of %d worker(s) could not check in with relay.\n%s", failed, len(cfg.Workers), hint)
+		failures = append(failures, fmt.Sprintf("%d of %d worker(s) could not check in with relay.\n%s", failed, len(cfg.Workers), hint))
+	}
+	if runtimeErr != nil {
+		failures = append(failures, runtimeErr.Error())
+	}
+	if len(failures) > 0 {
+		return errors.New(strings.Join(failures, "\n\n"))
 	}
 
 	// A zero queue is the healthy answer here, and saying so is the point: it is
@@ -660,45 +852,26 @@ type runOpts struct {
 
 func runFlags(o *runOpts) *flag.FlagSet {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	// A mistyped flag gets a short pointer, not the whole manual: dumping ninety
-	// lines after a one-word typo buries the error that explains it.
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `
-usage: relay run [--port N] [--no-open] [--quiet] [--no-archive] [--keep-awake]
-
-  Reads %s. Run "relay help" for the full manual.
-`, displayConfigPath())
-	}
-
-	fs.IntVar(&o.port, "port", defaultPort, "dashboard port on 127.0.0.1 (falls forward if taken)")
+	fs.IntVar(&o.port, "port", defaultPort, "dashboard port on 127.0.0.1, or the next free one")
 	fs.BoolVar(&o.noOpen, "no-open", false, "do not open a browser at startup")
-	fs.BoolVar(&o.noArchive, "no-archive", false, "do not archive worker logs to logs/ on shutdown")
 	fs.BoolVar(&o.quiet, "quiet", false, "do not echo worker logs to stdout")
+	fs.BoolVar(&o.noArchive, "no-archive", false, "do not archive worker logs to logs/ on shutdown")
 	fs.BoolVar(&o.keepAwake, "keep-awake", false, "macOS: hold off system sleep while on AC power")
 	return fs
 }
 
 func runCommand(args []string) {
 	var o runOpts
-	fs := runFlags(&o)
-
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. Run \"relay help\" for usage.\n", fs.Arg(0))
-		os.Exit(2)
-	}
+	parseFlags("run", runFlags(&o), args)
 
 	path, err := DefaultConfigPath()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitFail)
 	}
 	if err := run(path, o.port, o.noOpen, o.noArchive, o.quiet, o.keepAwake); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitFail)
 	}
 }
 

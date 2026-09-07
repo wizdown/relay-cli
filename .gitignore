@@ -2,6 +2,8 @@
 # build left in a checkout from before the rename is still ignored.
 /relay
 /relay-cli
+/cmd/relay-cli/relay
+/cmd/relay-cli/relay-cli
 bin/
 dist/
 build/

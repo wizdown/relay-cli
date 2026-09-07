@@ -228,9 +228,7 @@ func claudeLoginError() error {
 		return nil
 	}
 	return fmt.Errorf("the installed claude is not signed in.\n" +
-		"       Run `claude auth login` as the user this fleet runs as — a worker\n" +
-		"       launches the CLI as you, so it authenticates the way your own sessions\n" +
-		"       do. relay-cli never writes or moves those credentials.")
+		"       Run `claude auth login` as the user this fleet runs as.")
 }
 
 // jsonObject picks the JSON object out of a command's output, since a CLI may

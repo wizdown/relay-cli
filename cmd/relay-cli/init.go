@@ -209,40 +209,20 @@ func commentOut(block string) string {
 }
 
 func initFlags() *flag.FlagSet {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	fs.SetOutput(os.Stderr)
-	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `
-usage: relay init
-
-  Creates ~/%s/ with a starting config in it. Takes no flags — there is one
-  location and nothing points elsewhere.
-  Run "relay help" for the full manual.
-`, relayDirName)
-	}
-	return fs
+	return flag.NewFlagSet("init", flag.ContinueOnError)
 }
 
 func initCommand(args []string) {
-	fs := initFlags()
-
-	if err := fs.Parse(args); err != nil {
-		os.Exit(2)
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "error: unexpected argument %q. \"relay init\" takes none — it always writes\n"+
-			"       to ~/%s. Run \"relay help\" for usage.\n", fs.Arg(0), relayDirName)
-		os.Exit(2)
-	}
+	parseFlags("init", initFlags(), args)
 
 	dir, err := RelayHome()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitFail)
 	}
 	if err := initConfig(dir, os.Stdout); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		os.Exit(exitFail)
 	}
 }
 
@@ -259,15 +239,14 @@ func initConfig(dir string, out io.Writer) error {
 	// report it as a bare "not a directory" from somewhere further in.
 	if info, err := os.Stat(dir); err == nil && !info.IsDir() {
 		return fmt.Errorf("%s exists and is a file, not a directory.\n"+
-			"       relay-cli keeps its config, state and logs in a directory there.\n"+
-			"       Move or remove that file, then run \"relay init\" again.", dir)
+			"       Move or remove it, then run \"relay init\" again.", dir)
 	}
 
 	configPath := filepath.Join(dir, configFileName)
 	if _, err := os.Stat(configPath); err == nil {
-		return fmt.Errorf("%s already exists, and overwriting it would destroy the\n"+
-			"       connector credentials in it — relay shows each secret exactly once.\n"+
-			"       Edit it instead, or move it aside if you want a fresh one.", configPath)
+		return fmt.Errorf("%s already exists.\n"+
+			"       relay init never overwrites it: relay shows its credentials exactly once.\n"+
+			"       Edit it, or move it aside for a fresh one.", configPath)
 	}
 
 	// Last of the three refusals, and like the two above it creates nothing —
@@ -277,9 +256,7 @@ func initConfig(dir string, out io.Writer) error {
 	// to be written whatever is on PATH.
 	installed := installedRuntimes()
 	if len(installed) == 0 {
-		return fmt.Errorf("no coding CLI found on PATH, and a worker is one.\n" +
-			"       relay-cli drives a CLI you install separately — it bundles none, so a\n" +
-			"       worker with no runtime has nothing to run. Install either:\n" +
+		return fmt.Errorf("no coding CLI found on PATH. Install either:\n" +
 			"         Claude Code   https://claude.com/claude-code\n" +
 			"         Codex CLI     https://developers.openai.com/codex/cli\n" +
 			"       Sign it in, then run \"relay init\" again. Nothing was written.")
