@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.3.2
+
 - A worker card no longer says `withheld` when nothing is being withheld. The
   label followed `at_limit` alone, so an agent at its parallel-claim limit with
   an empty backlog was tagged as holding work back. It now shows the count —
