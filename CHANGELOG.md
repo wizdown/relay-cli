@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.4.0
+
 - `relay run --help`, `relay check --help` and `relay init --help` print that
   command's usage on stdout and exit `0`. `relay help <command>` prints the
   same. `relay -h` and `relay --help` both print the one-screen summary.

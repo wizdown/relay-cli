@@ -51,7 +51,7 @@ Errors go to stderr with an `error:` prefix; everything else to stdout.
 ## What `check` reports
 
 ```text
-relay 0.3.2 (beta) — checking 2 worker(s) from /Users/you/.relay/config
+relay 0.4.0 (beta) — checking 2 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
 
   wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
@@ -83,7 +83,7 @@ does not hide what Relay said. Either failure exits `1`.
 ## Startup and shutdown
 
 ```text
-relay 0.3.2 (beta) — 1 worker(s) from /Users/you/.relay/config
+relay 0.4.0 (beta) — 1 worker(s) from /Users/you/.relay/config
   runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
   polling every 30s, 120s when idle
   wizhub-claude            runtime claude   runs/h 6  repo /Users/you/code/wizhub
@@ -147,8 +147,8 @@ The page is drawn from two read-only routes on the same port.
 `relay version` prints one line. Quote it in bug reports:
 
 ```text
-relay 0.3.2 (beta)                                a release
-relay 0.3.2-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo, at that commit
+relay 0.4.0 (beta)                                a release
+relay 0.4.0-SNAPSHOT (beta) [v0.0.9-4-g1aa22a3]   built from the repo, at that commit
 ```
 
 relay-cli stays on 0.x until the interface settles. A release may change
