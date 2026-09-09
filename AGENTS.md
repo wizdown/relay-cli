@@ -59,8 +59,9 @@ and [docs/cli.md](docs/cli.md) is the same reference as a page.
 1. **No credentials, anywhere.** Every `relay_mcp` is a live secret. Not in a
    file, a test, a commit message, a PR title or body, or a release note. Use
    `relay.example.com` and `wzh_REPLACE_ME`; describe a failure as "HTTP 401
-   from the configured endpoint". The hooks and `ci.yml` scan files and commit
-   messages; nothing scans a PR body, so read yours before opening it.
+   from the configured endpoint". One scanner, `scripts/scan-secrets.sh`, reads
+   the diff, the commit message, every tracked file and the PR title and body.
+   A red check on any of them means revoke the credential in relay first.
 2. **Do not touch the version constant.** `master` carries the next version
    with a `-SNAPSHOT` marker, and only `make release` changes it.
 3. **Documentation lands in the same commit as the change.** See

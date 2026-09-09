@@ -6,7 +6,8 @@
 # pre-commit scans what you are committing; this scans what you say about it. A
 # message is the natural place to paste a failing `relay check`, and that output
 # quotes the connector URL — which IS the credential. Nothing else looks here:
-# the pre-commit scan and ci.yml both read files, not messages.
+# the pre-commit scan and ci.yml both read files, and pr-text.yml reads the
+# pull request. All four run scripts/scan-secrets.sh.
 #
 # In a public repo this is the mistake you cannot take back. A pushed message is
 # world-readable immediately, `master` refuses a force-push, and squashing does
@@ -22,15 +23,13 @@ root=$(git rev-parse --show-toplevel) || exit 1
 # strip them here as well — otherwise the verbose diff gets scanned a second
 # time and reported as if it were prose the author wrote.
 secrets=$(git stripspace --strip-comments <"$1" |
-	grep -oE "$CONNECTOR_RE" |
-	grep -viE "$PLACEHOLDER_RE" |
-	sort -u)
+	"$root/scripts/scan-secrets.sh" || true)
 
 if [ -n "$secrets" ]; then
 	printf '\nREFUSING: the commit message contains a connector-shaped secret:\n'
 	echo "$secrets" | sed 's/^/    /'
 	printf '\n  Redact it — describe the shape, not the value.\n'
-	printf '  If this is a real credential, revoke it in relay before anything else.\n'
+	printf '  %s\n' "$REVOKE_HINT"
 	printf '\ncommit blocked. Fix the message, or bypass with: git commit --no-verify\n\n'
 	exit 1
 fi

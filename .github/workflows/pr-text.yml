@@ -1,0 +1,49 @@
+name: PR text
+
+# The one place a pasted `relay check` failure lands unscanned used to be the
+# one place that is world-readable the moment it is posted. The hooks scan a
+# diff and a commit message, ci.yml scans tracked files, and a pull request
+# title and body were checked by the author or by nobody.
+#
+# Seconds of runner time, no Go, no checkout of anything but this repository's
+# own scanner. It runs on `edited` as well as `opened`, because a body is most
+# often pasted into after the pull request exists.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: no credentials in the pull request text
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The title and the body reach the script as environment variables and
+      # never as interpolated text. A ${{ … }} expansion inside a run block is
+      # substituted before bash sees the line, so a body can close the quote and
+      # run its own commands; an env var is data whatever it contains.
+      #
+      # -q so a hit is not echoed. The run log of a public repository is
+      # world-readable, and printing the value would publish the credential a
+      # second time.
+      - name: scan the title and body
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | scripts/scan-secrets.sh -q; then
+            echo "no credential-shaped strings in the title or body"
+            exit 0
+          fi
+          echo "REFUSING: the pull request title or body contains a connector-shaped secret."
+          echo
+          echo "  The value is not printed here: this log is public, and printing it"
+          echo "  would publish the credential a second time. Find it in your own text."
+          . .githooks/lib.sh
+          echo "  $REVOKE_HINT"
+          echo "  Then edit the title and body. This check re-runs on an edit."
+          exit 1

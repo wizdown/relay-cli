@@ -60,13 +60,15 @@ jobs:
       # Every relay connector URL is a live credential. Placeholders are fine;
       # anything that looks like a real secret is not. This is a backstop for
       # the .gitignore, not a replacement for it.
+      #
+      # The shapes and the allow-list are .githooks/lib.sh, which the hooks read
+      # too — a third copy here is a third copy that drifts.
       - name: scan for connector secrets
         run: |
-          if git ls-files -z | xargs -0 grep -nE 'wzh_[A-Za-z0-9_-]{6,}' \
-               | grep -viE 'wzh_(REPLACE_ME|REDACTED|secret_?value|supersecretvalue|longsecrettoken|someotherunknownsecret|abcdefghijkl|a{6,}|b{6,}|abc)' ; then
+          if ! git ls-files -z | xargs -0 scripts/scan-secrets.sh; then
             echo
             echo "A connector-shaped secret was found in a tracked file."
-            echo "Use relay.example.com and wzh_REPLACE_ME in committed files."
+            . .githooks/lib.sh && echo "$PLACEHOLDER_HINT"
             exit 1
           fi
           echo "no credential-shaped strings in tracked files"

@@ -56,12 +56,21 @@ an updated hook reaches you with a `git pull`.
 4. **`go test ./...`** when Go changed, and also when only docs changed,
    because the drift tests read the docs. Without `-race`, for speed.
 
-**commit-msg** scans the message for the same connector shapes, with the same
-allow-list from `.githooks/lib.sh`. A message is where a failing `check` gets
-pasted, and that output quotes the credential.
+**commit-msg** scans the message for the same connector shapes. A message is
+where a failing `check` gets pasted, and that output quotes the credential.
 
-The hooks only run where someone ran `make hooks`, and `--no-verify` skips
-them. CI is the backstop for files; nothing is a backstop for a PR body.
+Both hooks call `scripts/scan-secrets.sh`, and so do the `secrets` job in
+`ci.yml` and the pull-request text check. It reads files named on the command
+line or text on stdin, prints what it found, and exits 1. The shapes and the
+allow-list are in `.githooks/lib.sh`, which is the one home for both: four
+scanners with four copies of a regular expression is four copies that drift.
+Pass `-q` to suppress the value, which is what the pull-request check does so a
+public run log does not publish the credential a second time.
+
+The hooks only run where someone ran `make hooks` — the `SessionStart` hook in
+`.claude/settings.json` runs it for an agent session — and `--no-verify` skips
+them. CI is the backstop for files, and `pr-text.yml` is the backstop for a
+pull request title and body.
 
 ## CI
 
@@ -199,8 +208,11 @@ comments. The repo is public and a message outlives the branch: no connector
 URL, no internal hostname, no absolute path off your machine, nobody else's
 name. Redact rather than omit: "HTTP 401 from the configured endpoint" carries
 what the value would. The `commit-msg` hook catches connector shapes in a
-message; a PR title and body are checked by you or by nobody.
+message, and `.github/workflows/pr-text.yml` catches them in a PR title and
+body, on every edit. A red check there means revoke the credential in relay
+before anything else, then edit the text.
 
+`.github/pull_request_template.md` opens with these headings already in place.
 A PR summary covers:
 
 - **What changed, and why**: the problem, not just the edit.
