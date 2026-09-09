@@ -9,6 +9,7 @@ From the repository root:
 
 ```bash
 make check    # gofmt + vet + test. The pre-PR command
+make check-fresh  # the suite with no coding CLI on PATH
 make test     # tests only
 make lint-docs  # only the tests that hold the docs to the code
 make fmt      # gofmt -w
@@ -36,8 +37,13 @@ present.
 To check you have not broken it:
 
 ```bash
-env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
+make check-fresh
 ```
+
+It runs the suite with `PATH` cut to the system directories and wherever `go`
+itself lives, so no coding CLI is found however it was installed. Run it before
+a PR that touches `config.go`, `init.go` or a runtime, and say in the PR that
+you did.
 
 ## The git hooks
 

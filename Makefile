@@ -35,10 +35,11 @@ LDFLAGS := -s -w -X main.build=$(BUILD)
 # on a MacBook is looking for "macos-arm64", not "darwin-arm64".
 PLATFORMS := darwin/arm64
 
-.PHONY: help hooks all build test vet fmt check lint-docs dist clean run version release
+.PHONY: help hooks all build test vet fmt check check-fresh lint-docs dist clean run version release
 
 help:
 	@echo "make check   gofmt + vet + test — what to run before a PR"
+	@echo "make check-fresh  the suite with no coding CLI on PATH"
 	@echo "make test    go test ./..."
 	@echo "make lint-docs  only the tests that hold the docs to the code"
 	@echo "make build   build ./$(BINARY)"
@@ -82,6 +83,19 @@ check:
 	@go vet ./...
 	@go test ./...
 	@echo "ok"
+
+# The fresh-clone property, as a command rather than a paragraph: the suite has
+# to pass on a machine with no coding CLI installed, and yours has one. PATH is
+# cut to the system directories plus wherever go itself lives, so claude and
+# codex are not found however they were installed — npm, homebrew or a dotfile.
+#
+# This is the check ci.yml exists to run. Running it locally is what keeps a
+# broken seam from reaching the branch. See
+# docs/contributing/development.md#the-fresh-clone-property.
+check-fresh:
+	@go_dir=$$(dirname $$(command -v go)) || { echo "error: go is not on PATH" >&2; exit 1; }; \
+	env PATH="/usr/bin:/bin:$$go_dir" go test ./...
+	@echo "ok (no coding CLI on PATH)"
 
 # Print the version the Makefile resolved. The release workflow reads this, so
 # a silently-empty constant becomes a failed release rather than an artifact

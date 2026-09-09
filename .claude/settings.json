@@ -1,0 +1,39 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "make hooks"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(make check)",
+      "Bash(make check-fresh)",
+      "Bash(make test)",
+      "Bash(make lint-docs)",
+      "Bash(make build)",
+      "Bash(make fmt)",
+      "Bash(make hooks)",
+      "Bash(make help)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go build:*)",
+      "Bash(gofmt -l:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(scripts/scan-secrets.sh:*)"
+    ],
+    "deny": [
+      "Read(~/.relay/**)",
+      "Read(.relay/**)",
+      "Read(**/.worker-config)"
+    ]
+  }
+}

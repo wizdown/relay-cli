@@ -12,6 +12,7 @@ Run from the repository root:
 
 ```bash
 make check    # gofmt + vet + test. Run before any PR
+make check-fresh  # the suite with no coding CLI on PATH
 make test     # tests only
 make lint-docs  # only the tests that hold the docs to the code
 make fmt      # gofmt -w .
@@ -22,7 +23,8 @@ make release VERSION=x.y.z   # cut a release; see docs/contributing/development.
 ```
 
 Go 1.22+, no other dependencies, no network. A fresh clone passes its tests
-with no coding CLI installed; keep it that way. See
+with no coding CLI installed, which is what `make check-fresh` proves; keep it
+that way. See
 [The fresh-clone property](docs/contributing/development.md#the-fresh-clone-property).
 
 ## Using the binary
