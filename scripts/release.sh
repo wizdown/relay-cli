@@ -48,8 +48,15 @@ die() {
 step() { printf '\n%s\n' "$1"; }
 note() { printf '  %s\n' "$1"; }
 
-# The constant, exactly as the Makefile and the release workflow read it.
-constant() { make version; }
+# The constant, exactly as the Makefile and the release workflow read it. One
+# home for the sed that parses it, which is the CONSTANT line in the Makefile.
+#
+# --no-print-directory because this is a sub-make: `make release` runs this
+# script, so MAKELEVEL is already 1 and GNU make would wrap the answer in
+# "Entering directory" and "Leaving directory". Those land inside the captured
+# value and split the version report across three lines, which is the one piece
+# of output somebody has to read in order to choose a number.
+constant() { make --no-print-directory version; }
 
 # semver_gt A B — true when A is strictly greater, comparing numerically so
 # 0.10.0 beats 0.9.0. Both are bare x.y.z; -SNAPSHOT is stripped by the caller.
