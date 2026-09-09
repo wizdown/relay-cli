@@ -48,15 +48,17 @@ die() {
 step() { printf '\n%s\n' "$1"; }
 note() { printf '  %s\n' "$1"; }
 
+# Every make below is a SUB-make: `make release` runs this script, so MAKELEVEL
+# is already 1 and GNU make wraps each call in "Entering directory" and
+# "Leaving directory". Around streamed output those two lines are noise; inside
+# a captured value they are worse, because they become part of the value.
+#
+# One home for the flag rather than three call sites that have to remember it.
+mk() { make --no-print-directory "$@"; }
+
 # The constant, exactly as the Makefile and the release workflow read it. One
 # home for the sed that parses it, which is the CONSTANT line in the Makefile.
-#
-# --no-print-directory because this is a sub-make: `make release` runs this
-# script, so MAKELEVEL is already 1 and GNU make would wrap the answer in
-# "Entering directory" and "Leaving directory". Those land inside the captured
-# value and split the version report across three lines, which is the one piece
-# of output somebody has to read in order to choose a number.
-constant() { make --no-print-directory version; }
+constant() { mk version; }
 
 # semver_gt A B — true when A is strictly greater, comparing numerically so
 # 0.10.0 beats 0.9.0. Both are bare x.y.z; -SNAPSHOT is stripped by the caller.
@@ -224,7 +226,7 @@ restore() {
 set_version "$VERSION"
 
 step "make check"
-if ! make check; then
+if ! mk check; then
 	restore
 	die "the tree does not pass its own checks, so it is not going out.
        Nothing was committed and the version was put back.
@@ -234,7 +236,7 @@ if ! make check; then
 fi
 
 step "make dist"
-if ! make dist >/dev/null; then
+if ! mk dist >/dev/null; then
 	restore
 	die "the release build failed. Nothing was committed and the version was put back."
 fi

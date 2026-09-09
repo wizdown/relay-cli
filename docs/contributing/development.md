@@ -148,10 +148,12 @@ error: make release needs a version. It is never guessed.
 
   a fix, or docs only   make release VERSION=0.2.0
   anything new          make release VERSION=0.3.0
-```
+  breaking              (0.x — say so in the release notes; there is
+                         no 1.0 until the interface settles)
 
-The number already on `master` is a suggestion, chosen before anyone knew
-what the batch would hold.
+  The number on master (0.2.0) is the default only if the batch above is
+  what it was chosen for. Read it before deciding.
+```
 
 **2. It checks first.** Clean tree, on `master`, in sync with
 `origin/master`, no such tag locally or on origin, a version no lower than
