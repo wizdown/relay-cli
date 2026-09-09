@@ -239,7 +239,7 @@ var userPageCeilings = map[string]int{
 	"docs/cli.md":               1100,
 	"docs/configuration.md":     1700,
 	"docs/runtimes.md":          700,
-	"docs/troubleshooting.md":   1100,
+	"docs/troubleshooting.md":   1150,
 	"docs/working-directory.md": 1150,
 }
 

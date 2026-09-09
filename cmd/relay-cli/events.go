@@ -44,8 +44,13 @@ const (
 	StateCeiling  = "ceiling"
 	StateAtLimit  = "at_limit"
 	StatePaused   = "paused"
-	StateProbeErr = "probe_failing"
-	StateStopped  = "stopped"
+	// StateOwnerPaused is relay refusing this agent's credential because its
+	// owner paused the agent. It is deliberately not StatePaused: that one is
+	// this worker's own PAUSED file, which a human has to delete, and this one
+	// clears itself the moment the owner resumes the agent.
+	StateOwnerPaused = "owner_paused"
+	StateProbeErr    = "probe_failing"
+	StateStopped     = "stopped"
 )
 
 // TokenUsage is what a run spent, for a runtime that reports tokens rather than

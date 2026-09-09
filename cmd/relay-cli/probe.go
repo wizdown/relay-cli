@@ -27,6 +27,76 @@ import (
 
 const defaultProtocolVersion = "2025-11-25"
 
+// The two ways relay refuses an agent's credential outright, as the errorCode
+// in its standard error envelope. They are opposites, and the loop has to act
+// on the difference: a pause ends when a human clicks resume, so the worker
+// waits for it; a missing agent never comes back, so the breaker counts it.
+const (
+	codeAgentPaused   = "relay_agent_paused"
+	codeAgentNotFound = "relay_agent_not_found"
+)
+
+// ProbeError is one exchange relay answered with a non-2xx, keeping the two
+// facts a caller has to branch on apart from the prose: the status and relay's
+// errorCode.
+//
+// Flattening both into a string is what made a paused agent read as a broken
+// credential. The reason was in the body all along; the loop could not see it,
+// counted the refusal as a failure, and self-paused a worker whose credential
+// was fine.
+type ProbeError struct {
+	Status int
+	// Code is relay's errorCode. It is empty when the body is not one of relay's
+	// error envelopes, which is what any older server and every non-relay host
+	// answering on that URL will look like.
+	Code string
+	// Detail is scrubbed and truncated, for a human to read.
+	Detail string
+}
+
+func (e *ProbeError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("HTTP %d (%s): %s", e.Status, e.Code, e.Detail)
+	}
+	return fmt.Sprintf("HTTP %d: %s", e.Status, e.Detail)
+}
+
+// newProbeError reads relay's error envelope off a refused exchange. The body
+// is `{"errorCode": …, "errorDescription": …}` from any relay; anything else
+// falls back to the raw body, which is all a wrong host gives.
+func newProbeError(status int, raw []byte) *ProbeError {
+	body := unwrapSSE(raw)
+	var env struct {
+		ErrorCode        string `json:"errorCode"`
+		ErrorDescription string `json:"errorDescription"`
+	}
+	_ = json.Unmarshal(body, &env)
+	detail := env.ErrorDescription
+	if detail == "" {
+		detail = string(body)
+	}
+	// Scrub: the endpoint is the credential, and a server that echoes the URL it
+	// was called on puts it in this string.
+	return &ProbeError{Status: status, Code: env.ErrorCode, Detail: Scrub(truncate(detail, 400))}
+}
+
+// AgentPaused reports whether relay refused this probe because the agent's
+// owner paused it in the console.
+//
+// The test is the status AND the code, never the status alone: a relay too old
+// to send either still answers 403 for reasons that are genuine failures, so
+// the pause-aware path must not widen to them.
+func AgentPaused(err error) bool { return refusedWith(err, codeAgentPaused) }
+
+// AgentNotFound is the opposite case: the agent was removed, so the credential
+// is never coming back and the probe breaker should count it.
+func AgentNotFound(err error) bool { return refusedWith(err, codeAgentNotFound) }
+
+func refusedWith(err error, code string) bool {
+	var pe *ProbeError
+	return errors.As(err, &pe) && pe.Status == http.StatusForbidden && pe.Code == code
+}
+
 // QueueState is the answer to one poll: how much work relay is holding for this
 // agent, in the three buckets the loop acts on.
 //
@@ -214,7 +284,7 @@ func (p *Prober) post(ctx context.Context, session string, body any) ([]byte, ht
 		return nil, hdr, err
 	}
 	if code != http.StatusOK {
-		return nil, hdr, fmt.Errorf("HTTP %d: %s", code, Scrub(truncate(string(raw), 400)))
+		return nil, hdr, newProbeError(code, raw)
 	}
 	return unwrapSSE(raw), hdr, nil
 }
@@ -233,7 +303,7 @@ func (p *Prober) notify(ctx context.Context, session string, body any) error {
 		return err
 	}
 	if code < 200 || code > 299 {
-		return fmt.Errorf("HTTP %d: %s", code, Scrub(truncate(string(raw), 400)))
+		return newProbeError(code, raw)
 	}
 	return nil
 }

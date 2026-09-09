@@ -237,7 +237,7 @@ func TestDocsQuoteTheBreakerThresholds(t *testing.T) {
 // "ceiling" from "cooldown". Every state the cards can show is on that list.
 func TestDocsListEveryWorkerState(t *testing.T) {
 	doc := readRepoFile(t, "docs/cli.md")
-	for _, state := range []string{StateIdle, StatePolling, StateRunning, StateCooldown, StateCeiling, StatePaused, StateProbeErr} {
+	for _, state := range []string{StateIdle, StatePolling, StateRunning, StateCooldown, StateCeiling, StateAtLimit, StatePaused, StateOwnerPaused, StateProbeErr} {
 		shown := strings.ReplaceAll(state, "_", " ") // the cards print the state with a space
 		if !strings.Contains(doc, state) && !strings.Contains(doc, shown) {
 			t.Errorf("worker state %q is not in the state list in docs/cli.md", state)

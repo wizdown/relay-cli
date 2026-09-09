@@ -86,6 +86,29 @@ consecutive failure, but a worker that goes bad while backed off takes longer
 to get there, which is the accepted cost. The breaker is a notification, not a
 spend guard — nothing is being spent while it counts.
 
+## Why a pause is a state and not a probe failure
+
+Relay's principal gate refuses every request a paused agent's credential makes,
+`initialize` included, with `403` and `errorCode: relay_agent_paused`. The
+probe used to flatten a refusal into one error string, so the loop saw only
+"probe failed" and counted it. Ten polls later the breaker wrote
+`~/.relay/state/<name>/PAUSED`, which outlives the pause: an owner who paused a
+fleet at 17:00 and resumed it at 09:00 found every worker still down, under a
+log line telling them to go fix a credential that was never broken.
+
+So `ProbeError` keeps the status and the code apart from the prose, and
+`AgentPaused` gates on both. A pause resets the failure counter — a refusal
+that names it proves the endpoint and the secret work — parks the worker in
+`owner_paused`, and lets the ladder cool. Nothing is written to disk, so a
+resume in the console is picked up by the next poll with nobody at the machine.
+
+The test is the status AND the code, never the status alone. A Relay too old to
+send either still answers `403` for reasons that are real failures, so the
+default for every other refusal has to stay what it was.
+`relay_agent_not_found` is the deliberate opposite: that agent is gone and its
+credential is never served again, so it counts to the breaker like anything
+else, and the breaker names it rather than sending the operator after the URL.
+
 ## Why the gate reads `at_limit` and not the counts
 
 Relay caps how many tasks one agent may hold at once. An agent already holding
