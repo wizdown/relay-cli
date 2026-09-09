@@ -5,6 +5,15 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- Claude workers pre-allow relay's tools by server prefix (`mcp__relay`)
+  instead of a named list. Relay renamed six of its agent verbs; every name a
+  list missed was denied mid-run, and the denial reached the operator only in
+  the run's `permission_denials`. Upgrade before pointing a Claude worker at a
+  Relay serving the 18-verb agent surface.
+- The harness rules name the tools Relay serves today: `open_task` to open or
+  re-read a task, and `hand_back` with `outcome: release` to give unfinished
+  work back.
+
 ## v0.4.0
 
 - `relay run --help`, `relay check --help` and `relay init --help` print that

@@ -105,7 +105,7 @@ The page reads each CLI's event stream, so a session appears line by line:
 
 ```text
 14:22:08  wizhub-claude   ▶ run started   claude · /Users/you/code/wizhub
-14:22:13  wizhub-claude   → relay:claim_task   task_id=42
+14:22:13  wizhub-claude   → relay:open_task    task_id=42
 14:22:31  wizhub-claude   → Edit   src/handlers.go
 14:23:02  wizhub-claude   ■ run ok   status 0 · $0.31 · 7 turns · 54.1s
 14:26:02  app-codex       ■ run ok   status 0 · 41.2k tok · 82.0s

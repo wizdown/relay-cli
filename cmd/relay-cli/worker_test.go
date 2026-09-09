@@ -249,7 +249,7 @@ func TestRunSummaryTakesTheFirstTaskIDItSees(t *testing.T) {
 	summary := &RunSummary{RunID: "run-1"}
 	for _, ev := range []SessionEvent{
 		{Type: "tool_use", Tool: "Read", Target: "internal/invite/token.go"},
-		{Type: "tool_use", Tool: "mcp__relay__claim_task", Target: "task_id=T-413"},
+		{Type: "tool_use", Tool: "mcp__relay__open_task", Target: "task_id=T-413"},
 		{Type: "tool_use", Tool: "mcp__relay__create_task", Target: "task_id=T-418"},
 	} {
 		r.applySessionEvent("run-1", summary, ev)

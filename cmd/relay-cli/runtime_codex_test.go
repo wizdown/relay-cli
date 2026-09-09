@@ -15,8 +15,8 @@ const (
 	cxCmdStart = `{"type":"item.started","item":{"id":"i1","item_type":"command_execution","command":"bash -lc 'go test ./...'","status":"in_progress"}}`
 	cxCmdDone  = `{"type":"item.completed","item":{"id":"i1","item_type":"command_execution","command":"bash -lc 'go test ./...'","aggregated_output":"ok\tpkg\t0.4s","exit_code":0,"status":"completed"}}`
 	cxCmdFail  = `{"type":"item.completed","item":{"id":"i2","item_type":"command_execution","command":"bash -lc 'go build'","aggregated_output":"undefined: x","exit_code":2,"status":"completed"}}`
-	cxMCPStart = `{"type":"item.started","item":{"id":"i3","item_type":"mcp_tool_call","server":"relay","tool":"claim_task","status":"in_progress"}}`
-	cxMCPDone  = `{"type":"item.completed","item":{"id":"i3","item_type":"mcp_tool_call","server":"relay","tool":"claim_task","status":"completed"}}`
+	cxMCPStart = `{"type":"item.started","item":{"id":"i3","item_type":"mcp_tool_call","server":"relay","tool":"open_task","status":"in_progress"}}`
+	cxMCPDone  = `{"type":"item.completed","item":{"id":"i3","item_type":"mcp_tool_call","server":"relay","tool":"open_task","status":"completed"}}`
 	cxMsg      = `{"type":"item.completed","item":{"id":"i4","item_type":"agent_message","text":"Claimed task 23."}}`
 	cxReason   = `{"type":"item.completed","item":{"id":"i5","item_type":"reasoning","text":"Reading the failing test first."}}`
 	cxUpdated  = `{"type":"item.updated","item":{"id":"i4","item_type":"agent_message","text":"Claimed"}}`
@@ -83,10 +83,10 @@ func TestCodexNarratesToolCallsAsTheyStart(t *testing.T) {
 // the same whichever CLI produced it and the dashboard has one shape to strip.
 func TestCodexNamesRelayToolsLikeClaude(t *testing.T) {
 	ev := parseCodex(t, cxMCPStart)
-	if len(ev) != 1 || ev[0].Tool != "mcp__relay__claim_task" {
+	if len(ev) != 1 || ev[0].Tool != "mcp__relay__open_task" {
 		t.Fatalf("mcp call: %+v", ev)
 	}
-	if done := parseCodex(t, cxMCPDone); len(done) != 1 || !strings.Contains(done[0].Text, "claim_task") {
+	if done := parseCodex(t, cxMCPDone); len(done) != 1 || !strings.Contains(done[0].Text, "open_task") {
 		t.Errorf("mcp result should name the tool: %+v", done)
 	}
 }

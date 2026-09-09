@@ -16,7 +16,7 @@ const (
 	lineRateLim  = `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"},"session_id":"s"}`
 	lineSummary  = `{"type":"system","subtype":"task_summary","detail":"Reading sample.txt","session_id":"s"}`
 	lineSummary0 = `{"type":"system","subtype":"task_summary","detail":null,"session_id":"s"}`
-	lineToolUse  = `{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"t1","name":"mcp__relay__claim_task","input":{"task_id":23}}]},"session_id":"s"}`
+	lineToolUse  = `{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"t1","name":"mcp__relay__open_task","input":{"task_id":23}}]},"session_id":"s"}`
 	lineEdit     = `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/repo/index.html","old_string":"a","new_string":"b"}}]},"session_id":"s"}`
 	lineText     = `{"type":"assistant","message":{"content":[{"type":"text","text":"Claimed task 23."}]},"session_id":"s"}`
 	lineThinking = `{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me look at the file."}]},"session_id":"s"}`
@@ -60,7 +60,7 @@ func TestParseToolUseCarriesItsTarget(t *testing.T) {
 	if len(ev) != 1 || ev[0].Type != "tool_use" {
 		t.Fatalf("got %+v", ev)
 	}
-	if ev[0].Tool != "mcp__relay__claim_task" || ev[0].Target != "task_id=23" {
+	if ev[0].Tool != "mcp__relay__open_task" || ev[0].Target != "task_id=23" {
 		t.Errorf("a tool call without its target is nearly content-free: %+v", ev[0])
 	}
 	ed := parseOne(t, lineEdit)
@@ -301,7 +301,13 @@ func TestWorkerAllowlistCarriesTheToolsTheWorkNeeds(t *testing.T) {
 			t.Errorf("%s is missing: a worker without it is silently denied mid-run", tool)
 		}
 	}
-	if !strings.Contains(workerAllowedTools, "mcp__relay__claim_task") {
+	// The server prefix, not a named list. Relay renames verbs; a name that
+	// moved out of a list becomes a denial nobody sees until the run is paid
+	// for. See relayAllowedTools.
+	if relayAllowedTools != "mcp__relay" {
+		t.Errorf("relay's surface must be pre-allowed by server prefix, got %q", relayAllowedTools)
+	}
+	if !strings.Contains(workerAllowedTools, relayAllowedTools) {
 		t.Error("relay's own surface must still be pre-allowed")
 	}
 }
