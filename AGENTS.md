@@ -296,8 +296,9 @@ never guessed, including by you.** Asked to cut a release without one, run
 whoever asked, and use the number they give back. Recommend one, but do not
 pass a version the user did not choose.
 
-CI (`ci.yml`) is manual only: `gh workflow run ci.yml --ref <branch>`. It
-proves the suite passes with no coding CLI installed. Releases publish a
+CI (`ci.yml`) runs on every pull request, and on demand for a branch without
+one: `gh workflow run ci.yml --ref <branch>`. It proves the suite passes with
+no coding CLI installed. Releases publish a
 macOS Apple Silicon binary and `SHA256SUMS` as a pre-release. The whole flow is
 [Cutting a release](docs/contributing/development.md#cutting-a-release).
 

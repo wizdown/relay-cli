@@ -80,18 +80,24 @@ pull request title and body.
 
 ## CI
 
-`.github/workflows/ci.yml` is manual-dispatch only. Everything it does runs
-locally with nothing but Go, and runner time is a cost this repo does not
-spend per commit.
+`.github/workflows/ci.yml` runs on every pull request. It runs gofmt, `go vet`,
+`go test -race`, a build, and a scan for credential-shaped strings across
+tracked files, on a machine with no coding CLI installed. That last part is
+what a local run cannot prove, since your machine has the CLI.
+
+A `concurrency` group keyed on the pull request means a new push cancels the
+run it superseded, so a branch costs about a minute of runner time however many
+times it is pushed.
+
+For a branch with no pull request open:
 
 ```bash
 gh workflow run ci.yml --ref <branch>
 gh run watch
 ```
 
-It runs gofmt, `go vet`, `go test -race`, a build, and a scan for
-credential-shaped strings across tracked files, on a machine with no coding
-CLI installed.
+`.github/workflows/pr-text.yml` runs alongside it, on the pull request title
+and body. See [The git hooks](#the-git-hooks).
 
 ## Versions
 
