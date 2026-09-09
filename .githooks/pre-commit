@@ -17,7 +17,8 @@ set -uo pipefail
 root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
 
-# The connector shapes, shared with commit-msg so the two cannot disagree.
+# The hint wording, shared with commit-msg so the two cannot disagree. The
+# shapes themselves are scripts/scan-secrets.sh's business.
 . "$root/.githooks/lib.sh"
 
 fail=0
@@ -40,17 +41,16 @@ if echo "$staged" | grep -qE '(^|/)(\.relay/config|\.worker-config)$'; then
 fi
 
 # Connector-shaped strings in ADDED lines only, so an existing placeholder in an
-# untouched file costs nothing to check. Placeholders are allowed by name.
+# untouched file costs nothing to check. The scanner allows placeholders by
+# name; ci.yml and the pull-request check run the same one.
 secrets=$(git diff --cached -U0 -- $(echo "$staged" | tr '\n' ' ') 2>/dev/null |
 	grep '^+' | grep -vE '^\+\+\+' |
-	grep -oE "$CONNECTOR_RE" |
-	grep -viE "$PLACEHOLDER_RE" |
-	sort -u)
+	"$root/scripts/scan-secrets.sh" || true)
 if [ -n "$secrets" ]; then
 	note "REFUSING: a connector-shaped secret is being added:"
 	echo "$secrets" | sed 's/^/    /'
-	note "Use relay.example.com and wzh_REPLACE_ME in committed files."
-	note "If this is a real credential, revoke it in relay before anything else."
+	note "$PLACEHOLDER_HINT"
+	note "$REVOKE_HINT"
 	fail=1
 fi
 

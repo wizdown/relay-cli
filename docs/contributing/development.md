@@ -5,18 +5,7 @@ there is no `go.sum`, no lockfile, and no network needed to build or test.
 
 ## Commands
 
-From the repository root:
-
-```bash
-make check    # gofmt + vet + test. The pre-PR command
-make test     # tests only
-make lint-docs  # only the tests that hold the docs to the code
-make fmt      # gofmt -w
-make build    # build ./relay
-make hooks    # once per clone: install the git hooks
-
-make release VERSION=x.y.z   # cut a release; see below
-```
+The list is [Commands](../../AGENTS.md#commands), and `make help` prints it.
 
 ## The fresh-clone property
 
@@ -36,8 +25,13 @@ present.
 To check you have not broken it:
 
 ```bash
-env PATH="/usr/bin:/bin:$(dirname $(command -v go))" go test ./...
+make check-fresh
 ```
+
+It runs the suite with `PATH` cut to the system directories and wherever `go`
+itself lives, so no coding CLI is found however it was installed. Run it before
+a PR that touches `config.go`, `init.go` or a runtime, and say in the PR that
+you did.
 
 ## The git hooks
 
@@ -56,27 +50,42 @@ an updated hook reaches you with a `git pull`.
 4. **`go test ./...`** when Go changed, and also when only docs changed,
    because the drift tests read the docs. Without `-race`, for speed.
 
-**commit-msg** scans the message for the same connector shapes, with the same
-allow-list from `.githooks/lib.sh`. A message is where a failing `check` gets
-pasted, and that output quotes the credential.
+**commit-msg** scans the message for the same connector shapes. A message is
+where a failing `check` gets pasted, and that output quotes the credential.
 
-The hooks only run where someone ran `make hooks`, and `--no-verify` skips
-them. CI is the backstop for files; nothing is a backstop for a PR body.
+Both hooks call `scripts/scan-secrets.sh`, and so do the `secrets` job in
+`ci.yml` and the pull-request text check. It reads files named on the command
+line or text on stdin, prints what it found, and exits 1. The shapes and the
+allow-list are in `.githooks/lib.sh`, which is the one home for both: four
+scanners with four copies of a regular expression is four copies that drift.
+Pass `-q` to suppress the value, which is what the pull-request check does so a
+public run log does not publish the credential a second time.
+
+The hooks only run where someone ran `make hooks` — the `SessionStart` hook in
+`.claude/settings.json` runs it for an agent session — and `--no-verify` skips
+them. CI is the backstop for files, and `pr-text.yml` is the backstop for a
+pull request title and body.
 
 ## CI
 
-`.github/workflows/ci.yml` is manual-dispatch only. Everything it does runs
-locally with nothing but Go, and runner time is a cost this repo does not
-spend per commit.
+`.github/workflows/ci.yml` runs on every pull request. It runs gofmt, `go vet`,
+`go test -race`, a build, and a scan for credential-shaped strings across
+tracked files, on a machine with no coding CLI installed. That last part is
+what a local run cannot prove, since your machine has the CLI.
+
+A `concurrency` group keyed on the pull request means a new push cancels the
+run it superseded, so a branch costs about a minute of runner time however many
+times it is pushed.
+
+For a branch with no pull request open:
 
 ```bash
 gh workflow run ci.yml --ref <branch>
 gh run watch
 ```
 
-It runs gofmt, `go vet`, `go test -race`, a build, and a scan for
-credential-shaped strings across tracked files, on a machine with no coding
-CLI installed.
+`.github/workflows/pr-text.yml` runs alongside it, on the pull request title
+and body. See [The git hooks](#the-git-hooks).
 
 ## Versions
 
@@ -139,10 +148,12 @@ error: make release needs a version. It is never guessed.
 
   a fix, or docs only   make release VERSION=0.2.0
   anything new          make release VERSION=0.3.0
-```
+  breaking              (0.x — say so in the release notes; there is
+                         no 1.0 until the interface settles)
 
-The number already on `master` is a suggestion, chosen before anyone knew
-what the batch would hold.
+  The number on master (0.2.0) is the default only if the batch above is
+  what it was chosen for. Read it before deciding.
+```
 
 **2. It checks first.** Clean tree, on `master`, in sync with
 `origin/master`, no such tag locally or on origin, a version no lower than
@@ -199,8 +210,11 @@ comments. The repo is public and a message outlives the branch: no connector
 URL, no internal hostname, no absolute path off your machine, nobody else's
 name. Redact rather than omit: "HTTP 401 from the configured endpoint" carries
 what the value would. The `commit-msg` hook catches connector shapes in a
-message; a PR title and body are checked by you or by nobody.
+message, and `.github/workflows/pr-text.yml` catches them in a PR title and
+body, on every edit. A red check there means revoke the credential in relay
+before anything else, then edit the text.
 
+`.github/pull_request_template.md` opens with these headings already in place.
 A PR summary covers:
 
 - **What changed, and why**: the problem, not just the edit.

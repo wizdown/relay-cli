@@ -1,18 +1,29 @@
 name: CI
 
-# Manual only. These jobs are not run automatically on push or pull request —
-# runner time is a cost this project does not want to spend on every commit.
+# On every pull request, and on demand for any branch.
 #
-# Run it from the Actions tab ("Run workflow"), or:
+# What this proves that a local `make check` cannot: the tests still pass on a
+# machine with no coding CLI installed. That is easy to break and hard to notice
+# on your own machine, because your machine has the CLI. `make check-fresh` is
+# the local approximation; this is the real thing.
+#
+# It runs per pull request rather than per commit, and a new push cancels the
+# run it superseded, so a branch costs about a minute of runner time however
+# many times it is pushed. Standard runners are free for a public repository.
+#
+# workflow_dispatch stays for a clean-machine second opinion on a branch with no
+# pull request open:
 #   gh workflow run ci.yml --ref <branch>
-#
-# Everything here also runs locally with no setup beyond Go (`make check`), and
-# that is what to run before a merge. This workflow is for when you want a
-# clean-machine second opinion — in particular that the tests still pass with no
-# coding CLI installed, which is easy to break and hard to notice on your own
-# machine.
 on:
+  pull_request:
   workflow_dispatch:
+
+# One run per pull request. Pushing again cancels the run for the commit nobody
+# is waiting on any more; a dispatched run is keyed on its ref instead, so two
+# branches never cancel each other.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -60,13 +71,15 @@ jobs:
       # Every relay connector URL is a live credential. Placeholders are fine;
       # anything that looks like a real secret is not. This is a backstop for
       # the .gitignore, not a replacement for it.
+      #
+      # The shapes and the allow-list are .githooks/lib.sh, which the hooks read
+      # too — a third copy here is a third copy that drifts.
       - name: scan for connector secrets
         run: |
-          if git ls-files -z | xargs -0 grep -nE 'wzh_[A-Za-z0-9_-]{6,}' \
-               | grep -viE 'wzh_(REPLACE_ME|REDACTED|secret_?value|supersecretvalue|longsecrettoken|someotherunknownsecret|abcdefghijkl|a{6,}|b{6,}|abc)' ; then
+          if ! git ls-files -z | xargs -0 scripts/scan-secrets.sh; then
             echo
             echo "A connector-shaped secret was found in a tracked file."
-            echo "Use relay.example.com and wzh_REPLACE_ME in committed files."
+            . .githooks/lib.sh && echo "$PLACEHOLDER_HINT"
             exit 1
           fi
           echo "no credential-shaped strings in tracked files"
