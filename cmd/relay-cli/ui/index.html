@@ -78,7 +78,7 @@
   }
   .s-idle { color: var(--dim); } .s-polling { color: var(--run); }
   .s-running { color: var(--accent); } .s-paused { color: var(--err); }
-  .s-ceiling, .s-cooldown, .s-at_limit { color: var(--warn); } .s-probe_failing { color: var(--err); }
+  .s-ceiling, .s-cooldown, .s-at_limit, .s-owner_paused { color: var(--warn); } .s-probe_failing { color: var(--err); }
   .s-stopped, .s-starting { color: var(--faint); }
   .card-line {
     display: flex; justify-content: space-between; gap: 8px;
@@ -367,7 +367,11 @@ function renderCards() {
     const l1 = el("div", "card-line");
     const q = w.last_poll;
     const bucket = el("span", "bucket");
-    if (q) {
+    if (w.state === "owner_paused") {
+      // The counts from the last poll before the pause are stale, and showing
+      // work waiting beside a worker that is not taking it reads as a stall.
+      bucket.className = "bucket warntext"; bucket.textContent = "paused by owner";
+    } else if (q) {
       // `at_limit` alone is not "work is being withheld": an agent at its ceiling
       // with an empty backlog has nothing held back, and labelling that "withheld"
       // sends whoever is debugging a quiet fleet looking for a queue that is not
@@ -917,7 +921,10 @@ function doingIdle(w) {
   const f = el("div", "facts");
   const cd = countdown(w);
   if (cd) f.append(el("span", "", cd));
-  const q = w.last_poll;
+  // An owner pause shows its own detail below, and the counts from the last poll
+  // before it are stale: work waiting beside a worker that is not taking it reads
+  // as a stall.
+  const q = w.state === "owner_paused" ? null : w.last_poll;
   if (q) f.append(el("span", "", "resume " + q.resume + " · attn " + q.attention + " · todo " + q.todo));
   else if (w.last_poll_error) f.append(el("span", "errtext", "probe failing"));
   if (w.detail) f.append(el("span", "warntext", w.detail));

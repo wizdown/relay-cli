@@ -199,6 +199,11 @@ type WorkerRunner struct {
 	// the loop goroutine, so neither is under mu.
 	interval   time.Duration
 	lastWorkAt time.Time
+	// ownerPaused is what the previous poll concluded about relay's pause. The
+	// status cannot answer that: every tick sets StatePolling before it probes.
+	// It is here so the pause and the resume are each logged once rather than
+	// once per poll, which overnight is a few thousand identical lines.
+	ownerPaused bool
 
 	mu     sync.Mutex
 	status WorkerStatus
@@ -263,6 +268,36 @@ func (r *WorkerRunner) setState(state, detail string) {
 	defer r.mu.Unlock()
 	r.status.State = state
 	r.status.Detail = detail
+}
+
+// ownerPauseDetail is what the cards, the fleet board and worker.log all say
+// about a pause. One string, because the reader's next action is the same
+// wherever they read it: resume the agent in relay, and touch nothing here.
+const ownerPauseDetail = "paused by owner in relay — resume it there and this worker picks up on its next poll"
+
+// holdForOwnerPause parks the worker on a pause relay is enforcing.
+//
+// Nothing is counted and nothing is written to disk: the probe-failure counter
+// goes back to zero, because a refusal that names the pause is proof the
+// endpoint and the credential both work. The loop keeps polling on the idle
+// ladder, so a resume in the console brings the worker back with no human at
+// this machine.
+func (r *WorkerRunner) holdForOwnerPause() {
+	first := !r.ownerPaused
+	r.ownerPaused = true
+	writeCounter(r.probeFailFile(), 0)
+	now := time.Now().UTC()
+	r.mu.Lock()
+	r.status.ProbeFailures = 0
+	r.status.LastPollError = ""
+	r.status.LastPollAt = &now
+	r.mu.Unlock()
+	r.setState(StateOwnerPaused, ownerPauseDetail)
+	// Once per pause, not once per poll: a fleet paused overnight would otherwise
+	// write the same line into every worker.log a few thousand times.
+	if first {
+		r.warn("%s", ownerPauseDetail)
+	}
 }
 
 func readCounter(path string) int {
@@ -368,6 +403,18 @@ func (r *WorkerRunner) tick(ctx context.Context) tickResult {
 	queue, err := r.prober.GetAvailableTasks(pollCtx)
 	cancel()
 
+	// A pause is relay answering, not failing. The endpoint was reached, the
+	// credential was read, and the agent comes back the moment its owner resumes
+	// it — so this is a state to sit in, not a fruitless cycle to count. Counted,
+	// ten of them tripped the probe breaker and wrote a local PAUSED file that
+	// outlives the pause: an owner who paused a fleet at 17:00 and resumed it at
+	// 09:00 found every worker still down, with a log telling them to go fix a
+	// credential that was never broken.
+	if err != nil && AgentPaused(err) {
+		r.holdForOwnerPause()
+		return tickQuiet
+	}
+
 	if err != nil {
 		n := readCounter(r.probeFailFile()) + 1
 		writeCounter(r.probeFailFile(), n)
@@ -385,13 +432,25 @@ func (r *WorkerRunner) tick(ctx context.Context) tickResult {
 		// A revoked credential or a dead host would otherwise fail forever, twice
 		// a minute. Trip the breaker and make a human look.
 		if maxProbeFailures > 0 && n >= maxProbeFailures {
-			r.selfPause(fmt.Sprintf("%d consecutive probe failures — fix the endpoint/credential, then remove the PAUSED file.\n  last error: %s", n, Scrub(err.Error())))
+			// A deleted agent is the one probe failure with a different fix, and it
+			// is the opposite of a pause: that credential is never served again, so
+			// it counts to the breaker like any other, and saying so saves the
+			// operator a hunt for a URL that is not wrong.
+			fix := "fix the endpoint/credential"
+			if AgentNotFound(err) {
+				fix = "this agent is not in relay — create one and issue a new credential"
+			}
+			r.selfPause(fmt.Sprintf("%d consecutive probe failures — %s, then remove the PAUSED file.\n  last error: %s", n, fix, Scrub(err.Error())))
 			return tickHold
 		}
 		r.setState(StateProbeErr, fmt.Sprintf("%d consecutive probe failures", n))
 		return tickHold
 	}
 
+	if r.ownerPaused {
+		r.ownerPaused = false
+		r.log("relay is serving this agent's credential again — resumed by its owner")
+	}
 	writeCounter(r.probeFailFile(), 0)
 	now := time.Now().UTC()
 	r.mu.Lock()

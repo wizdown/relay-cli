@@ -5,6 +5,16 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- An agent paused in Relay is a worker state, not a probe failure. The worker
+  shows `owner paused`, launches nothing, and keeps polling, so resuming the
+  agent in Relay brings it back with nothing to do on this machine. It used to
+  count toward the probe breaker, which after ten polls wrote a local `PAUSED`
+  file that outlived the pause.
+- `relay check` reports a paused agent as `paused` and passes. It used to print
+  `FAIL` and name the credential.
+- The probe breaker names a removed agent when Relay says the agent is gone,
+  instead of pointing at the endpoint and the credential.
+
 ## v0.4.1
 
 - Claude workers pre-allow relay's tools by server prefix (`mcp__relay`)

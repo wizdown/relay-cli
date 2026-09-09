@@ -112,8 +112,9 @@ The page reads each CLI's event stream, so a session appears line by line:
 ```
 
 - **Worker cards**: state (`idle · polling · running · cooldown · ceiling ·
-  at limit · paused · probe failing`), the last poll's counts, runs against
-  the hourly ceiling, cost or tokens so far, and a countdown to the next poll.
+  at limit · paused · owner paused · probe failing`), the last poll's counts,
+  runs against the hourly ceiling, cost or tokens so far, and a countdown to the
+  next poll.
 - **The fleet board**: a row per worker with its claimed task, current tool
   call, and spend, tokens and time against their caps.
 - **The spend ledger**: the last hour by worker and by task: cost per run,

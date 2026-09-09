@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -501,5 +502,136 @@ func TestBothDirectionsOfTheRateChangeAreLogged(t *testing.T) {
 	// above in the noise they exist to cut through.
 	if note := pollRateNote(idle, idle, time.Hour); note != "" {
 		t.Errorf("an unchanged rate logged %q, want silence", note)
+	}
+}
+
+// ── an owner pause is a state, not a failure ────────────────────────────────
+
+// pausedRelay refuses every exchange the way relay's principal gate refuses a
+// paused agent's credential: 403 with the code, from the initialize a poll
+// starts with.
+func pausedRelay(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"errorCode":"relay_agent_paused","errorDescription":"This agent is paused by its owner."}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func pausedRunner(t *testing.T) *WorkerRunner {
+	t.Helper()
+	r, _ := newTestRunner(t, &fakeRuntime{script: "true"}, &Worker{})
+	r.prober = NewProber(pausedRelay(t).URL)
+	return r
+}
+
+// The whole point. A pause is relay answering, so the breaker must not count it:
+// counted, the tenth poll wrote a local PAUSED file that outlives the pause, and
+// resuming the agent in the console left the worker down until someone deleted
+// that file by hand.
+func TestOwnerPauseNeverTripsTheProbeBreaker(t *testing.T) {
+	r := pausedRunner(t)
+	for i := 0; i < maxProbeFailures+2; i++ {
+		if res := r.tick(context.Background()); res != tickQuiet {
+			t.Fatalf("poll %d returned %v, want tickQuiet — a pause is polled through, not held", i+1, res)
+		}
+	}
+	if _, err := os.Stat(r.pausedFile()); err == nil {
+		t.Fatal("a pause in relay wrote a local PAUSED file, which outlives the pause and needs a human to remove")
+	}
+	s := r.Status()
+	if s.ProbeFailures != 0 {
+		t.Errorf("probe_failures = %d, want 0 — a refusal that names the pause proves the credential works", s.ProbeFailures)
+	}
+	if s.State != StateOwnerPaused {
+		t.Errorf("state = %q, want %q", s.State, StateOwnerPaused)
+	}
+	if !strings.Contains(s.Detail, "paused by owner") {
+		t.Errorf("detail = %q, want it to name the owner's pause", s.Detail)
+	}
+	if s.LastPollError != "" {
+		t.Errorf("last_poll_error = %q, want empty — the dashboard would read it as a broken endpoint", s.LastPollError)
+	}
+	if len(r.readRuns()) != 0 {
+		t.Error("a paused agent launched a run")
+	}
+}
+
+// A pause that logged every poll would write the same line into worker.log a few
+// thousand times overnight. Once on the way in, once on the way out.
+func TestOwnerPauseIsAnnouncedOnceAndSoIsTheResume(t *testing.T) {
+	r, bus := newTestRunner(t, &fakeRuntime{script: "true"}, &Worker{})
+	r.prober = NewProber(pausedRelay(t).URL)
+	for i := 0; i < 3; i++ {
+		r.tick(context.Background())
+	}
+
+	// Now relay serves the credential again, with an empty queue.
+	free := queueStub(t, `{"resume_total":0,"attention_total":0,"todo_total":0,"attention":[]}`)
+	defer free.Close()
+	r.prober = NewProber(free.URL)
+	r.tick(context.Background())
+
+	var pauses, resumes int
+	for _, e := range bus.History() {
+		if e.Kind != KindLog {
+			continue
+		}
+		if strings.Contains(e.Text, "paused by owner") {
+			pauses++
+		}
+		if strings.Contains(e.Text, "resumed by its owner") {
+			resumes++
+		}
+	}
+	if pauses != 1 {
+		t.Errorf("logged the pause %d times over 3 polls, want 1", pauses)
+	}
+	if resumes != 1 {
+		t.Errorf("logged the resume %d times, want 1 — a fleet coming back is the line a watcher waits for", resumes)
+	}
+}
+
+// The credential is fine, so the worker picks straight back up: no restart, no
+// file to delete, and the very next poll launches.
+func TestAResumeIsPickedUpWithNoHumanAction(t *testing.T) {
+	r := pausedRunner(t)
+	r.tick(context.Background())
+
+	free := queueStub(t, `{"resume_total":0,"attention_total":0,"todo_total":1,"attention":[]}`)
+	defer free.Close()
+	r.prober = NewProber(free.URL)
+	if res := r.tick(context.Background()); res != tickWorked {
+		t.Fatalf("the poll after a resume returned %v, want tickWorked", res)
+	}
+	if got := len(r.readRuns()); got != 1 {
+		t.Fatalf("%d run(s) after the resume, want 1", got)
+	}
+	if s := r.Status(); s.State == StateOwnerPaused {
+		t.Error("the worker is still showing the pause after relay resumed it")
+	}
+}
+
+// The opposite refusal. A deleted agent's credential is never served again, so
+// it counts like any other probe failure and trips the breaker — and the pause
+// wired above must not swallow it.
+func TestADeletedAgentStillTripsTheProbeBreaker(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"errorCode":"relay_agent_not_found","errorDescription":"No such agent."}`))
+	}))
+	defer srv.Close()
+	r, _ := newTestRunner(t, &fakeRuntime{}, &Worker{})
+	r.prober = NewProber(srv.URL)
+	for i := 0; i < maxProbeFailures; i++ {
+		r.tick(context.Background())
+	}
+	if _, err := os.Stat(r.pausedFile()); err != nil {
+		t.Fatal("a removed agent did not trip the probe breaker, so the worker polls a dead credential forever")
+	}
+	if d := r.Status().Detail; !strings.Contains(d, "this agent is not in relay") {
+		t.Errorf("the breaker says %q, which sends the operator after a credential that is not the problem", d)
 	}
 }

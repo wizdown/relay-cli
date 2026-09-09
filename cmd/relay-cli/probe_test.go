@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -227,5 +228,106 @@ func TestQueueStateAtLimitWithNoAttentionIsNotActionable(t *testing.T) {
 	}
 	if q.Withheld() != 11 {
 		t.Errorf("Withheld() = %d, want 11", q.Withheld())
+	}
+}
+
+// refusingRelay answers the very first exchange — the initialize a poll starts
+// with — the way relay's principal gate refuses a credential it will not serve:
+// a status and one of its error envelopes, before any tool call happens.
+func refusingRelay(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+const pausedEnvelope = `{"errorCode":"relay_agent_paused",` +
+	`"errorDescription":"This agent is paused by its owner, so its credential is not being served."}`
+
+// The status and the code both survive the trip, because the loop branches on
+// them: flattening them into a string is what made a pause read as a broken
+// credential.
+func TestProbeSurfacesTheStatusAndErrorCode(t *testing.T) {
+	srv := refusingRelay(t, http.StatusForbidden, pausedEnvelope)
+	_, err := NewProber(srv.URL).GetAvailableTasks(context.Background())
+	if err == nil {
+		t.Fatal("a refused credential must still be an error")
+	}
+	var pe *ProbeError
+	if !errors.As(err, &pe) {
+		t.Fatalf("want a *ProbeError the caller can read, got %T: %v", err, err)
+	}
+	if pe.Status != http.StatusForbidden || pe.Code != "relay_agent_paused" {
+		t.Errorf("got status %d code %q, want 403 / relay_agent_paused", pe.Status, pe.Code)
+	}
+	if !strings.Contains(pe.Detail, "paused by its owner") {
+		t.Errorf("the envelope's description was dropped: %q", pe.Detail)
+	}
+	if !AgentPaused(err) {
+		t.Error("AgentPaused did not recognise relay's pause refusal")
+	}
+	if AgentNotFound(err) {
+		t.Error("a pause was read as a deleted agent")
+	}
+}
+
+// The deleted-agent refusal is the opposite case, and the two must never be
+// confused: one waits for a resume, the other trips the breaker.
+func TestProbeTellsAPauseFromADeletedAgent(t *testing.T) {
+	srv := refusingRelay(t, http.StatusForbidden,
+		`{"errorCode":"relay_agent_not_found","errorDescription":"No such agent."}`)
+	_, err := NewProber(srv.URL).GetAvailableTasks(context.Background())
+	if !AgentNotFound(err) {
+		t.Fatalf("AgentNotFound did not recognise the refusal: %v", err)
+	}
+	if AgentPaused(err) {
+		t.Error("a deleted agent was read as a pause, so its credential would never trip the breaker")
+	}
+}
+
+// The check is the status AND the code. A relay too old to send either still
+// answers 403 for reasons that are genuine failures, and an unrelated host can
+// answer anything at all — neither may be waved through as a pause.
+func TestProbeDoesNotInventAPause(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"403 with no envelope", http.StatusForbidden, "forbidden"},
+		{"403 with another code", http.StatusForbidden, `{"errorCode":"forbidden"}`},
+		{"the code on the wrong status", http.StatusUnauthorized, pausedEnvelope},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := refusingRelay(t, tc.status, tc.body)
+			_, err := NewProber(srv.URL).GetAvailableTasks(context.Background())
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			if AgentPaused(err) {
+				t.Errorf("%v was read as an owner pause", err)
+			}
+		})
+	}
+}
+
+// A refusal is printed to a log and served to a browser like any other probe
+// error, so the credential must not ride along in the description relay echoes.
+func TestProbeRefusalsAreScrubbed(t *testing.T) {
+	InstallSecrets([]*Worker{{Endpoint: "https://relay.example/relay/mcp/c/wzh_supersecretvalue"}})
+	defer InstallSecrets(nil)
+
+	srv := refusingRelay(t, http.StatusForbidden,
+		`{"errorCode":"relay_agent_paused","errorDescription":"paused: https://relay.example/relay/mcp/c/wzh_supersecretvalue"}`)
+	_, err := NewProber(srv.URL).GetAvailableTasks(context.Background())
+	if !AgentPaused(err) {
+		t.Fatalf("want the pause refusal, got %v", err)
+	}
+	if strings.Contains(err.Error(), "wzh_supersecretvalue") {
+		t.Fatalf("the credential leaked into a refusal: %v", err)
 	}
 }

@@ -138,7 +138,7 @@ Guards that need no config:
 | Empty queue | No launch. An idle worker costs one HTTP request per poll. |
 | Idle backoff | A worker polls at `poll_seconds` while it has work and for 5 minutes after its last task. Each quiet poll after that doubles the wait, up to `idle_poll_seconds`. Work resets it, and every change of rate is logged. |
 | `mkdir` lock | One cycle per worker at a time. |
-| Probe breaker | 10 consecutive probe failures (revoked credential, dead host) pause the worker. |
+| Probe breaker | 10 consecutive probe failures (revoked credential, dead host) pause the worker. An agent paused in Relay is a state, not a failure: it does not count, and the worker resumes when the agent does. |
 | Budget breaker | 2 consecutive spend-cap or plan-limit kills pause the worker. |
 | Attention-stall breaker | 3 consecutive completed runs that leave the same task needing this agent's attention pause the worker. Resolve the task in Relay. |
 | One task per cycle | A session ends at a hand-back. |

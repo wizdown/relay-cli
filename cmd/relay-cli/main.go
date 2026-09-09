@@ -750,8 +750,17 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 	}
 	wg.Wait()
 
-	failed, unauthorized, answered := 0, false, false
+	failed, unauthorized, answered, paused := 0, false, false, 0
 	for _, r := range results {
+		// A paused agent is not a broken worker. Relay reached, credential read,
+		// and the only thing to do about it is in the console — so it is reported
+		// as its own outcome and does not fail the check.
+		if r.err != nil && AgentPaused(r.err) {
+			paused++
+			fmt.Fprintf(out, "  %-24s paused  by its owner in relay — resume it there\n", r.worker.Name)
+			writeWorkdirLine(out, r.worker, cfg.RelayDir)
+			continue
+		}
 		if r.err != nil {
 			failed++
 			// Scrub: a probe error can quote the URL it failed on, and that URL
@@ -815,6 +824,9 @@ func check(configPath string, timeout time.Duration, out io.Writer) error {
 	// the reading people most often mistake for a failure.
 	fmt.Fprintf(out, "all %d worker(s) ready. A queue of 0 means the credential works and there is\n"+
 		"simply no work waiting. Nothing was launched and nothing was spent.\n", len(cfg.Workers))
+	if paused > 0 {
+		fmt.Fprintf(out, "Paused in relay: %d. A paused agent claims nothing until it is resumed there.\n", paused)
+	}
 	return nil
 }
 

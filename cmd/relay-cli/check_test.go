@@ -350,3 +350,45 @@ func TestCheckFailsOnAnUnusableRuntimeAlone(t *testing.T) {
 		t.Errorf("check said the fleet is ready with a runtime it cannot run:\n%s", out.String())
 	}
 }
+
+// A paused agent is the case check most easily gets wrong: relay answers 403,
+// which looks exactly like a broken credential to anything reading the status
+// alone. The credential is fine, so the check passes and says where the fix is.
+func TestCheckNamesAPausedAgentInsteadOfFailing(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(`{"errorCode":"relay_agent_paused","errorDescription":"This agent is paused by its owner."}`))
+	}))
+	defer relay.Close()
+
+	var out bytes.Buffer
+	if err := check(writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa"), 5*time.Second, &out); err != nil {
+		t.Fatalf("a paused agent is not a failed check: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, "FAIL") {
+		t.Errorf("a pause was reported as a failure, which sends the reader after the credential:\n%s", got)
+	}
+	for _, want := range []string{"paused", "resume it there", "Paused in relay: 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("check output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// A 403 that is not relay's pause is still a failure. Widening the pause path to
+// the status alone would hide a genuinely refused credential behind "paused".
+func TestCheckStillFailsOnAPlain403(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer relay.Close()
+
+	var out bytes.Buffer
+	if err := check(writeConfigFor(t, relay.URL+"/c/wzh_aaaaaaaa"), 5*time.Second, &out); err == nil {
+		t.Fatal("a 403 with no pause code must still fail the check")
+	}
+	if !strings.Contains(out.String(), "FAIL") {
+		t.Errorf("the refused worker should be listed as failing:\n%s", out.String())
+	}
+}
