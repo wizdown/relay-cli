@@ -85,7 +85,7 @@ terminal shows the run:
 ```text
 2026-02-04T14:22:08Z [worker-claude] cycle start: runtime=claude resume=0 attention=0 todo=1 cwd=/Users/you/code/scratch
 2026-02-04T14:22:10Z [worker-claude]   · session 9f31c8a2 started (model claude-sonnet-5)
-2026-02-04T14:22:11Z [worker-claude]   → relay:claim_task  task_id=42
+2026-02-04T14:22:11Z [worker-claude]   → relay:open_task  task_id=42
 2026-02-04T14:23:02Z [worker-claude] cycle complete
 ```
 

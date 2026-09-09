@@ -42,23 +42,19 @@ import (
 var workerPrompt = envOr("WORKER_PROMPT",
 	"Poll relay for one available task, claim it, and work it to completion. If no task is available, say so and stop immediately.")
 
-// Every relay agent-surface tool, named explicitly. Headless runs never see an
-// approval prompt, so anything not pre-allowed is silently denied — relay access
-// must not depend on the model's judgement about an unfamiliar tool.
+// Relay's whole agent surface, allowed by server prefix. Headless runs never see
+// an approval prompt, so anything not pre-allowed is silently denied — relay
+// access must not depend on the model's judgement about an unfamiliar tool.
 //
-// This lists the WHOLE surface, including the capability-gated fleet verbs
-// (create_task, delegate_task_to_agent, answer_task, …). Listing a tool the
-// agent was not granted is harmless: relay hides it from tools/list and refuses
-// the call anyway, so this allowlist is a floor, never a grant. Omitting one is
-// NOT harmless — the agent sees the tool relay offered it, calls it, and the CLI
-// denies it with no useful error.
-//
-// get_subtask_handoff / get_subtask_document are the sharp end of that: relay's
-// own playbook tells an orchestrator to read a handoff BEFORE answering or
-// reviewing it. Omit them and the supervisor either stalls at the read or
-// resolves blind — with the denial visible only in the run's permission_denials,
-// after it has been paid for.
-const relayAllowedTools = "mcp__relay__get_available_tasks mcp__relay__claim_task mcp__relay__heartbeat mcp__relay__get_task_context mcp__relay__update_task_context mcp__relay__add_comment mcp__relay__ask_question mcp__relay__request_review mcp__relay__release_task mcp__relay__get_task_document mcp__relay__update_task_document mcp__relay__attach_new_document_to_task mcp__relay__request_document_deletion mcp__relay__create_task mcp__relay__link_document_to_task mcp__relay__unlink_document_from_task mcp__relay__delegate_task_to_agent mcp__relay__undelegate_task mcp__relay__list_agents mcp__relay__get_subtask_handoff mcp__relay__get_subtask_document mcp__relay__answer_task mcp__relay__approve_task mcp__relay__request_changes"
+// `mcp__relay` is Claude Code's server-level allow: every tool that server
+// offers, whatever it is called. A named list said the same thing and could go
+// stale. Either form is a floor, never a grant — relay hides a tool the agent
+// was not granted from tools/list and refuses the call anyway — but a floor
+// with a hole in it fails silently. Relay renamed six verbs when it merged its
+// agent surface to 18, and every named entry that moved became a denial visible
+// only in the run's permission_denials, after the session was paid for. The
+// prefix cannot drift.
+const relayAllowedTools = "mcp__relay"
 
 // The CLI's own tools a worker needs to do the work, named for the same reason
 // the relay tools are: a headless run has no prompt to approve anything on, so

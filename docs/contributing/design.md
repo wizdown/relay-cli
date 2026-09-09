@@ -103,7 +103,7 @@ that there was nothing to take. Then it does it again on the next tick.
 
 So the probe reads `at_limit` and `QueueState.Actionable` answers the only
 question the loop asks. At the limit that is `attention` alone. Those tasks are
-already the agent's own: it works them with `get_task_context` and needs no free
+already the agent's own: it works them with `open_task` and needs no free
 slot, and they are how an orchestrator at its ceiling keeps its fan-out moving.
 Suppressing a launch for them would strand a supervisor behind a lease timeout,
 which is the stall the `attention` bucket exists to prevent.
@@ -150,7 +150,7 @@ a worker that claims two tasks and tells nobody.
 The binary embeds a copy so a downloaded `relay` works alone, and prefers
 `~/.relay/worker-rules.md` when one exists. The Relay workflow is deliberately
 not in it: Relay serves that as its MCP server's `instructions`, and each
-agent's `instructions_md` is repeated in every `get_task_context`, so it
+agent's `instructions_md` is repeated in every `open_task`, so it
 reaches an agent mid-session and stays correct when Relay changes.
 
 ## The startup check

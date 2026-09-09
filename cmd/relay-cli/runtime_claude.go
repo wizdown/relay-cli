@@ -576,7 +576,7 @@ func blocksToEvents(raw json.RawMessage) []SessionEvent {
 }
 
 // toolTarget picks the one argument that says what a tool call is DOING. A tool
-// call rendered as its name alone ("Edit", "mcp__relay__claim_task") is nearly
+// call rendered as its name alone ("Edit", "mcp__relay__open_task") is nearly
 // content-free; with its target it becomes a readable narration of the run.
 func toolTarget(raw json.RawMessage) string {
 	if len(raw) == 0 {

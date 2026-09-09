@@ -299,7 +299,7 @@ const el = (tag, cls, text) => {
   if (text != null) n.textContent = text;
   return n;
 };
-// mcp__relay__claim_task reads as relay:claim_task, which is what it is.
+// mcp__relay__open_task reads as relay:open_task, which is what it is.
 const shortTool = (t) => (t || "").replace(/^mcp__([a-z0-9_-]+)__/i, "$1:");
 const money = (n) => "$" + (n || 0).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 // A total or a rate, where the cents are the story and the fourth decimal is
