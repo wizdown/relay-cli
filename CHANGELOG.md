@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.4.2
+
 - An agent paused in Relay is a worker state, not a probe failure. The worker
   shows `owner paused`, launches nothing, and keeps polling, so resuming the
   agent in Relay brings it back with nothing to do on this machine. It used to
