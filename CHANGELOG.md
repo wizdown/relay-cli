@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.4.1
+
 - Claude workers pre-allow relay's tools by server prefix (`mcp__relay`)
   instead of a named list. Relay renamed six of its agent verbs; every name a
   list missed was denied mid-run, and the denial reached the operator only in
