@@ -27,6 +27,21 @@ with no coding CLI installed, which is what `make check-fresh` proves; keep it
 that way. See
 [The fresh-clone property](docs/contributing/development.md#the-fresh-clone-property).
 
+## For agents
+
+- **`.claude/skills/` holds the procedures.** One per thing you are asked for
+  repeatedly: `config-field`, `add-runtime`, `docs-change`, `pre-pr`, `release`,
+  `steward`. Each links the contributing page it came from rather than restating
+  it. [What the directory holds](.claude/README.md).
+- **`make check-fresh` is the check your machine cannot fake.** A session with a
+  coding CLI installed passes `make check` on a tree that has broken the
+  fresh-clone property.
+- **Your PR title and body are scanned.** `.github/workflows/pr-text.yml` runs
+  `scripts/scan-secrets.sh` over both, on every edit. Run it yourself before
+  posting: a red check means the credential is already public.
+- **The git hooks install themselves** at session start, from
+  `.claude/settings.json`.
+
 ## Using the binary
 
 `make build` writes `./relay`. Everything a user can do is in `relay help`,
@@ -274,7 +289,9 @@ PR.
 
 ## Before you commit
 
-`make hooks` once per clone. Then:
+The hooks run these first, where they are installed:
+[The git hooks](docs/contributing/development.md#the-git-hooks). An agent
+session installs them itself; a human clone needs `make hooks` once.
 
 1. No credentials in the diff or the message.
 2. `make check` passes.
@@ -286,7 +303,8 @@ PR.
 7. No build output is staged. `git status` shows no `relay` binary.
 
 PR summary format:
-[Pull requests](docs/contributing/development.md#pull-requests).
+[Pull requests](docs/contributing/development.md#pull-requests). The template in
+`.github/pull_request_template.md` opens with its headings.
 
 ## Versions and releases
 
@@ -298,9 +316,8 @@ whoever asked, and use the number they give back. Recommend one, but do not
 pass a version the user did not choose.
 
 CI (`ci.yml`) runs on every pull request, and on demand for a branch without
-one: `gh workflow run ci.yml --ref <branch>`. It proves the suite passes with
-no coding CLI installed. Releases publish a
-macOS Apple Silicon binary and `SHA256SUMS` as a pre-release. The whole flow is
+one: `gh workflow run ci.yml --ref <branch>`. It proves the suite passes with no
+coding CLI installed. The release flow is
 [Cutting a release](docs/contributing/development.md#cutting-a-release).
 
 ## Where to read more

@@ -5,19 +5,7 @@ there is no `go.sum`, no lockfile, and no network needed to build or test.
 
 ## Commands
 
-From the repository root:
-
-```bash
-make check    # gofmt + vet + test. The pre-PR command
-make check-fresh  # the suite with no coding CLI on PATH
-make test     # tests only
-make lint-docs  # only the tests that hold the docs to the code
-make fmt      # gofmt -w
-make build    # build ./relay
-make hooks    # once per clone: install the git hooks
-
-make release VERSION=x.y.z   # cut a release; see below
-```
+The list is [Commands](../../AGENTS.md#commands), and `make help` prints it.
 
 ## The fresh-clone property
 
