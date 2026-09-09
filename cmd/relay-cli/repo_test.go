@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,5 +80,99 @@ func TestExitStatusesAreConstantsAndMainIsTheOnlyExit(t *testing.T) {
 	if n := strings.Count(src, "os.Exit("); n != 1 {
 		t.Errorf("os.Exit is called %d times outside tests; main() is the one place. "+
 			"Return the status to dispatch instead.", n)
+	}
+}
+
+// The agent configuration under .claude/ is the repo's own copy of what
+// docs/working-directory.md tells a user to give their agent. None of it is
+// compiled, so nothing else would notice a skill with no trigger, an agent
+// file with no description, or a settings.json with a trailing comma — and the
+// failure mode is silent: the session simply does not load it.
+//
+// The link checker in docs_pages_test.go already walks these files, so a rotted
+// link fails too. This is the part it cannot see.
+
+const claudeDir = repoRoot + "/.claude"
+
+// frontMatterField reads one `key: value` line from a markdown file's leading
+// --- block. Empty when the file has no front matter or no such key. Line-based
+// on purpose: the repo has no third-party dependencies, and front matter this
+// simple does not need a YAML parser.
+func frontMatterField(body, key string) string {
+	if !strings.HasPrefix(body, "---\n") {
+		return ""
+	}
+	end := strings.Index(body[4:], "\n---")
+	if end < 0 {
+		return ""
+	}
+	for _, line := range strings.Split(body[4:4+end], "\n") {
+		if rest, ok := strings.CutPrefix(line, key+":"); ok {
+			return strings.TrimSpace(rest)
+		}
+	}
+	return ""
+}
+
+func TestAgentConfigIsWellFormed(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatalf("cannot read .claude/settings.json: %v", err)
+	}
+	var settings struct {
+		Hooks       map[string]any `json:"hooks"`
+		Permissions struct {
+			Allow []string `json:"allow"`
+			Deny  []string `json:"deny"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatalf(".claude/settings.json does not parse: %v.\n"+
+			"It is strict JSON — no comments, no trailing comma. The notes live in .claude/README.md.", err)
+	}
+	if _, ok := settings.Hooks["SessionStart"]; !ok {
+		t.Error(".claude/settings.json has no SessionStart hook. It is what installs the git " +
+			"hooks in a fresh clone, which is every agent session.")
+	}
+	if len(settings.Permissions.Deny) == 0 {
+		t.Error(".claude/settings.json denies nothing. ~/.relay/config holds live credentials.")
+	}
+
+	skills, err := filepath.Glob(filepath.Join(claudeDir, "skills", "*", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skills) == 0 {
+		t.Fatal("no skills under .claude/skills/ — the glob is wrong, not the repo")
+	}
+	for _, path := range skills {
+		body := mustRead(t, path)
+		dir := filepath.Base(filepath.Dir(path))
+		name := frontMatterField(body, "name")
+		switch {
+		case name == "":
+			t.Errorf(".claude/skills/%s/SKILL.md has no `name` in its front matter, so nothing loads it", dir)
+		case name != dir:
+			t.Errorf(".claude/skills/%s/SKILL.md is named %q; a skill's name is its directory", dir, name)
+		}
+		if frontMatterField(body, "description") == "" {
+			t.Errorf(".claude/skills/%s/SKILL.md has no `description`. The description IS the trigger: "+
+				"a skill without one is never invoked.", dir)
+		}
+	}
+
+	agents, err := filepath.Glob(filepath.Join(claudeDir, "agents", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range agents {
+		body := mustRead(t, path)
+		base := strings.TrimSuffix(filepath.Base(path), ".md")
+		if name := frontMatterField(body, "name"); name != base {
+			t.Errorf(".claude/agents/%s.md is named %q; a subagent's name is its filename", base, name)
+		}
+		if frontMatterField(body, "description") == "" {
+			t.Errorf(".claude/agents/%s.md has no `description`, so nothing knows when to invoke it", base)
+		}
 	}
 }

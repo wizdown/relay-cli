@@ -24,6 +24,31 @@ doc tests walk every `.md` file under here, so a link that rots fails the build.
 The file is strict JSON and cannot carry comments, which is why these notes are
 here.
 
+## `skills/`
+
+Each is a trigger, an ordered list of commands, and a link to the contributing
+page that holds the reasons.
+
+| Skill | Invoke it when |
+|---|---|
+| [`config-field`](skills/config-field/SKILL.md) | adding, renaming, removing or defaulting a config field |
+| [`add-runtime`](skills/add-runtime/SKILL.md) | wiring in a coding CLI, or changing an adapter |
+| [`docs-change`](skills/docs-change/SKILL.md) | any change a user notices |
+| [`pre-pr`](skills/pre-pr/SKILL.md) | before opening or updating a pull request |
+| [`release`](skills/release/SKILL.md) | "cut a release", "tag", "bump" |
+| [`steward`](skills/steward/SKILL.md) | driving a pull request to green after it is opened |
+
+`steward` is the name a PR-driving harness looks for, so an agent acting on a CI
+event here reads it first.
+
+## `agents/`
+
+[`docs-reviewer`](agents/docs-reviewer.md) reads changed paragraphs against
+[How a sentence reads](../AGENTS.md#how-a-sentence-reads) and reports. It is
+read-only, and the `docs-change` skill invokes it as its last step. The tests
+hold the docs to the code; this is the only thing that reads what a sentence
+means.
+
 ## Codex
 
 Codex reads `AGENTS.md` and gets every rule that matters. There is no

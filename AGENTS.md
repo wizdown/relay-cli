@@ -265,7 +265,8 @@ What the tests enforce (`make lint-docs` runs only these):
   exit 0, every usage error is one `error:` line on stderr with exit 2, and
   `version` and its aliases agree.
 - `repo_test.go`: no tracked file is an executable image or over 1 MiB; exit
-  statuses are the constants and `main` is the only `os.Exit`.
+  statuses are the constants and `main` is the only `os.Exit`; every skill under
+  `.claude/` has a name and a trigger, and `.claude/settings.json` parses.
 
 The pre-commit hook runs the suite when docs change. Nothing checks what a
 sentence means, so re-read the pages your change touches before you open the
