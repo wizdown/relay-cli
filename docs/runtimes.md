@@ -26,7 +26,8 @@ the plan limits of the signed-in account.
 anything launches:
 
 1. The CLI is on `PATH`.
-2. Its `--help` offers the flags the adapter needs.
+2. Its `--help` offers the flags the adapter needs. For claude that means
+   Claude Code v2.1.284 or later, which also runs every listed model.
 3. It is signed in, asked with `claude auth status --json` or
    `codex login status`. Both read stored credentials and spend nothing.
 
@@ -52,7 +53,8 @@ CLI exists. The messages each check prints are in
 - Pre-allows every Relay tool and the ordinary coding tools. Anything else is
   denied without a prompt, and each refusal is listed in `worker.log` under
   "the CLI refused these tool calls".
-- Passes `model` and `max_usd_per_run` as flags. No other argv is configurable.
+- Passes `model`, `effort` and `max_usd_per_run` as flags. No other argv is
+  configurable.
 - Appends the harness rules to the CLI's system prompt with
   `--append-system-prompt`. See
   [Harness rules](configuration.md#harness-rules).

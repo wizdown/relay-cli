@@ -10,13 +10,13 @@ import (
 // Lines captured from a real `claude -p --output-format stream-json --verbose`
 // run, trimmed to the fields this adapter reads.
 const (
-	lineInit     = `{"type":"system","subtype":"init","cwd":"/repo","session_id":"f5bb6db3-d345-48ab-929b-b2b9b278463f","model":"claude-opus-5","tools":["Read"],"mcp_servers":[{"name":"relay","status":"connected"}],"uuid":"u1"}`
-	lineInitBad  = `{"type":"system","subtype":"init","session_id":"s","model":"claude-opus-5","mcp_servers":[{"name":"relay","status":"needs-auth"}]}`
+	lineInit     = `{"type":"system","subtype":"init","cwd":"/repo","session_id":"f5bb6db3-d345-48ab-929b-b2b9b278463f","model":"claude-opus-5-5","tools":["Read"],"mcp_servers":[{"name":"relay","status":"connected"}],"uuid":"u1"}`
+	lineInitBad  = `{"type":"system","subtype":"init","session_id":"s","model":"claude-opus-5-5","mcp_servers":[{"name":"relay","status":"needs-auth"}]}`
 	lineThinkTok = `{"type":"system","subtype":"thinking_tokens","estimated_tokens":48,"session_id":"s"}`
 	lineRateLim  = `{"type":"rate_limit_event","rate_limit_info":{"status":"allowed"},"session_id":"s"}`
 	lineSummary  = `{"type":"system","subtype":"task_summary","detail":"Reading sample.txt","session_id":"s"}`
 	lineSummary0 = `{"type":"system","subtype":"task_summary","detail":null,"session_id":"s"}`
-	lineToolUse  = `{"type":"assistant","message":{"model":"claude-opus-5","content":[{"type":"tool_use","id":"t1","name":"mcp__relay__open_task","input":{"task_id":23}}]},"session_id":"s"}`
+	lineToolUse  = `{"type":"assistant","message":{"model":"claude-opus-5-5","content":[{"type":"tool_use","id":"t1","name":"mcp__relay__open_task","input":{"task_id":23}}]},"session_id":"s"}`
 	lineEdit     = `{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Edit","input":{"file_path":"/repo/index.html","old_string":"a","new_string":"b"}}]},"session_id":"s"}`
 	lineText     = `{"type":"assistant","message":{"content":[{"type":"text","text":"Claimed task 23."}]},"session_id":"s"}`
 	lineThinking = `{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"Let me look at the file."}]},"session_id":"s"}`
@@ -34,7 +34,7 @@ func TestParseInitReportsModelAndMCPStatus(t *testing.T) {
 	if len(ev) != 1 || ev[0].Type != "init" {
 		t.Fatalf("got %+v", ev)
 	}
-	if ev[0].Model != "claude-opus-5" || !strings.Contains(ev[0].Text, "relay: connected") {
+	if ev[0].Model != "claude-opus-5-5" || !strings.Contains(ev[0].Text, "relay: connected") {
 		t.Errorf("init lost the fields that matter: %+v", ev[0])
 	}
 	// A relay that is needs-auth produces a run that looks healthy and does
@@ -152,7 +152,7 @@ func TestBuildCmdStreamsAndBounds(t *testing.T) {
 	dir := t.TempDir()
 	rc := &RunContext{
 		Worker: &Worker{Name: "w", Endpoint: "https://r.example/relay/mcp/c/wzh_secretvalue",
-			RuntimeConfig: map[string]string{"model": "opus", "max_usd_per_run": "5"}},
+			RuntimeConfig: map[string]string{"model": "opus", "effort": "medium", "max_usd_per_run": "5"}},
 		WorkerDir: dir, RepoDir: dir, Prompt: "p", Rules: "r",
 		AllowTools: relayAllowedTools,
 	}
@@ -165,7 +165,7 @@ func TestBuildCmdStreamsAndBounds(t *testing.T) {
 	// without streaming there is nothing to watch.
 	for _, want := range []string{
 		"--output-format stream-json", "--verbose", "--strict-mcp-config",
-		"--permission-mode auto", "--model opus", "--max-budget-usd 5",
+		"--permission-mode auto", "--model opus", "--effort medium", "--max-budget-usd 5",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("argv missing %q:\n%s", want, joined)

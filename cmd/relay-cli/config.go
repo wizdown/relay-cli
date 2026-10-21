@@ -932,6 +932,11 @@ func movingEnumStoodDownBy(f runtimeField) string {
 func unlistedValueProblem(label, runtimeName string, f runtimeField, s string) string {
 	msg := fmt.Sprintf("  %s: runtime_config.%s is %q — it takes one of: %s",
 		label, f.Key, s, strings.Join(f.Enum, ", "))
+	// A retired value is not newer than this build but older, so the way past
+	// it is its replacement, not the escape hatch.
+	if instead, ok := f.Retired[s]; ok {
+		return msg + fmt.Sprintf("\n      %q was dropped from this relay-cli; write %s instead.", s, instead)
+	}
 	if aliases := aliasNames(f); len(aliases) > 0 {
 		msg += fmt.Sprintf("\n      or one of these, which relay-cli pins to the id beside it: %s",
 			strings.Join(aliases, ", "))

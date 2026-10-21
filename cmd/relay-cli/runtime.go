@@ -145,6 +145,11 @@ type runtimeField struct {
 	// and stays that until this table says otherwise. It also means an alias
 	// works for a CLI that has none of its own: codex takes full slugs only.
 	Aliases map[string]string
+	// Retired are values an earlier relay-cli accepted and this one does not,
+	// each mapped to what to write instead. Only the error text uses it: a
+	// retired value is refused like any unlisted one, but the operator whose
+	// config worked before the upgrade is told the replacement by name.
+	Retired map[string]string
 	// Doc is one line, used in the error a missing required field produces and
 	// in the generated reference table.
 	Doc string

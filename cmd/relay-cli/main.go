@@ -197,8 +197,8 @@ WHAT YOU HAVE TO DECIDE, per worker ---------------------------------------
   runtime     claude or codex. Install and sign in to that CLI yourself;
               none is bundled
   model       stated outright, in that runtime's own words:
-                claude: opus | sonnet | haiku
-                codex:  sol | terra | luna
+                claude: fable | opus | sonnet | haiku
+                codex:  astra | sol | luna
 
   Everything else is already bounded. Polls are free; only RUNS spend.
   Never commit ~/` + relayDirName + `/` + configFileName + `: every relay_mcp in it is live.
@@ -290,7 +290,8 @@ THE CONFIG FILE -------------------------------------------------------------
           "max_seconds_per_run": 900,  // default 900: kill for one session
 
           "runtime_config": {          // settings the RUNTIME understands
-            "model": "sonnet"          // REQUIRED, see CHOOSING A MODEL
+            "model": "opus",           // REQUIRED, see CHOOSING A MODEL
+            "effort": "medium"         // default medium
           }
         }
       ]
@@ -312,11 +313,13 @@ THE CONFIG FILE -------------------------------------------------------------
   Fields OUTSIDE runtime_config are enforced by relay-cli and mean the same for
   every runtime. Fields INSIDE are that CLI's own:
 
-  claude   model             REQUIRED    opus | sonnet | haiku
+  claude   model             REQUIRED    fable | opus | sonnet | haiku
+           effort            default medium
+                                         low | medium | high | xhigh | max
            max_usd_per_run   default 5   dollar cap inside one run, enforced
                                          by the CLI. 0 removes it
 
-  codex    model             REQUIRED    sol | terra | luna
+  codex    model             REQUIRED    astra | sol | luna
            reasoning_effort  default medium
                                          minimal | low | medium | high | xhigh.
                                          The biggest dial on what a run costs
@@ -347,13 +350,14 @@ CHOOSING A MODEL ------------------------------------------------------------
   id beside it, and the full id is accepted too. Logs and the dashboard show
   the resolved id.
 
-    opus     claude-opus-5      open-ended briefs, wide blast radius
-    sonnet   claude-sonnet-5    the usual default
-    haiku    claude-haiku-4-5   mechanical, well-specified work
+    fable    claude-fable-5-1   the hardest, longest-running briefs
+    opus     claude-opus-5-5    the usual default
+    sonnet   claude-sonnet-5-5  capable, and cheaper per run
+    haiku    claude-haiku-5-5   mechanical, well-specified work
 
-    sol      gpt-5.6-sol        ambiguous, high-value work
-    terra    gpt-5.6-terra      the balanced one
-    luna     gpt-5.6-luna       narrow, repeatable work
+    astra    gpt-6-astra        the hardest work, at the highest price
+    sol      gpt-6.1-sol        the usual default
+    luna     gpt-6-luna         narrow, repeatable work
 
   Any other name is refused when the config loads. The lists are what each
   vendor offered when this build was made; for a newer model, see ENVIRONMENT.

@@ -22,6 +22,7 @@ const fullClaudeHelp = `
       --allowedTools <list>
       --permission-mode <mode>
       --max-budget-usd <n>
+      --effort <level>
       --model <model>
       --name <name>
 `
@@ -61,10 +62,10 @@ func TestOutputFormatWithoutStreamJSONIsCaught(t *testing.T) {
 // breaks every run.
 func TestGatedFlagsMatchTheFlagsActuallyUsed(t *testing.T) {
 	dir := t.TempDir()
-	// Model and budget set, so every conditional flag is emitted too.
+	// Model, effort and budget set, so every conditional flag is emitted too.
 	rc := &RunContext{
 		Worker: &Worker{Name: "w", Endpoint: "https://r.example/c/wzh_aaaaaaaaaa",
-			RuntimeConfig: map[string]string{"model": "opus", "max_usd_per_run": "5"}},
+			RuntimeConfig: map[string]string{"model": "opus", "effort": "medium", "max_usd_per_run": "5"}},
 		WorkerDir: dir, RepoDir: dir, AllowTools: relayAllowedTools,
 	}
 	argv, err := (&claudeRuntime{}).BuildCmd(rc)
@@ -457,12 +458,13 @@ func TestLoadWorkerRulesReadsBesideTheConfig(t *testing.T) {
 func TestModelAliasesResolveToAPinnedID(t *testing.T) {
 	noRuntimeCheck(t)
 	for _, c := range []struct{ runtime, alias, want string }{
-		{"claude", "opus", "claude-opus-5"},
-		{"claude", "sonnet", "claude-sonnet-5"},
-		{"claude", "haiku", "claude-haiku-4-5"},
-		{"codex", "sol", "gpt-5.6-sol"},
-		{"codex", "terra", "gpt-5.6-terra"},
-		{"codex", "luna", "gpt-5.6-luna"},
+		{"claude", "fable", "claude-fable-5-1"},
+		{"claude", "opus", "claude-opus-5-5"},
+		{"claude", "sonnet", "claude-sonnet-5-5"},
+		{"claude", "haiku", "claude-haiku-5-5"},
+		{"codex", "astra", "gpt-6-astra"},
+		{"codex", "sol", "gpt-6.1-sol"},
+		{"codex", "luna", "gpt-6-luna"},
 	} {
 		t.Run(c.runtime+"/"+c.alias, func(t *testing.T) {
 			body := `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_aaaaaaaa",` +
@@ -494,8 +496,8 @@ func TestUnknownClaudeModelIsRefusedAtLoad(t *testing.T) {
 		t.Fatal("a model this build does not know should refuse the start")
 	}
 	for _, want := range []string{
-		"it takes one of: claude-opus-5, claude-sonnet-5, claude-haiku-4-5",
-		"opus (claude-opus-5)", // the aliases, and what each one pins to
+		"it takes one of: claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5",
+		"opus (claude-opus-5-5)", // the aliases, and what each one pins to
 		"RELAY_CLI_SKIP_MODEL_CHECK",
 	} {
 		if !strings.Contains(err.Error(), want) {

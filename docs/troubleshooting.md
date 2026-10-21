@@ -18,9 +18,10 @@ An idle worker prints nothing.
 | `FAIL … HTTP` anything else | The host answered but not as a connector. Usually the URL was truncated on the way into the config. Paste it again. |
 | `no config at …` / `has no configuration in it` | Run `relay init`. It will not overwrite an existing file, so move an empty one aside first. |
 | `is still the placeholder from …` | Replace `relay_mcp` with the connector URL and `repo_dir` with the directory the agent works in. |
-| `is not a key this version accepts` | Every key is checked by name. The error names the key you meant, or where the setting belongs (a runtime's setting inside `runtime_config`; `poll_seconds` at the top level). See [Worker fields](configuration.md#worker-fields). |
+| `is not a key this version accepts` | Every key is checked by name. The error names the key you meant, or where the setting belongs. See [Worker fields](configuration.md#worker-fields). |
 | A key is rejected with what to use *instead* | That key was removed in an earlier version. The message is the migration. |
 | `runtime_config.model is "…" — it takes one of` | Fix the typo or use a listed alias. If the model is newer than this relay-cli, set `RELAY_CLI_SKIP_MODEL_CHECK=1`. See [Model names](configuration.md#model-names). |
+| `was dropped from this relay-cli; write` | An earlier relay-cli pinned that name. Write the one it gives. |
 
 ## `relay run` refuses to start
 
@@ -37,14 +38,14 @@ An idle worker prints nothing.
 | `is not one runtime "codex" offered when this relay-cli was built` | A warning. The model check was skipped and the name went to the CLI unchecked. If every run fails at once, it was a typo. |
 | `no coding CLI found on PATH` | `relay init` wrote nothing. Install Claude Code or the Codex CLI, sign in, and run `init` again. |
 | A worker for the runtime you wanted is commented out | That CLI was not on `PATH` when `relay init` ran. Install and sign it in, then delete the `// ` from those lines. |
-| `relay is already running (pid N)` | A fleet is already up. Use it, or `kill` that pid. |
+| `relay is already running (pid N)` | Use that fleet, or `kill` its pid. |
 
 ## A run fails, or nothing launches
 
 | Symptom | Fix |
 |---|---|
 | Nothing ever launches | Check `worker.log`. Is the queue empty (`relay check`)? Is the task delegated to *this* agent? Is there a `PAUSED` file? Is the hourly ceiling reached? |
-| A config change had no effect | Restart `relay run`. `state/` is rebuilt on start. |
+| A config change had no effect | Restart `relay run`. |
 | `THE CLI IS NOT SIGNED IN` in `worker.log` | The sign-in lapsed after startup. Sign in again and restart. |
 | `THE RELAY MCP SERVER DID NOT COME UP` (codex) | The session had no Relay tools. If `relay check` passes, the installed codex cannot connect to a streamable-HTTP MCP server. Upgrade it. |
 | `PAUSED — N consecutive runs were cut off by a spend or usage limit` | claude: raise `runtime_config.max_usd_per_run`. codex: the account's plan window is spent, so wait for it to reset, or lower `max_runs_per_hour` or `reasoning_effort`. Then remove the `PAUSED` file. |
