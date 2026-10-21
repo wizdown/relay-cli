@@ -56,7 +56,13 @@ func (c *claudeRuntime) ConfigFields() []runtimeField {
 		{
 			Key: "model", Kind: fieldString, Required: true,
 			Enum: claudeModels, Aliases: claudeModelAliases, EnumMoves: true,
-			Doc: "which model to run: claude-opus-5, claude-sonnet-5 or claude-haiku-4-5, or the alias opus, sonnet or haiku",
+			Retired: claudeRetiredModels,
+			Doc:     "which model to run: claude-fable-5-1, claude-opus-5-5, claude-sonnet-5-5 or claude-haiku-5-5, or the alias fable, opus, sonnet or haiku",
+		},
+		{
+			Key: "effort", Kind: fieldString, Default: "medium",
+			Enum: []string{"low", "medium", "high", "xhigh", "max"},
+			Doc:  "how hard the model thinks before acting: low, medium, high, xhigh or max. Higher costs more per run",
 		},
 		{
 			Key: "max_usd_per_run", Kind: fieldNumber, Default: "5",
@@ -73,9 +79,10 @@ func (c *claudeRuntime) ConfigFields() []runtimeField {
 // its hour finding out. This one is a SNAPSHOT too — see EnumMoves — and
 // modelCheckEnv is how an operator runs a model newer than their relay-cli.
 var claudeModels = []string{
-	"claude-opus-5",    // open-ended briefs, wide blast radius, work you review closely
-	"claude-sonnet-5",  // the usual default — capable, and cheaper per run
-	"claude-haiku-4-5", // mechanical, well-specified work where turnaround is the win
+	"claude-fable-5-1",  // the hardest, longest-running briefs, at the highest price
+	"claude-opus-5-5",   // the usual default — open-ended briefs, wide blast radius
+	"claude-sonnet-5-5", // capable, and cheaper per run
+	"claude-haiku-5-5",  // mechanical, well-specified work where turnaround is the win
 }
 
 // claudeModelAliases are the short names the CLI itself offers, kept because
@@ -88,9 +95,19 @@ var claudeModels = []string{
 // the argv, the log and the dashboard all name the model that actually ran.
 // Moving one of these to a new release is a decision this table records.
 var claudeModelAliases = map[string]string{
-	"opus":   "claude-opus-5",
-	"sonnet": "claude-sonnet-5",
-	"haiku":  "claude-haiku-4-5",
+	"fable":  "claude-fable-5-1",
+	"opus":   "claude-opus-5-5",
+	"sonnet": "claude-sonnet-5-5",
+	"haiku":  "claude-haiku-5-5",
+}
+
+// claudeRetiredModels are ids an earlier relay-cli pinned, each mapped to what
+// to write instead, so a config that worked yesterday is told its way forward
+// rather than handed the whole list.
+var claudeRetiredModels = map[string]string{
+	"claude-opus-5":    "opus (claude-opus-5-5)",
+	"claude-sonnet-5":  "sonnet (claude-sonnet-5-5)",
+	"claude-haiku-4-5": "haiku (claude-haiku-5-5)",
 }
 
 // requiredFlags is what this adapter actually depends on, each with the reason
@@ -107,6 +124,7 @@ var requiredClaudeFlags = []struct{ flag, why string }{
 	{"--allowedTools", "pre-allowing relay's tools, since a headless run cannot approve one"},
 	{"--permission-mode", "running fully autonomously"},
 	{"--max-budget-usd", "the per-run spend cap"},
+	{"--effort", "running at the effort the config names rather than the CLI's default"},
 	{"--name", "labelling the session so it is identifiable in Claude Code's own history"},
 }
 
@@ -434,6 +452,9 @@ func (c *claudeRuntime) BuildCmd(rc *RunContext) ([]string, error) {
 	// and there is no longer any way to talk it out of it.
 	argv = append(argv, "--permission-mode", "auto")
 	argv = append(argv, "--model", rc.Worker.RCString("model"))
+	if effort := rc.Worker.RCString("effort"); effort != "" {
+		argv = append(argv, "--effort", effort)
+	}
 	// 0 is the operator deliberately removing the cap, and is spelled by omitting
 	// the flag rather than by passing --max-budget-usd 0.
 	if cap := rc.Worker.RCFloat("max_usd_per_run"); cap > 0 {

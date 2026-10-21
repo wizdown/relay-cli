@@ -34,7 +34,8 @@ Everything relay-cli owns lives beside the config, and no flag moves it:
 
       // settings of the runtime named above
       "runtime_config": {
-        "model":           "sonnet",
+        "model":           "opus",
+        "effort":          "medium",
         "max_usd_per_run": 5
       }
     }
@@ -69,16 +70,15 @@ the config loads.
 
 | Key | Required | What it does | Default |
 | --- | --- | --- | --- |
-| `model` | **yes** | `opus`, `sonnet` or `haiku`, or the full ids `claude-opus-5`, `claude-sonnet-5`, `claude-haiku-4-5`. See [Model names](#model-names). | — |
+| `model` | **yes** | `fable`, `opus`, `sonnet` or `haiku`, or a full id. See [Model names](#model-names). | — |
+| `effort` | no | How hard the model reasons: `low`, `medium`, `high`, `xhigh` or `max`. | `medium` |
 | `max_usd_per_run` | no | Dollar cap inside one run, enforced by the CLI. `0` removes it. | `5` |
-
-Two runs in a row killed by the spend cap pause the worker.
 
 ## `runtime_config` for `codex`
 
 | Key | Required | What it does | Default |
 | --- | --- | --- | --- |
-| `model` | **yes** | `sol`, `terra` or `luna`, or the full ids `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`. See [Model names](#model-names). | — |
+| `model` | **yes** | `astra`, `sol` or `luna`, or a full id. See [Model names](#model-names). | — |
 | `reasoning_effort` | no | `minimal`, `low`, `medium`, `high` or `xhigh`. The largest influence on what a run costs. | `medium` |
 | `sandbox` | no | What a run may write: `read-only`, `workspace-write` (inside `repo_dir` and temp directories) or `danger-full-access`. Relay tools are unaffected. | `workspace-write` |
 | `network_access` | no | Whether commands the agent runs may reach the network. Off, `git push` and dependency installs fail. | `true` |
@@ -92,22 +92,22 @@ that is what the dashboard and logs show.
 
 ## Model names
 
-`model` is required on both runtimes. Write the short name and relay-cli pins
-it to one id, so what a worker runs changes only when a relay-cli release
-changes it. The full ids are accepted too. Logs and the dashboard show the
-resolved id.
+`model` is required on both runtimes. relay-cli pins each short name to one
+id, which changes only with a relay-cli release. Full ids work too; logs and
+the dashboard show the resolved id.
 
 | Write | It runs |
 | --- | --- |
-| `opus` | `claude-opus-5` |
-| `sonnet` | `claude-sonnet-5` |
-| `haiku` | `claude-haiku-4-5` |
-| `sol` | `gpt-5.6-sol` |
-| `terra` | `gpt-5.6-terra` |
-| `luna` | `gpt-5.6-luna` |
+| `fable` | `claude-fable-5-1` |
+| `opus` | `claude-opus-5-5` |
+| `sonnet` | `claude-sonnet-5-5` |
+| `haiku` | `claude-haiku-5-5` |
+| `astra` | `gpt-6-astra` |
+| `sol` | `gpt-6.1-sol` |
+| `luna` | `gpt-6-luna` |
 
 Any other name is rejected when the config loads. The lists are what each
-vendor offered when this version was built. For a model newer than that, set
+vendor offered at build time. A retired name is refused with its replacement. For a model newer than that, set
 `RELAY_CLI_SKIP_MODEL_CHECK=1`: the name is passed to the CLI unchecked, and
 the start prints a warning naming the worker. This applies to `model` only.
 
@@ -167,7 +167,7 @@ A fleet is more entries in `workers`. There is no fleet mode.
       "relay_mcp": "https://relay.example.com/relay/mcp/c/wzh_REPLACE_ME_2",
       "repo_dir":  "~/code/app",
       "runtime":   "codex",
-      "runtime_config": { "model": "terra" }
+      "runtime_config": { "model": "sol" }
     }
   ]
 }

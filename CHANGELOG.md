@@ -5,6 +5,23 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+- `opus` now runs `claude-opus-5-5`, `sonnet` `claude-sonnet-5-5`, `haiku`
+  `claude-haiku-5-5`, `sol` `gpt-6.1-sol` and `luna` `gpt-6-luna`, with no
+  config change. What a worker costs changes with them.
+- New aliases: `fable` (`claude-fable-5-1`) for claude and `astra`
+  (`gpt-6-astra`) for codex.
+- `terra` is removed. A config naming `terra` or a retired full id, such as
+  `claude-opus-5`, is refused at load. The error names the replacement. `terra`
+  has no successor: choose `sol` or `luna`.
+- claude workers take `runtime_config.effort` (`low`, `medium`, `high`, `xhigh`
+  or `max`, default `medium`), passed as `--effort`.
+- `relay init` writes a claude worker on `opus` at `medium` effort and a codex
+  worker on `sol` at `medium` reasoning effort.
+- Claude Code v2.1.284 or later is required: it offers `--effort` and runs
+  every claude model above. The Codex CLI needs a release with the GPT-6
+  models. Run `claude update` or upgrade codex if a run fails on the model
+  name.
+
 ## v0.4.2
 
 - An agent paused in Relay is a worker state, not a probe failure. The worker

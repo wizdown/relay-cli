@@ -52,7 +52,7 @@ Errors go to stderr with an `error:` prefix; everything else to stdout.
 
 ```text
 relay 0.4.2 (beta) — checking 2 worker(s) from /Users/you/.relay/config
-  runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
+  runtime claude   2.1.306 (Claude Code) /Users/you/.local/bin/claude
 
   wizhub-claude            ok    queue: resume 0 · attention 1 · todo 0
     repo /Users/you/code/wizhub   CLAUDE.md · 2 skills · 1 subagent · 1 hook
@@ -84,7 +84,7 @@ does not hide what Relay said. Either failure exits `1`.
 
 ```text
 relay 0.4.2 (beta) — 1 worker(s) from /Users/you/.relay/config
-  runtime claude   2.1.250 (Claude Code) /Users/you/.local/bin/claude
+  runtime claude   2.1.306 (Claude Code) /Users/you/.local/bin/claude
   polling every 30s, 120s when idle
   wizhub-claude            runtime claude   runs/h 6  repo /Users/you/code/wizhub
 

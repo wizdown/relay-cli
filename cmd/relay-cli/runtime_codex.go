@@ -68,7 +68,8 @@ func (c *codexRuntime) ConfigFields() []runtimeField {
 		{
 			Key: "model", Kind: fieldString, Required: true,
 			Enum: codexModels, Aliases: codexModelAliases, EnumMoves: true,
-			Doc: "which model to run: gpt-5.6-sol, gpt-5.6-terra or gpt-5.6-luna, or the alias sol, terra or luna",
+			Retired: codexRetiredModels,
+			Doc:     "which model to run: gpt-6-astra, gpt-6.1-sol or gpt-6-luna, or the alias astra, sol or luna",
 		},
 		{
 			Key: "reasoning_effort", Kind: fieldString, Default: "medium",
@@ -106,9 +107,9 @@ func (c *codexRuntime) ConfigFields() []runtimeField {
 // modelCheckEnv is for, and why the error naming it is part of the check rather
 // than an afterthought.
 var codexModels = []string{
-	"gpt-5.6-sol",   // flagship: ambiguous, high-value work that needs judgement
-	"gpt-5.6-terra", // the balanced one — capable, and cheaper per run
-	"gpt-5.6-luna",  // fastest and cheapest, for narrow well-specified work
+	"gpt-6-astra", // most capable: the hardest work, at the highest price
+	"gpt-6.1-sol", // the usual default — near-Astra on ambiguous work, for less
+	"gpt-6-luna",  // fastest and cheapest, for narrow well-specified work
 }
 
 // codexModelAliases let a codex worker be written by tier, the way a claude one
@@ -116,9 +117,19 @@ var codexModels = []string{
 // full slug and nothing else — so these are resolved here and the CLI is handed
 // the slug, which is what makes the shorthand work at all.
 var codexModelAliases = map[string]string{
-	"sol":   "gpt-5.6-sol",
-	"terra": "gpt-5.6-terra",
-	"luna":  "gpt-5.6-luna",
+	"astra": "gpt-6-astra",
+	"sol":   "gpt-6.1-sol",
+	"luna":  "gpt-6-luna",
+}
+
+// codexRetiredModels are names an earlier relay-cli accepted, each mapped to
+// what to write instead. Terra has no successor in the GPT-6 line, so a config
+// naming it has to choose a side.
+var codexRetiredModels = map[string]string{
+	"terra":         "sol (gpt-6.1-sol) or luna (gpt-6-luna)",
+	"gpt-5.6-terra": "sol (gpt-6.1-sol) or luna (gpt-6-luna)",
+	"gpt-5.6-sol":   "sol (gpt-6.1-sol)",
+	"gpt-5.6-luna":  "luna (gpt-6-luna)",
 }
 
 // requiredCodexFlags is what this adapter actually depends on, each with the

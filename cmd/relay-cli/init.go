@@ -81,7 +81,8 @@ var initWorkerBlocks = map[string]string{
       "max_runs_per_hour": 6,     // CLI launches, not polls. Default 12.
       "max_seconds_per_run": 900, // wall-clock kill for one run
       "runtime_config": {
-        "model": "sonnet",        // required — pinned to claude-sonnet-5
+        "model": "opus",          // required — pinned to claude-opus-5-5
+        "effort": "medium",
         "max_usd_per_run": 5      // hard cap inside one run
       }
     }`,
@@ -93,7 +94,7 @@ var initWorkerBlocks = map[string]string{
       "max_runs_per_hour": 6,     // CLI launches, not polls. Default 12.
       "max_seconds_per_run": 900, // codex has no spend cap — this is the bound
       "runtime_config": {
-        "model": "terra",         // required — pinned to gpt-5.6-terra
+        "model": "sol",           // required — pinned to gpt-6.1-sol
         "reasoning_effort": "medium"
       }
     }`,

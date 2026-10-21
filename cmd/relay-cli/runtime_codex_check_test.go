@@ -103,14 +103,14 @@ func TestCodexConfigIsValidatedAtLoad(t *testing.T) {
 	noRuntimeCheck(t)
 	cases := []struct{ name, block, want string }{
 		{"missing model", `{}`, `missing "model"`},
-		{"bad effort", `{"model":"gpt-5.6-terra","reasoning_effort":"maximum"}`, "it takes one of: minimal, low, medium, high, xhigh"},
-		{"bad sandbox", `{"model":"gpt-5.6-terra","sandbox":"workspace_write"}`, "it takes one of: read-only, workspace-write, danger-full-access"},
-		{"quoted bool", `{"model":"gpt-5.6-terra","network_access":"true"}`, "must be true or false, unquoted"},
-		{"claude's cap", `{"model":"gpt-5.6-terra","max_usd_per_run":5}`, `is not a setting runtime "codex" accepts`},
+		{"bad effort", `{"model":"gpt-6.1-sol","reasoning_effort":"maximum"}`, "it takes one of: minimal, low, medium, high, xhigh"},
+		{"bad sandbox", `{"model":"gpt-6.1-sol","sandbox":"workspace_write"}`, "it takes one of: read-only, workspace-write, danger-full-access"},
+		{"quoted bool", `{"model":"gpt-6.1-sol","network_access":"true"}`, "must be true or false, unquoted"},
+		{"claude's cap", `{"model":"gpt-6.1-sol","max_usd_per_run":5}`, `is not a setting runtime "codex" accepts`},
 		// The one codex setting a typo used to survive: the CLI takes whatever it
 		// is handed, so an unchecked name fails inside a paid session instead.
-		{"bad model", `{"model":"gpt-5.6-solar"}`, "it takes one of: gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna"},
-		{"plausible typo", `{"model":"gpt-5.6"}`, `runtime_config.model is "gpt-5.6"`},
+		{"bad model", `{"model":"gpt-6.1-solar"}`, "it takes one of: gpt-6-astra, gpt-6.1-sol, gpt-6-luna"},
+		{"plausible typo", `{"model":"gpt-6"}`, `runtime_config.model is "gpt-6"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestCodexConfigIsValidatedAtLoad(t *testing.T) {
 // states only its model is still a bounded one.
 func TestCodexDefaultsResolve(t *testing.T) {
 	noRuntimeCheck(t)
-	cfg, err := LoadConfig(write(t, codexConfigWithModel(t, "gpt-5.6-terra")))
+	cfg, err := LoadConfig(write(t, codexConfigWithModel(t, "gpt-6.1-sol")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,6 +168,37 @@ func TestUnknownCodexModelNamesTheEscapeHatch(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q:\n%v", want, err)
 		}
+	}
+}
+
+// A name an earlier relay-cli pinned is refused like any unlisted one, but the
+// error names its replacement instead of suggesting the name is too new: the
+// config worked before the upgrade, and "set the skip variable" would be the
+// wrong way forward.
+func TestRetiredModelNamesItsReplacement(t *testing.T) {
+	noRuntimeCheck(t)
+	for _, c := range []struct{ runtime, model, want string }{
+		{"codex", "terra", "write sol (gpt-6.1-sol) or luna (gpt-6-luna) instead"},
+		{"codex", "gpt-5.6-terra", "write sol (gpt-6.1-sol) or luna (gpt-6-luna) instead"},
+		{"codex", "gpt-5.6-sol", "write sol (gpt-6.1-sol) instead"},
+		{"claude", "claude-opus-5", "write opus (claude-opus-5-5) instead"},
+		{"claude", "claude-haiku-4-5", "write haiku (claude-haiku-5-5) instead"},
+	} {
+		t.Run(c.runtime+"/"+c.model, func(t *testing.T) {
+			body := `{"workers":[{"name":"w","relay_mcp":"https://x/c/wzh_aaaaaaaa",` +
+				`"repo_dir":"` + repoHere(t) + `","runtime":"` + c.runtime + `",` +
+				`"runtime_config":{"model":"` + c.model + `"}}]}`
+			err := loadErr(write(t, body))
+			if err == nil {
+				t.Fatalf("%q was retired and should refuse the start", c.model)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Errorf("error should say %q:\n%v", c.want, err)
+			}
+			if strings.Contains(err.Error(), "newer than this build") {
+				t.Errorf("a retired name is older than this build, not newer:\n%v", err)
+			}
+		})
 	}
 }
 
@@ -209,7 +240,7 @@ func TestSkippingTheModelCheckDoesNotRelaxTheOtherEnums(t *testing.T) {
 	noRuntimeCheck(t)
 	t.Setenv("RELAY_CLI_SKIP_MODEL_CHECK", "1")
 	body := `{"workers":[` + fmtWorker(t, codexWorkerTemplate,
-		`{"model":"gpt-5.6-terra","sandbox":"workspace_write"}`) + `]}`
+		`{"model":"gpt-6.1-sol","sandbox":"workspace_write"}`) + `]}`
 
 	err := loadErr(write(t, body))
 	if err == nil || !strings.Contains(err.Error(), "it takes one of: read-only") {
