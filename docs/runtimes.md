@@ -31,6 +31,8 @@ anything launches:
 3. It is signed in, asked with `claude auth status --json` or
    `codex login status`. Both read stored credentials and spend nothing.
 
+codex needs Codex CLI 0.162.0 or later. The check does not test the version.
+
 A failure names the fix. It stops `relay run` and fails `relay check`, which
 still probes every credential first. Two cases warn instead of failing:
 

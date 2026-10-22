@@ -245,6 +245,13 @@ func TestCodexBuildCmdStreamsAndIsolates(t *testing.T) {
 		}
 	}
 
+	// A current codex warns at every launch about an override it does not know.
+	for _, gone := range []string{"experimental_use_rmcp_client", "features.rmcp_client"} {
+		if strings.Contains(joined, gone) {
+			t.Errorf("argv still sends %q, which codex 0.162.0 and later ignore and warn about:\n%s", gone, joined)
+		}
+	}
+
 	// codex exec has no --append-system-prompt, and a contract that does not
 	// arrive is a worker that claims two tasks in a session and tells nobody.
 	last := argv[len(argv)-1]

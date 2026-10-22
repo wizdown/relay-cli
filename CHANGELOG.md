@@ -18,9 +18,10 @@ commits on the GitHub release page.
 - `relay init` writes a claude worker on `opus` at `medium` effort and a codex
   worker on `sol` at `medium` reasoning effort.
 - Claude Code v2.1.284 or later is required: it offers `--effort` and runs
-  every claude model above. The Codex CLI needs a release with the GPT-6
-  models. Run `claude update` or upgrade codex if a run fails on the model
-  name.
+  every claude model above. Codex CLI 0.162.0 or later is required. Run
+  `claude update` or upgrade codex if a run fails on the model name.
+- codex no longer warns at launch that it is ignoring 2 unrecognized settings
+  (`experimental_use_rmcp_client`, `features.rmcp_client`).
 
 ## v0.4.2
 

@@ -350,13 +350,11 @@ func codexConfigOverrides(rc *RunContext) []string {
 		"sandbox_workspace_write.network_access=" + strconv.FormatBool(rc.Worker.RCBool("network_access")),
 		// The relay connector. This is the credential, and it is why this argv
 		// never reaches a log unscrubbed.
+		// No feature switch rides with it. Codex CLI 0.162.0 and later connect to
+		// a streamable-HTTP server unasked, and warn about every override they do
+		// not recognise — experimental_use_rmcp_client and features.rmcp_client
+		// among them.
 		"mcp_servers.relay.url=" + rc.Worker.Endpoint,
-		// Streamable-HTTP MCP servers were gated behind an experiment that has
-		// since moved under [features]. Both spellings are sent because an
-		// override codex does not know is ignored, while a missing one is a
-		// worker that starts, runs, reaches no relay tools and blames the model.
-		"experimental_use_rmcp_client=true",
-		"features.rmcp_client=true",
 	}
 	if rc.Worker.RCBool("web_search") {
 		kv = append(kv, "web_search=live")
