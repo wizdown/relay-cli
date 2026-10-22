@@ -5,6 +5,8 @@ commits on the GitHub release page.
 
 ## Unreleased
 
+## v0.5.0
+
 - `opus` now runs `claude-opus-5-5`, `sonnet` `claude-sonnet-5-5`, `haiku`
   `claude-haiku-5-5`, `sol` `gpt-6.1-sol` and `luna` `gpt-6-luna`, with no
   config change. What a worker costs changes with them.
