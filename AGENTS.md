@@ -328,3 +328,4 @@ coding CLI installed. The release flow is
 | [config-fields.md](docs/contributing/config-fields.md) | the self-update loop for the config |
 | [design.md](docs/contributing/design.md) | the codemap, the probe, who owns what, the trades |
 | [adapters.md](docs/contributing/adapters.md) | the adapter contract |
+| [backlog.md](docs/contributing/backlog.md) | product ideas not committed to, and the asks that are Relay's |
